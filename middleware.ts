@@ -2,24 +2,22 @@ import { NextRequest, NextResponse } from "next/server";
 
 const PUBLIC_ROUTES = [
   "/login", "/onboarding", "/candidate/login",
-  "/candidate/register", "/candidate/portal",
-  "/applications", "/apply",
+  "/candidate/register", "/candidate/portal", "/candidate/verify",
+  "/applications", "/apply", "/legal",
 ];
 
 const PUBLIC_API_PREFIXES = [
   "/api/recruitment/apply", "/api/auth/callback",
   "/api/auth/signout", "/api/health",
   "/api/public/tenant-lookup", "/api/dashboard/metrics",
+  "/api/recruitment/offer-response", "/api/recruitment/interview-confirm",
 ];
 
 function applySecurityHeaders(response: NextResponse): NextResponse {
   response.headers.set("X-Frame-Options", "DENY");
   response.headers.set("X-Content-Type-Options", "nosniff");
   response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
-  response.headers.set(
-    "Permissions-Policy",
-    "camera=(self), microphone=(self), geolocation=()"
-  );
+  response.headers.set("Permissions-Policy", "camera=(self), microphone=(self), geolocation=()");
   response.headers.set(
     "Content-Security-Policy",
     [
@@ -28,15 +26,14 @@ function applySecurityHeaders(response: NextResponse): NextResponse {
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https:",
       "font-src 'self' https://fonts.gstatic.com",
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://nominatim.openstreetmap.org",
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://nominatim.openstreetmap.org https://api.anthropic.com",
       "frame-ancestors 'none'",
     ].join("; ")
   );
   return response;
 }
 
-// ── Named export MUST be "proxy" in Next.js 16 (previously "middleware") ──
-export async function proxy(req: NextRequest) {
+export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // Static assets — pass through immediately
@@ -58,6 +55,11 @@ export async function proxy(req: NextRequest) {
     return applySecurityHeaders(NextResponse.next());
   }
 
+  // Landing page is always public
+  if (pathname === "/") {
+    return applySecurityHeaders(NextResponse.next());
+  }
+
   // Only protect /dashboard and /api routes
   const isDashboard    = pathname.startsWith("/dashboard");
   const isProtectedApi = pathname.startsWith("/api") && !isPublicApi;
@@ -66,8 +68,7 @@ export async function proxy(req: NextRequest) {
     return applySecurityHeaders(NextResponse.next());
   }
 
-  // ── Auth check — Edge-compatible, no Node.js APIs ─────────────────
-  // Try both cookie name patterns Supabase uses
+  // Auth check — Edge-compatible, no Node.js APIs
   const projectRef = process.env.NEXT_PUBLIC_SUPABASE_URL
     ?.split("//")[1]?.split(".")[0] ?? "";
 
@@ -85,7 +86,7 @@ export async function proxy(req: NextRequest) {
         {
           headers: {
             Authorization: `Bearer ${token}`,
-            apikey:        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
           },
         }
       );
@@ -109,7 +110,6 @@ export async function proxy(req: NextRequest) {
   return applySecurityHeaders(NextResponse.next());
 }
 
-// ── Matcher — exclude static files ────────────────────────────────
 export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };
