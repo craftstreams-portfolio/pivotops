@@ -5,6 +5,7 @@ const PUBLIC_ROUTES = [
   "/candidate/register", "/candidate/portal",
   "/applications", "/apply",
 ];
+
 const PUBLIC_API_PREFIXES = [
   "/api/recruitment/apply", "/api/auth/callback",
   "/api/auth/signout", "/api/health",
@@ -15,7 +16,10 @@ function applySecurityHeaders(response: NextResponse): NextResponse {
   response.headers.set("X-Frame-Options", "DENY");
   response.headers.set("X-Content-Type-Options", "nosniff");
   response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
-  response.headers.set("Permissions-Policy", "camera=(self), microphone=(self), geolocation=()");
+  response.headers.set(
+    "Permissions-Policy",
+    "camera=(self), microphone=(self), geolocation=()"
+  );
   response.headers.set(
     "Content-Security-Policy",
     [
@@ -31,7 +35,8 @@ function applySecurityHeaders(response: NextResponse): NextResponse {
   return response;
 }
 
-export async function middleware(req: NextRequest) {
+// ── Named export MUST be "proxy" in Next.js 16 (previously "middleware") ──
+export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // Static assets — pass through immediately
@@ -61,23 +66,29 @@ export async function middleware(req: NextRequest) {
     return applySecurityHeaders(NextResponse.next());
   }
 
-  // Auth check via cookie — Edge-compatible, no Node.js APIs
+  // ── Auth check — Edge-compatible, no Node.js APIs ─────────────────
+  // Try both cookie name patterns Supabase uses
+  const projectRef = process.env.NEXT_PUBLIC_SUPABASE_URL
+    ?.split("//")[1]?.split(".")[0] ?? "";
+
   const token =
     req.cookies.get("sb-access-token")?.value ||
-    req.cookies.get(`sb-${process.env.NEXT_PUBLIC_SUPABASE_URL?.split("//")[1]?.split(".")[0]}-auth-token`)?.value;
+    req.cookies.get(`sb-${projectRef}-auth-token`)?.value ||
+    req.cookies.get(`sb-${projectRef}-auth-token.0`)?.value;
 
-  // Verify session by calling Supabase REST directly (Edge-safe, no @supabase/ssr)
   let authenticated = false;
+
   if (token) {
     try {
-      const supabaseUrl  = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-      const supabaseAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-      const res = await fetch(`${supabaseUrl}/auth/v1/user`, {
-        headers: {
-          Authorization:  `Bearer ${token}`,
-          apikey:         supabaseAnon,
-        },
-      });
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/user`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            apikey:        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+          },
+        }
+      );
       authenticated = res.ok;
     } catch {
       authenticated = false;
@@ -98,6 +109,7 @@ export async function middleware(req: NextRequest) {
   return applySecurityHeaders(NextResponse.next());
 }
 
+// ── Matcher — exclude static files ────────────────────────────────
 export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };
