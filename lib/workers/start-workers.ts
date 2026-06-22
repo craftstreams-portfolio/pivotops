@@ -1,103 +1,49 @@
 import "server-only";
 
 import { startEventWorker } from "../events/event-worker";
-
 import { recoverFailedEvents } from "./recoverFailedEvents";
 
-// ===============================
-// BOOT LOCK
-// ===============================
-let started = false;
+declare global {
+  // eslint-disable-next-line no-var
+  var __pivotOpsWorkersStarted: boolean | undefined;
+  // eslint-disable-next-line no-var
+  var __pivotOpsRecoveryInterval: NodeJS.Timeout | undefined;
+}
 
-// ===============================
-// SAFE INTERVAL TRACKER
-// ===============================
-let recoveryInterval:
-  | NodeJS.Timeout
-  | null = null;
-
-// ===============================
-// START ALL WORKERS
-// ===============================
 export async function startWorkers() {
-  // ===============================
-  // DUPLICATE BOOT PROTECTION
-  // ===============================
-  if (started) {
-    console.warn(
-      "⚠️ Workers already running"
-    );
-
+  if (globalThis.__pivotOpsWorkersStarted) {
+    console.warn("[Workers] Already running");
     return;
   }
 
-  started = true;
-
-  console.log(
-    "🚀 Starting PivotOps workers..."
-  );
+  globalThis.__pivotOpsWorkersStarted = true;
+  console.log("[Workers] Starting PivotOps workers...");
 
   try {
-    // ===============================
-    // START EVENT WORKER
-    // ===============================
-    startEventWorker().catch(
-      (err: unknown) => {
-        console.error(
-          "🔥 Event worker crashed:",
-          err
-        );
+    startEventWorker().catch((err: unknown) => {
+      console.error("[Workers] Event worker crashed:", err);
+    });
+
+    globalThis.__pivotOpsRecoveryInterval = setInterval(async () => {
+      try {
+        await recoverFailedEvents();
+      } catch (err: unknown) {
+        console.error("[Workers] Recovery loop crashed:", err);
       }
-    );
+    }, 60 * 1000);
 
-    // ===============================
-    // FAILED EVENT RECOVERY LOOP
-    // ===============================
-    recoveryInterval =
-      setInterval(
-        async () => {
-          try {
-            await recoverFailedEvents();
-          } catch (
-            err: unknown
-          ) {
-            console.error(
-              "🔥 Recovery loop crashed:",
-              err
-            );
-          }
-        },
-        60 * 1000
-      );
-
-    console.log(
-      "✅ Workers started successfully"
-    );
+    console.log("[Workers] Started successfully");
   } catch (err: unknown) {
-    console.error(
-      "🔥 Worker bootstrap failed:",
-      err
-    );
-
-    started = false;
+    console.error("[Workers] Bootstrap failed:", err);
+    globalThis.__pivotOpsWorkersStarted = false;
   }
 }
 
-// ===============================
-// STOP WORKERS
-// ===============================
 export function stopWorkers() {
-  if (recoveryInterval) {
-    clearInterval(
-      recoveryInterval
-    );
-
-    recoveryInterval = null;
+  if (globalThis.__pivotOpsRecoveryInterval) {
+    clearInterval(globalThis.__pivotOpsRecoveryInterval);
+    globalThis.__pivotOpsRecoveryInterval = undefined;
   }
-
-  started = false;
-
-  console.log(
-    "🛑 Workers stopped"
-  );
+  globalThis.__pivotOpsWorkersStarted = false;
+  console.log("[Workers] Stopped");
 }

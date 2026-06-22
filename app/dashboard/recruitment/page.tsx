@@ -536,7 +536,7 @@ export default function RecruitmentBoard() {
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
   const [showThresholds,  setShowThresholds]  = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
-  const [tenantId,        setTenantId]        = useState("default");
+  const [tenantId,        setTenantId]        = useState("");
 
   const lastActionRef  = useRef<string | null>(null);
   const localUpdateRef = useRef<Set<string>>(new Set());

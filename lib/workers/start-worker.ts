@@ -4,28 +4,19 @@ import { runWorkforceOrchestration } from "../../app/dashboard/lib/ai/orchestrat
 import { executeAction } from "../../app/dashboard/lib/ai/orchestrator/remediation/workforceRemediator";
 import { processEvent } from "../engine/workforce.engine";
 
-/**
- * PivotOps Background Worker
- * Phase 23G Runtime Layer
- *
- * Runs independent autonomous intelligence loop
- */
-
-let isWorkerRunning = false;
+declare global {
+  // eslint-disable-next-line no-var
+  var __pivotOpsWorkerRunning: boolean | undefined;
+}
 
 export function startWorker() {
-  if (isWorkerRunning) {
+  if (globalThis.__pivotOpsWorkerRunning) {
     console.warn("[PivotOpsWorker] Already running");
     return;
   }
+  globalThis.__pivotOpsWorkerRunning = true;
+  console.log("[PivotOpsWorker] Starting...");
 
-  isWorkerRunning = true;
-
-  console.log("🧠 PivotOps Worker Starting...");
-
-  /**
-   * 1. REALTIME EVENT TAP — feeds live events into the engine
-   */
   subscribeToWorkforceEvents((payload) => {
     console.log("[Worker Realtime Event]", payload);
     if (payload?.type) {
@@ -35,9 +26,6 @@ export function startWorker() {
     }
   });
 
-  /**
-   * 2. AI AUTONOMOUS LOOP (redundant safety brain)
-   */
   setInterval(async () => {
     try {
       const action = runWorkforceOrchestration();
@@ -48,23 +36,17 @@ export function startWorker() {
     }
   }, 7000);
 
-  /**
-   * 3. RISK MONITORING LAYER
-   */
   setInterval(() => {
     const risk = predictOperationalRisk();
     if (risk.status === "critical") {
-      console.warn("🚨 WORKER ALERT: Critical operational risk detected", risk);
+      console.warn("[PivotOpsWorker] ALERT: Critical operational risk detected", risk);
     }
   }, 5000);
 
-  console.log("🚀 PivotOps Worker ONLINE");
+  console.log("[PivotOpsWorker] ONLINE");
 }
 
-/**
- * SAFE SHUTDOWN
- */
 export function stopWorker() {
-  isWorkerRunning = false;
-  console.log("🛑 PivotOps Worker Stopped");
+  globalThis.__pivotOpsWorkerRunning = false;
+  console.log("[PivotOpsWorker] Stopped");
 }

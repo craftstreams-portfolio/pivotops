@@ -12,8 +12,12 @@ export async function validateSession(req: NextRequest): Promise<AuthResult | nu
     );
     const { data: { user }, error } = await supabase.auth.getUser();
     if (error || !user) return null;
-    const { data: profile } = await supabase.from("profiles").select("tenant_id, role").eq("id", user.id).single();
-    return { userId: user.id, tenantId: profile?.tenant_id ?? "default", role: profile?.role ?? "employee", email: user.email ?? "" };
+    const { data: profile, error: profileError } = await supabase.from("profiles").select("tenant_id, role").eq("id", user.id).single();
+    if (profileError || !profile?.tenant_id) {
+      console.error("[validateSession] profile/tenant lookup failed for user " + user.id, profileError?.message ?? "no profile or tenant_id");
+      return null;
+    }
+    return { userId: user.id, tenantId: profile.tenant_id, role: profile.role ?? "employee", email: user.email ?? "" };
   } catch { return null; }
 }
 export function getClientIp(req: NextRequest): string {

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -172,7 +172,7 @@ function ParamsReader() {
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
     setCandidateId(p.get("candidateId") ?? "");
-    setTenantId("default");
+    setTenantId(p.get("tenantId") ?? "default");
     setReady(true);
   }, []);
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -10,8 +10,10 @@ import {
   Menu, X, Siren, Clock3, Trophy, Sparkles, Briefcase,
   ClipboardList, UserPlus, UserMinus, BadgeCheck,
   ChevronDown, ChevronRight, CalendarDays, Phone,
-  Video, MessageSquare, LogOut,
+  Video, MessageSquare, LogOut, Plus,
 } from "lucide-react";
+import TeamInvitePanel from "@/app/dashboard/components/team/TeamInvitePanel";
+import DashboardTour from "@/app/dashboard/components/team/DashboardTour";
 
 function PivotLogo({ size = 32 }: { size?: number }) {
   return (
@@ -35,29 +37,12 @@ function PivotLogo({ size = 32 }: { size?: number }) {
   );
 }
 
-function ShimmerBars({ active }: { active: boolean }) {
-  return (
-    <div style={{ position:"fixed", inset:0, overflow:"hidden", pointerEvents:"none", zIndex:9998 }}>
-      <div style={{ position:"absolute", width:"200%", height:"2px", background:"linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.9) 50%,transparent 100%)", top: active ? "110%" : "-5px", left:"-50%", transform:"rotate(-28deg)", transformOrigin:"0% 50%", transition: active ? "top 1s ease" : "none" }} />
-    </div>
-  );
-}
-
 function AppLoadingScreen() {
   const [tick, setTick]     = useState(0);
-  const [shimmer, setShimmer] = useState(false);
   const steps = ["Connecting to Supabase...","Loading tenant profile...","Syncing workforce data...","Initialising Xavier AI...","Ready"];
-  useEffect(() => {
-    const iv = setInterval(() => {
-      setTick(t => Math.min(t + 1, steps.length - 1));
-      setShimmer(true);
-      setTimeout(() => setShimmer(false), 1100);
-    }, 600);
-    return () => clearInterval(iv);
-  }, []);
+
   return (
     <div style={{ position:"fixed", inset:0, background:"#04060e", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", zIndex:9999, fontFamily:"system-ui,sans-serif" }}>
-      <ShimmerBars active={shimmer} />
       <div style={{ marginBottom:28 }}><PivotLogo size={72} /></div>
       <div style={{ textAlign:"center", marginBottom:44 }}>
         <div style={{ fontSize:20, fontWeight:600, color:"#fff" }}>PivotOps</div>
@@ -118,7 +103,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [appReady,    setAppReady]    = useState(false);
   const [mobileOpen,  setMobileOpen]  = useState(false);
   const [loggingOut,  setLoggingOut]  = useState(false);
-  const [shimmer,     setShimmer]     = useState(false);
   const [userEmail,   setUserEmail]   = useState("");
   const [userInitial, setUserInitial] = useState("P");
   const [notifCount,  setNotifCount]  = useState(0);
@@ -129,23 +113,34 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     "System Status":        true,
   });
 
+  const [orgName,    setOrgName]    = useState("");
+  const [tenantId,   setTenantId]   = useState("");
+  const [orgSize,    setOrgSize]    = useState("");
+  const [showInvite, setShowInvite] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const tourTargets = useRef<Record<string, HTMLElement | null>>({});
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session) { router.replace("/login"); return; }
       const email = session.user.email ?? "";
       setUserEmail(email);
       setUserInitial((session.user.user_metadata?.full_name?.[0] ?? email[0] ?? "P").toUpperCase());
+      supabase.from("profiles").select("org_name, tenant_id, org_size").eq("id", session.user.id).maybeSingle()
+        .then(({ data }) => {
+          if (data) {
+            setOrgName(data.org_name ?? "");
+            setTenantId(data.tenant_id ?? "");
+            setOrgSize(data.org_size ?? "");
+            if (data.tenant_id) {
+              supabase.from("xavier_notifications").select("id", { count:"exact" }).eq("read", false).eq("tenant_id", data.tenant_id)
+                .then(({ count }) => setNotifCount(count ?? 0));
+            }
+          }
+        });
       setTimeout(() => setAppReady(true), 900);
     });
-    supabase.from("xavier_notifications").select("id", { count:"exact" }).eq("read", false)
-      .then(({ count }) => setNotifCount(count ?? 0));
   }, [router]);
-
-  useEffect(() => {
-    if (!appReady) return;
-    const iv = setInterval(() => { setShimmer(true); setTimeout(() => setShimmer(false), 1100); }, 4000);
-    return () => clearInterval(iv);
-  }, [appReady]);
 
   useEffect(() => { fetch("/api/start-worker", { method:"POST" }).catch(() => {}); }, []);
 
@@ -163,18 +158,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   async function handleLogout() {
-    setLoggingOut(true); setShimmer(true);
+    setLoggingOut(true);
     try {
       await supabase.auth.signOut();
       setTimeout(() => { window.location.href = "/login"; }, 800);
-    } catch { setLoggingOut(false); setShimmer(false); }
+    } catch { setLoggingOut(false); }
   }
 
   if (!appReady) return <AppLoadingScreen />;
 
   return (
     <div className="flex min-h-screen overflow-hidden bg-zinc-950 text-white">
-      <ShimmerBars active={shimmer} />
 
       {mobileOpen && (
         <div className="fixed inset-0 z-40 bg-black/60 md:hidden" onClick={() => setMobileOpen(false)} />
@@ -183,11 +177,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <aside className={`fixed md:relative z-50 h-screen w-72 border-r border-zinc-800 bg-zinc-900 transition-transform duration-300 flex flex-col ${mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}`}>
 
         <div className="flex h-20 items-center justify-between border-b border-zinc-800 px-5">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 min-w-0">
             <div style={{ flexShrink:0 }}><PivotLogo size={36} /></div>
-            <div>
+            <div className="min-w-0">
               <h1 className="text-lg font-semibold text-white tracking-tight">PivotOps</h1>
               <p className="text-[10px] text-zinc-500 tracking-wider uppercase">Autonomous Workforce OS</p>
+              {orgName && (
+                <div className="flex items-center gap-1.5 mt-1">
+                  <p className="text-xs text-emerald-400 font-medium truncate max-w-[140px]">{orgName}</p>
+                  <button
+                    onClick={() => setShowInvite(true)}
+                    title="Invite teammates"
+                    className="flex-shrink-0 w-5 h-5 rounded-full bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 flex items-center justify-center transition"
+                  >
+                    <Plus size={11} />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
           <button className="md:hidden text-zinc-400 hover:text-white" onClick={() => setMobileOpen(false)}><X size={18} /></button>
@@ -202,6 +208,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               return (
                 <div key={item.label} className="space-y-1">
                   <button onClick={() => toggleGroup(item.label)}
+                    ref={(el) => { tourTargets.current[`nav-${item.label}`] = el; }}
                     className={`flex w-full items-center justify-between rounded-xl border px-4 py-2.5 transition-colors ${hasActiveChild ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400" : "border-transparent text-zinc-300 hover:bg-zinc-800"}`}>
                     <div className="flex items-center gap-3"><Icon size={16} /><span className="text-sm font-medium">{item.label}</span></div>
                     {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -227,6 +234,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             const active = pathname === item.href || pathname.startsWith((item.href ?? "") + "/");
             return (
               <Link key={item.href} href={item.href!} onClick={() => setMobileOpen(false)}
+                ref={(el) => { tourTargets.current[`nav-${item.label}`] = el; }}
                 className={`flex items-center gap-3 rounded-xl border px-4 py-2.5 text-sm transition-colors ${active ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400" : "border-transparent text-zinc-400 hover:bg-zinc-800"}`}>
                 <Icon size={16} /><span>{item.label}</span>
               </Link>
@@ -260,7 +268,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <p className="text-xs text-white font-medium truncate">{userEmail || "PivotOps User"}</p>
               <p className="text-[10px] text-zinc-500">Workforce engine operational</p>
             </div>
-            <button onClick={handleLogout} disabled={loggingOut} title="Sign out"
+            <button onClick={() => setShowLogoutConfirm(true)} disabled={loggingOut} title="Sign out"
               className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-40">
               {loggingOut ? <div className="w-3.5 h-3.5 border border-zinc-500 border-t-transparent rounded-full animate-spin" /> : <LogOut size={15} />}
             </button>
@@ -278,15 +286,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <button className="relative w-9 h-9 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors">
+            <button
+              onClick={() => router.push("/dashboard/notifications")}
+              className="relative w-9 h-9 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+              title="Notifications"
+            >
               <Bell size={17} />
               {notifCount > 0 && (
-                <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-red-500 text-[9px] text-white flex items-center justify-center font-bold">
+                <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-red-500 text-[9px] text-white flex items-center justify-center font-bold animate-pulse">
                   {notifCount > 9 ? "9+" : notifCount}
                 </span>
               )}
             </button>
-            <button onClick={handleLogout} disabled={loggingOut}
+            <button onClick={() => setShowLogoutConfirm(true)} disabled={loggingOut}
               className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-zinc-800 text-xs text-zinc-400 hover:text-red-400 hover:border-red-500/20 transition-colors disabled:opacity-40">
               {loggingOut ? <div className="w-3 h-3 border border-zinc-500 border-t-transparent rounded-full animate-spin" /> : <LogOut size={13} />}
               <span className="hidden sm:inline">{loggingOut ? "Signing out..." : "Sign out"}</span>
@@ -296,6 +308,42 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </header>
         <div className="flex-1 overflow-y-auto p-4 md:p-6">{children}</div>
       </main>
+
+      {showLogoutConfirm && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-4 shadow-2xl">
+            <div className="text-center space-y-2">
+              <div className="w-12 h-12 rounded-full bg-red-500/10 border border-red-500/20
+                              flex items-center justify-center mx-auto">
+                <LogOut size={20} className="text-red-400" />
+              </div>
+              <h3 className="text-base font-semibold text-white">Sign out of PivotOps?</h3>
+              <p className="text-sm text-zinc-500">You will need to sign back in to access your workspace.</p>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setShowLogoutConfirm(false)}
+                className="flex-1 py-2.5 rounded-xl border border-zinc-700 text-sm text-zinc-400
+                           hover:text-white transition">
+                Cancel
+              </button>
+              <button onClick={() => { setShowLogoutConfirm(false); handleLogout(); }}
+                disabled={loggingOut}
+                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white
+                           text-sm font-semibold transition disabled:opacity-50">
+                {loggingOut ? "Signing out..." : "Sign Out"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <TeamInvitePanel
+        open={showInvite}
+        onClose={() => setShowInvite(false)}
+        tenantId={tenantId}
+        orgSize={orgSize}
+      />
+      <DashboardTour targets={tourTargets.current} />
     </div>
   );
 }

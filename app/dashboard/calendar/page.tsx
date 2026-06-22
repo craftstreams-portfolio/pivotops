@@ -354,7 +354,7 @@ function InterviewInviteCard({
 export default function CalendarPage() {
   const [meetings,       setMeetings]       = useState<Meeting[]>([]);
   const [candidates,     setCandidates]     = useState<Candidate[]>([]);
-  const [currentUser,    setCurrentUser]    = useState<{ id: string; full_name: string | null; email: string | null } | null>(null);
+  const [currentUser,    setCurrentUser]    = useState<{ id: string; full_name: string | null; email: string | null; tenant_id: string | null } | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
   const [showModal,      setShowModal]      = useState(false);
   const [saving,         setSaving]         = useState(false);
@@ -382,7 +382,7 @@ export default function CalendarPage() {
     supabase.auth.getSession().then(({ data }) => {
       const user = data.session?.user;
       if (!user) return;
-      supabase.from("profiles").select("id, full_name, email")
+      supabase.from("profiles").select("id, full_name, email, tenant_id")
         .eq("id", user.id).single()
         .then(({ data: p }) => setCurrentUser(p));
     });
@@ -467,7 +467,7 @@ export default function CalendarPage() {
         starts_at:        scheduledStart.toISOString(),
         ends_at:          scheduledEnd.toISOString(),
         assigned_user_id: session?.user?.id ?? null,
-        tenant_id:        "default",
+        tenant_id:        currentUser?.tenant_id ?? null,
         candidate_id:     selectedCandidateId || null,
         candidate_name:   candidateName.trim()  || null,
         candidate_email:  candidateEmail.trim() || null,

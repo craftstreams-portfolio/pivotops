@@ -11,6 +11,8 @@ export const ApplySchema = z.object({
   cover_letter: z.string().max(5000).optional().default(""),
   resume_url: z.string().url().nullable().optional(),
   resume_name: z.string().max(255).nullable().optional(),
+  role_category: z.enum(["healthcare","general"]).optional().default("healthcare"),
+  applied_timezone: z.string().max(100).optional(),
   tenant_id: z.string().max(100).optional().default("default"),
 });
 export const CandidateActionSchema = z.object({
@@ -38,6 +40,11 @@ export const OnboardingSchema = z.object({ candidateId: uuid, tenantId: z.string
 export const ComplianceRemindSchema = z.object({ candidateId: uuid, tenantId: z.string().max(100).optional().default("default"), docTypes: z.array(z.string().max(100)).min(1).max(20).optional(), message: z.string().max(1000).optional() });
 export const SpotlightApproveSchema = z.object({ spotlightId: uuid, tenantId: z.string().max(100).optional().default("default"), approved: z.boolean(), note: z.string().max(500).optional() });
 export type ApplyInput = z.infer<typeof ApplySchema>;
+export const TeamInviteSchema = z.object({
+  email: email,
+  role: z.enum(["admin","manager","operator","recruiter"]).default("operator"),
+});
+export type TeamInviteInput = z.infer<typeof TeamInviteSchema>;
 export type CandidateActionInput = z.infer<typeof CandidateActionSchema>;
 export type IncidentInput = z.infer<typeof IncidentSchema>;
 export type OnboardingInput = z.infer<typeof OnboardingSchema>;

@@ -1,81 +1,14 @@
+import { NextRequest, NextResponse } from "next/server";
+import { withSecurity } from "@/lib/security/withSecurity";
+import { RATE_LIMITS } from "@/lib/security/rateLimit";
 import { recoverEvent } from "@/lib/recovery/recovery.engine";
 
-// ===============================
-// AUTONOMOUS EVENT RECOVERY API
-// ===============================
-export async function GET(
-  req: Request
-) {
-  try {
-    // ===============================
-    // PARSE URL
-    // ===============================
-    const { searchParams } =
-      new URL(req.url);
-
-    const eventId =
-      searchParams.get(
-        "eventId"
-      );
-
-    // ===============================
-    // VALIDATION
-    // ===============================
-    if (!eventId) {
-      return Response.json(
-        {
-          success: false,
-          error:
-            "Missing eventId",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    console.log(
-      "🛠 Recovery request received:",
-      eventId
-    );
-
-    // ===============================
-    // RUN RECOVERY ENGINE
-    // ===============================
-    const result =
-      await recoverEvent(
-        eventId
-      );
-
-    // ===============================
-    // SUCCESS RESPONSE
-    // ===============================
-    return Response.json({
-      success: true,
-      recovery: result,
-    });
-  } catch (
-    err: unknown
-  ) {
-    console.error(
-      "❌ Recovery route failed:",
-      err
-    );
-
-    // ===============================
-    // SAFE ERROR RESPONSE
-    // ===============================
-    return Response.json(
-      {
-        success: false,
-        error:
-          err instanceof Error
-            ? err.message
-            : "RECOVERY_ROUTE_FAILED",
-      },
-      {
-        status: 500,
-      }
-    );
-  }
-}
+export const GET = withSecurity(
+  async (req, _ctx) => {
+    const eventId = req.nextUrl.searchParams.get("eventId");
+    if (!eventId) return NextResponse.json({ success: false, error: "Missing eventId" }, { status: 400 });
+    const result = await recoverEvent(eventId);
+    return NextResponse.json({ success: true, recovery: result });
+  },
+  { requireAuth: true, requireRole: ["admin"], rateLimit: RATE_LIMITS.authenticated }
+);

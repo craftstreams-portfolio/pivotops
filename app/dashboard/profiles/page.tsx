@@ -96,6 +96,7 @@ export default function ProfilePage() {
   const [saving,          setSaving]          = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [toasts,          setToasts]          = useState<Toast[]>([]);
+  const [isEditing,       setIsEditing]       = useState(false);
 
   // Form state
   const [fullName,    setFullName]    = useState("");
@@ -126,6 +127,7 @@ export default function ProfilePage() {
         const p = await getCurrentProfile();
         if (p) {
           setProfile(p);
+          setIsEditing(false);
           setFullName(p.full_name   ?? "");
           setEmail(p.email          ?? null);
           setRole(p.role            ?? null);
@@ -172,6 +174,7 @@ export default function ProfilePage() {
         phone:       phone.trim()      || undefined,
       });
       setProfile(saved);
+      setIsEditing(false);
       showToast("success", "Profile saved successfully");
     } catch (err) {
       showToast("error", err instanceof Error ? err.message : String(err));
@@ -233,6 +236,43 @@ export default function ProfilePage() {
           </p>
         </div>
 
+        {/* Summary view — collapsed when not editing */}
+        {!isEditing && profile && (
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5 space-y-4">
+            <div className="flex items-center gap-4">
+              <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-zinc-700
+                              flex items-center justify-center bg-zinc-800 flex-shrink-0">
+                {avatarUrl
+                  ? <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                  : <span className="text-xl font-bold text-zinc-400">{getInitials(fullName || null, email)}</span>
+                }
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-white font-semibold text-base truncate">{fullName || "—"}</p>
+                <p className="text-zinc-500 text-sm truncate">{email}</p>
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {role && <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">{role}</span>}
+                  {department && <span className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">{department}</span>}
+                  {position && <span className="text-[11px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400 border border-zinc-700">{position}</span>}
+                  {workMode && <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">{workMode}</span>}
+                  {location && <span className="text-[11px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-500 border border-zinc-700">{location}</span>}
+                  {dateJoined && <span className="text-[11px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400 border border-zinc-700">{yearsOfService} tenure</span>}
+                </div>
+              </div>
+            </div>
+            <div className="h-px bg-zinc-800" />
+            <div className="flex items-center justify-between text-xs text-zinc-500">
+              <span>Profile {pct}% complete</span>
+              <button onClick={() => setIsEditing(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600
+                           hover:bg-indigo-500 text-white text-xs font-semibold transition">
+                Edit Profile
+              </button>
+            </div>
+          </div>
+        )}
+
+        {(isEditing || !profile) && <>
         {/* Avatar + identity */}
         <div className="flex items-center gap-5">
           <div className="relative flex-shrink-0">
@@ -428,6 +468,13 @@ export default function ProfilePage() {
         <p className="text-[11px] text-zinc-600 text-center">
           Profile syncs automatically to clocking, chat, onboarding, compliance and task center.
         </p>
+        {profile && (
+          <button onClick={() => setIsEditing(false)}
+            className="w-full py-2 text-xs text-zinc-600 hover:text-zinc-400 transition">
+            Cancel editing
+          </button>
+        )}
+        </>}
       </div>
     </>
   );

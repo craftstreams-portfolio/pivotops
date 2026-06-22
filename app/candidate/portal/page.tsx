@@ -1,11 +1,11 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { createClient } from "@supabase/supabase-js";
 import {
   Upload, Eye, CheckCircle2, XCircle,
   Brain, Loader2, AlertCircle, ZoomIn,
-  ZoomOut, X, FileText, Shield, LogOut,
+  ZoomOut, X, FileText, Shield, LogOut, Plus,
 } from "lucide-react";
 
 const supabase = createClient(
@@ -15,47 +15,58 @@ const supabase = createClient(
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const MAX_FILE_SIZE_MB = 10;
-const ALLOWED_TYPES    = ["application/pdf", "image/jpeg", "image/png", "image/webp",
-                          "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
+const ALLOWED_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/webp",
+  "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
 
-const CREDENTIAL_TYPES = [
-  { key: "resume",           label: "Resume / CV",              required: true  },
-  { key: "nursing_license",  label: "Nursing License",           required: true  },
-  { key: "drivers_license",  label: "Driver's License",          required: true  },
-  { key: "flu_shot",         label: "Flu Shot Record",           required: true  },
-  { key: "covid_vaccine",    label: "COVID-19 Vaccination",      required: true  },
-  { key: "hep_b",            label: "Hepatitis B Record",        required: true  },
-  { key: "mmr",              label: "MMR Vaccination",           required: true  },
-  { key: "chest_xray",       label: "Chest X-Ray",               required: true  },
-  { key: "bls_cpr",          label: "BLS / CPR Certification",   required: true  },
-  { key: "drug_screening",   label: "Drug Screening Results",    required: true  },
-  { key: "background_check", label: "Background Check",          required: true  },
+// Full healthcare compliance set — unchanged from before.
+const HEALTHCARE_CREDENTIAL_TYPES = [
+  { key: "resume", label: "Resume / CV", required: true },
+  { key: "nursing_license", label: "Nursing License", required: true },
+  { key: "drivers_license", label: "Driver's License", required: true },
+  { key: "flu_shot", label: "Flu Shot Record", required: true },
+  { key: "covid_vaccine", label: "COVID-19 Vaccination", required: true },
+  { key: "hep_b", label: "Hepatitis B Record", required: true },
+  { key: "mmr", label: "MMR Vaccination", required: true },
+  { key: "chest_xray", label: "Chest X-Ray", required: true },
+  { key: "bls_cpr", label: "BLS / CPR Certification", required: true },
+  { key: "drug_screening", label: "Drug Screening Results", required: true },
+  { key: "background_check", label: "Background Check", required: true },
+];
+
+// Lightweight default set for non-healthcare roles. The "+" control lets
+// the candidate add more upload slots with their own labels on the fly.
+const GENERAL_CREDENTIAL_TYPES = [
+  { key: "resume", label: "Resume / CV", required: true },
+  { key: "license_certification", label: "License / Certification", required: true },
 ];
 
 interface Credential {
-  id:               string;
-  doc_type:         string;
-  file_url:         string | null;
-  file_name:        string | null;
-  file_size:        number | null;
-  status:           "pending" | "uploaded" | "approved" | "rejected";
+  id: string;
+  doc_type: string;
+  file_url: string | null;
+  file_name: string | null;
+  file_size: number | null;
+  status: "pending" | "uploaded" | "approved" | "rejected";
   rejection_reason: string | null;
-  submitted_at:     string | null;
-  updated_at:       string | null;
+  submitted_at: string | null;
+  updated_at: string | null;
+  name?: string | null;
 }
 
 interface CandidateAccount {
-  id:           string;
-  full_name:    string;
-  email:        string;
-  ssn_last4:    string | null;
-  city:         string | null;
-  state:        string | null;
-  country:      string | null;
-  role:         string | null;
+  id: string;
+  full_name: string;
+  email: string;
+  ssn_last4: string | null;
+  city: string | null;
+  state: string | null;
+  country: string | null;
+  role: string | null;
   candidate_id: string | null;
-  tenant_id:    string;
+  tenant_id: string;
 }
+
+type CredentialType = { key: string; label: string; required: boolean };
 
 // ── Retry helper ──────────────────────────────────────────────────────────────
 async function withRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 400): Promise<T> {
@@ -105,26 +116,27 @@ function DocViewer({ url, name, onClose }: { url: string; name: string; onClose:
 }
 
 // ── Credential Row ────────────────────────────────────────────────────────────
-function CredentialRow({ type, credential, accountId, candidateId, tenantId, onUpdate }: {
-  type:        { key: string; label: string; required: boolean };
-  credential:  Credential | null;
-  accountId:   string;
+function CredentialRow({ type, credential, accountId, candidateId, tenantId, onUpdate, removable, onRemove }: {
+  type: CredentialType;
+  credential: Credential | null;
+  accountId: string;
   candidateId: string;
-  tenantId:    string;
-  onUpdate:    (cred: Credential) => void;
+  tenantId: string;
+  onUpdate: (cred: Credential) => void;
+  removable?: boolean;
+  onRemove?: () => void;
 }) {
-  const [uploading,  setUploading]  = useState(false);
-  const [viewing,    setViewing]    = useState(false);
-  const [uploadErr,  setUploadErr]  = useState<string | null>(null);
-  const [progress,   setProgress]   = useState(0);
+  const [uploading, setUploading] = useState(false);
+  const [viewing, setViewing] = useState(false);
+  const [uploadErr, setUploadErr] = useState<string | null>(null);
+  const [progress, setProgress] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
-  const status  = credential?.status ?? "pending";
+  const status = credential?.status ?? "pending";
 
   const handleUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // ── Client-side validation ──────────────────────────────────────────────
     setUploadErr(null);
     if (!ALLOWED_TYPES.includes(file.type)) {
       setUploadErr("File type not allowed. Use PDF, JPG, PNG, or Word document.");
@@ -141,12 +153,11 @@ function CredentialRow({ type, credential, accountId, candidateId, tenantId, onU
     setProgress(10);
 
     try {
-      const ext  = file.name.split(".").pop()?.toLowerCase() ?? "bin";
+      const ext = file.name.split(".").pop()?.toLowerCase() ?? "bin";
       const path = `${tenantId}/${candidateId}/${type.key}_${Date.now()}.${ext}`;
 
       setProgress(30);
 
-      // ── Upload with retry ───────────────────────────────────────────────
       await withRetry(async () => {
         const { error: upErr } = await supabase.storage
           .from("credentials")
@@ -161,21 +172,21 @@ function CredentialRow({ type, credential, accountId, candidateId, tenantId, onU
 
       const record = {
         candidate_account_id: accountId,
-        candidate_id:         candidateId,
-        tenant_id:            tenantId,
-        doc_type:             type.key,
-        file_url:             fileUrl,
-        file_name:            file.name,
-        file_size:            file.size,
-        status:               "uploaded" as const,
-        rejection_reason:     null,
-        submitted_at:         new Date().toISOString(),
-        updated_at:           new Date().toISOString(),
+        candidate_id: candidateId,
+        tenant_id: tenantId,
+        doc_type: type.key,
+        name: type.label,
+        file_url: fileUrl,
+        file_name: file.name,
+        file_size: file.size,
+        status: "uploaded" as const,
+        rejection_reason: null,
+        submitted_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       };
 
       setProgress(85);
 
-      // ── Upsert credential record (idempotent) ───────────────────────────
       const result = await withRetry(async () => {
         if (credential?.id) {
           const { data, error } = await supabase
@@ -209,17 +220,17 @@ function CredentialRow({ type, credential, accountId, candidateId, tenantId, onU
       setUploading(false);
       e.target.value = "";
     }
-  }, [credential, accountId, candidateId, tenantId, type.key, onUpdate]);
+  }, [credential, accountId, candidateId, tenantId, type.key, type.label, onUpdate]);
 
   const statusColors: Record<string, string> = {
-    pending:  "border-zinc-800 bg-zinc-900",
+    pending: "border-zinc-800 bg-zinc-900",
     uploaded: "border-blue-500/20 bg-blue-500/5",
     approved: "border-emerald-500/20 bg-emerald-500/5",
     rejected: "border-red-500/20 bg-red-500/5",
   };
 
   const statusBadge: Record<string, React.ReactNode> = {
-    pending:  <span className="text-[10px] text-zinc-600">Not uploaded</span>,
+    pending: <span className="text-[10px] text-zinc-600">Not uploaded</span>,
     uploaded: <span className="text-[10px] text-blue-400 font-medium">Under Review</span>,
     approved: <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-medium"><CheckCircle2 size={10} />Approved</span>,
     rejected: <span className="flex items-center gap-1 text-[10px] text-red-400 font-medium"><XCircle size={10} />Rejected</span>,
@@ -260,7 +271,7 @@ function CredentialRow({ type, credential, accountId, candidateId, tenantId, onU
 
           <div className="flex items-center gap-1.5 flex-shrink-0">
             {credential?.file_url && (
-              <button onClick={() => setViewing(true)}
+              <button onClick={() => credential?.file_url && window.open(credential.file_url, "_blank", "noopener,noreferrer")}
                 className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-zinc-700 text-xs text-zinc-400 hover:text-white hover:border-zinc-600 transition">
                 <Eye size={12} /> View
               </button>
@@ -268,26 +279,30 @@ function CredentialRow({ type, credential, accountId, candidateId, tenantId, onU
             <button onClick={() => fileRef.current?.click()}
               disabled={uploading || status === "approved"}
               className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition disabled:opacity-40
-                ${status === "approved"  ? "border border-emerald-500/20 text-emerald-400 cursor-not-allowed" :
-                  status === "rejected"  ? "bg-indigo-600 hover:bg-indigo-500 text-white" :
+                ${status === "approved" ? "border border-emerald-500/20 text-emerald-400 cursor-not-allowed" :
+                  status === "rejected" ? "bg-indigo-600 hover:bg-indigo-500 text-white" :
                   "border border-zinc-700 text-zinc-400 hover:text-white hover:border-zinc-600"}`}>
               {uploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
               {status === "approved" ? "✓ Approved" : status === "rejected" ? "Re-upload" : credential ? "Replace" : "Upload"}
             </button>
+            {removable && status === "pending" && (
+              <button onClick={onRemove}
+                className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs text-zinc-600 hover:text-red-400 transition">
+                <X size={12} />
+              </button>
+            )}
             <input ref={fileRef} type="file" className="hidden"
               accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"
               onChange={handleUpload} />
           </div>
         </div>
 
-        {/* Progress bar */}
         {uploading && progress > 0 && (
           <div className="mt-3 h-1 bg-zinc-800 rounded-full overflow-hidden">
             <div className="h-full bg-indigo-500 rounded-full transition-all duration-300" style={{ width: `${progress}%` }} />
           </div>
         )}
 
-        {/* Upload error */}
         {uploadErr && (
           <p className="mt-2 text-[11px] text-red-400 bg-red-500/10 rounded-lg px-3 py-1.5">{uploadErr}</p>
         )}
@@ -298,21 +313,31 @@ function CredentialRow({ type, credential, accountId, candidateId, tenantId, onU
 
 // ── Main Portal ───────────────────────────────────────────────────────────────
 function CandidatePortalPage({ candidateId, tenantId }: { candidateId: string; tenantId: string }) {
-  const [account,     setAccount]     = useState<CandidateAccount | null>(null);
+  const [account, setAccount] = useState<CandidateAccount | null>(null);
+  const [roleCategory, setRoleCategory] = useState<"healthcare" | "general">("healthcare");
   const [credentials, setCredentials] = useState<Credential[]>([]);
-  const [loading,     setLoading]     = useState(true);
-  const [submitting,  setSubmitting]  = useState(false);
-  const [submitted,   setSubmitted]   = useState(false);
-  const [error,       setError]       = useState("");
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState("");
   const [submitError, setSubmitError] = useState("");
+  const [addingCustom, setAddingCustom] = useState(false);
+  const [customLabel, setCustomLabel] = useState("");
+  const [addingBusy, setAddingBusy] = useState(false);
 
-  // ── Load account + credentials ────────────────────────────────────────────
+  const baseTypes: CredentialType[] = roleCategory === "general" ? GENERAL_CREDENTIAL_TYPES : HEALTHCARE_CREDENTIAL_TYPES;
+  const baseKeys = new Set(baseTypes.map(t => t.key));
+  const dynamicTypes: CredentialType[] = credentials
+    .filter(c => !baseKeys.has(c.doc_type))
+    .map(c => ({ key: c.doc_type, label: c.name || c.doc_type, required: false }));
+  const effectiveTypes: CredentialType[] = [...baseTypes, ...dynamicTypes];
+
+  // ── Load account + role_category + credentials ────────────────────────────
   useEffect(() => {
     const load = async () => {
       if (!candidateId) { setError("Invalid portal link."); setLoading(false); return; }
 
       try {
-        // Fetch account — use array + limit to avoid 406 from multiple rows
         const { data: accs, error: accErr } = await supabase
           .from("candidate_accounts")
           .select("*")
@@ -331,7 +356,13 @@ function CandidatePortalPage({ candidateId, tenantId }: { candidateId: string; t
 
         setAccount(acc as CandidateAccount);
 
-        // Fetch credentials
+        const { data: candidateRow } = await supabase
+          .from("candidates")
+          .select("role_category")
+          .eq("id", candidateId)
+          .maybeSingle();
+        if (candidateRow?.role_category === "general") setRoleCategory("general");
+
         const { data: creds, error: credsErr } = await supabase
           .from("candidate_credentials")
           .select("*")
@@ -357,9 +388,7 @@ function CandidatePortalPage({ candidateId, tenantId }: { candidateId: string; t
     const channel = supabase
       .channel(`credentials:${candidateId}`)
       .on("postgres_changes", {
-        event:  "*",
-        schema: "public",
-        table:  "candidate_credentials",
+        event: "*", schema: "public", table: "candidate_credentials",
         filter: `candidate_id=eq.${candidateId}`,
       }, payload => {
         if (payload.eventType === "UPDATE" || payload.eventType === "INSERT") {
@@ -368,6 +397,9 @@ function CandidatePortalPage({ candidateId, tenantId }: { candidateId: string; t
             const exists = prev.find(c => c.id === updated.id);
             return exists ? prev.map(c => c.id === updated.id ? updated : c) : [...prev, updated];
           });
+        } else if (payload.eventType === "DELETE") {
+          const deletedId = (payload.old as any).id;
+          setCredentials(prev => prev.filter(c => c.id !== deletedId));
         }
       })
       .subscribe();
@@ -381,11 +413,49 @@ function CandidatePortalPage({ candidateId, tenantId }: { candidateId: string; t
     });
   }, []);
 
+  // ── Add a custom credential slot ("+" button) ──────────────────────────────
+  const handleAddCustom = async () => {
+    if (!account || !customLabel.trim()) return;
+    setAddingBusy(true);
+    try {
+      const docType = `custom_${Date.now()}`;
+      const { data, error } = await supabase
+        .from("candidate_credentials")
+        .insert({
+          candidate_account_id: account.id,
+          candidate_id: candidateId,
+          tenant_id: tenantId,
+          doc_type: docType,
+          name: customLabel.trim(),
+          status: "pending",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
+      if (error) throw new Error(error.message);
+      setCredentials(prev => [...prev, data as Credential]);
+      setCustomLabel("");
+      setAddingCustom(false);
+    } catch (err) {
+      console.error("Add custom credential failed:", err);
+    } finally {
+      setAddingBusy(false);
+    }
+  };
+
+  const handleRemoveDynamic = async (credentialId: string) => {
+    await supabase.from("candidate_credentials").delete().eq("id", credentialId);
+    setCredentials(prev => prev.filter(c => c.id !== credentialId));
+  };
+
   const handleSubmit = async () => {
     if (!account) return;
     setSubmitError("");
 
-    const missing = CREDENTIAL_TYPES.filter(t => {
+    // Only the base, role-appropriate types block submission — a custom
+    // slot the candidate added and abandoned shouldn't trap them.
+    const missing = baseTypes.filter(t => {
       const cred = credentials.find(c => c.doc_type === t.key);
       return t.required && (!cred || cred.status === "pending");
     });
@@ -405,7 +475,6 @@ function CandidatePortalPage({ candidateId, tenantId }: { candidateId: string; t
 
     try {
       await withRetry(async () => {
-        // Mark all uploaded credentials as submitted
         const { error: submitErr } = await supabase
           .from("candidate_credentials")
           .update({ submitted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
@@ -414,20 +483,19 @@ function CandidatePortalPage({ candidateId, tenantId }: { candidateId: string; t
         if (submitErr) throw new Error(submitErr.message);
       });
 
-      // Sync to compliance_docs for recruiter view
-      const docsToSync = CREDENTIAL_TYPES.map(t => {
+      const docsToSync = effectiveTypes.map(t => {
         const cred = credentials.find(c => c.doc_type === t.key);
         return {
-          tenant_id:            tenantId,
-          candidate_id:         candidateId,
+          tenant_id: tenantId,
+          candidate_id: candidateId,
           candidate_account_id: account.id,
-          name:                 t.label,
-          employee_name:        account.full_name,
-          status:               cred?.status === "approved" ? "approved" : "pending",
-          file_url:             cred?.file_url  ?? null,
-          file_name:            cred?.file_name ?? null,
-          submitted_at:         new Date().toISOString(),
-          updated_at:           new Date().toISOString(),
+          name: t.label,
+          employee_name: account.full_name,
+          status: cred?.status === "approved" ? "approved" : "pending",
+          file_url: cred?.file_url ?? null,
+          file_name: cred?.file_name ?? null,
+          submitted_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         };
       });
 
@@ -497,7 +565,7 @@ function CandidatePortalPage({ candidateId, tenantId }: { candidateId: string; t
           document and notify you if anything needs to be re-uploaded.
         </p>
         <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4 text-left space-y-1">
-          {CREDENTIAL_TYPES.map(t => {
+          {effectiveTypes.map(t => {
             const cred = credentials.find(c => c.doc_type === t.key);
             return (
               <div key={t.key} className="flex items-center gap-2 text-xs">
@@ -517,15 +585,14 @@ function CandidatePortalPage({ candidateId, tenantId }: { candidateId: string; t
     </div>
   );
 
-  const uploadedCount  = CREDENTIAL_TYPES.filter(t => credentials.find(c => c.doc_type === t.key && c.status !== "pending")).length;
-  const approvedCount  = credentials.filter(c => c.status === "approved").length;
-  const rejectedCount  = credentials.filter(c => c.status === "rejected").length;
-  const allUploaded    = uploadedCount === CREDENTIAL_TYPES.length;
-  const pct            = Math.round((uploadedCount / CREDENTIAL_TYPES.length) * 100);
+  const uploadedCount = baseTypes.filter(t => credentials.find(c => c.doc_type === t.key && c.status !== "pending")).length;
+  const approvedCount = credentials.filter(c => c.status === "approved").length;
+  const rejectedCount = credentials.filter(c => c.status === "rejected").length;
+  const allUploaded = uploadedCount === baseTypes.length;
+  const pct = Math.round((uploadedCount / baseTypes.length) * 100);
 
   return (
     <div className="min-h-screen bg-[#080810]">
-      {/* Header */}
       <div className="sticky top-0 z-10 bg-[#080810]/95 backdrop-blur border-b border-zinc-800 px-4 py-3">
         <div className="max-w-2xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -545,7 +612,6 @@ function CandidatePortalPage({ candidateId, tenantId }: { candidateId: string; t
           <p className="text-zinc-500 text-sm mt-1">Upload all required documents to complete your onboarding.</p>
         </div>
 
-        {/* Profile card */}
         <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5">
           <div className="flex items-center gap-2 mb-3">
             <Shield size={14} className="text-indigo-400" />
@@ -553,12 +619,12 @@ function CandidatePortalPage({ candidateId, tenantId }: { candidateId: string; t
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
             {([
-              ["Full Name",  account?.full_name ?? "—"],
-              ["Email",      account?.email     ?? "—"],
-              ["Role",       account?.role      ?? "Candidate"],
+              ["Full Name", account?.full_name ?? "—"],
+              ["Email", account?.email ?? "—"],
+              ["Role", account?.role ?? "Candidate"],
               ["SSN Last 4", account?.ssn_last4 ? `***-**-${account.ssn_last4}` : "—"],
-              ["Location",   [account?.city, account?.state].filter(Boolean).join(", ") || "—"],
-              ["Country",    account?.country   ?? "—"],
+              ["Location", [account?.city, account?.state].filter(Boolean).join(", ") || "—"],
+              ["Country", account?.country ?? "—"],
             ] as [string, string][]).map(([label, value]) => (
               <div key={label} className="rounded-lg bg-zinc-800/50 px-3 py-2">
                 <p className="text-zinc-600 uppercase tracking-wider text-[9px]">{label}</p>
@@ -568,11 +634,10 @@ function CandidatePortalPage({ candidateId, tenantId }: { candidateId: string; t
           </div>
         </div>
 
-        {/* Progress */}
         <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
           <div className="flex justify-between text-xs mb-2">
             <span className="text-zinc-500">Upload progress</span>
-            <span className="text-white font-medium">{uploadedCount} / {CREDENTIAL_TYPES.length} · {pct}%</span>
+            <span className="text-white font-medium">{uploadedCount} / {baseTypes.length} · {pct}%</span>
           </div>
           <div className="h-2 bg-zinc-800 rounded-full overflow-hidden">
             <div className={`h-full rounded-full transition-all duration-700 ${allUploaded ? "bg-emerald-500" : "bg-indigo-500"}`}
@@ -585,7 +650,6 @@ function CandidatePortalPage({ candidateId, tenantId }: { candidateId: string; t
           </div>
         </div>
 
-        {/* Alerts */}
         {rejectedCount > 0 && (
           <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20">
             <AlertCircle size={15} className="text-red-400 flex-shrink-0 mt-0.5" />
@@ -602,10 +666,9 @@ function CandidatePortalPage({ candidateId, tenantId }: { candidateId: string; t
           </div>
         )}
 
-        {/* Credential cards */}
         <div className="space-y-2">
           <h2 className="text-xs font-semibold text-white/50 uppercase tracking-widest">Required Documents</h2>
-          {CREDENTIAL_TYPES.map(type => (
+          {effectiveTypes.map(type => (
             <CredentialRow
               key={type.key}
               type={type}
@@ -614,11 +677,51 @@ function CandidatePortalPage({ candidateId, tenantId }: { candidateId: string; t
               candidateId={candidateId}
               tenantId={tenantId}
               onUpdate={handleCredentialUpdate}
+              removable={!baseKeys.has(type.key)}
+              onRemove={() => {
+                const cred = credentials.find(c => c.doc_type === type.key);
+                if (cred) handleRemoveDynamic(cred.id);
+              }}
             />
           ))}
+
+          {/* "+" add custom credential slot — general roles only */}
+          {roleCategory === "general" && (
+            addingCustom ? (
+              <div className="rounded-xl border border-zinc-700 bg-zinc-900 p-4 flex items-center gap-2">
+                <input
+                  autoFocus
+                  value={customLabel}
+                  onChange={(e) => setCustomLabel(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleAddCustom()}
+                  placeholder="e.g. Food Handler Permit"
+                  className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-600 outline-none focus:border-indigo-500"
+                />
+                <button
+                  onClick={handleAddCustom}
+                  disabled={addingBusy || !customLabel.trim()}
+                  className="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold disabled:opacity-40 transition"
+                >
+                  {addingBusy ? "Adding..." : "Add"}
+                </button>
+                <button
+                  onClick={() => { setAddingCustom(false); setCustomLabel(""); }}
+                  className="px-2 py-2 text-zinc-500 hover:text-white transition"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setAddingCustom(true)}
+                className="w-full rounded-xl border border-dashed border-zinc-700 hover:border-zinc-500 p-4 flex items-center justify-center gap-2 text-sm text-zinc-400 hover:text-white transition"
+              >
+                <Plus size={14} /> Add another credential
+              </button>
+            )
+          )}
         </div>
 
-        {/* Submit */}
         <button onClick={handleSubmit} disabled={submitting || uploadedCount === 0}
           className="w-full flex items-center justify-center gap-2 py-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold disabled:opacity-40 transition shadow-lg shadow-emerald-900/20">
           {submitting ? <Loader2 size={16} className="animate-spin" /> : <Shield size={16} />}
@@ -636,14 +739,13 @@ function CandidatePortalPage({ candidateId, tenantId }: { candidateId: string; t
 // ── Params reader ─────────────────────────────────────────────────────────────
 function ParamsReader() {
   const [candidateId, setCandidateId] = useState("");
-  const [tenantId,    setTenantId]    = useState("default");
-  const [ready,       setReady]       = useState(false);
+  const [tenantId, setTenantId] = useState("default");
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
     const cId = p.get("candidateId") ?? "";
-    const tId = p.get("tenantId")    ?? "default";
-    console.log("Portal params:", { cId, tId });
+    const tId = p.get("tenantId") ?? "default";
     setCandidateId(cId);
     setTenantId(tId);
     setReady(true);

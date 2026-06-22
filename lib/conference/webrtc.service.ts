@@ -1,8 +1,8 @@
 import { supabase } from "../supabase";
 
-// ─────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // TYPES
-// ─────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface SignalMessage {
   type:      "offer" | "answer" | "ice-candidate" | "leave" | "mute" | "admit" | "kick";
   from:      string;
@@ -21,9 +21,9 @@ export interface PeerConnection {
   isSharing:  boolean;
 }
 
-// ─────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // ICE SERVERS (STUN/TURN)
-// ─────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const ICE_SERVERS: RTCIceServer[] = [
   { urls: "stun:stun.l.google.com:19302"    },
   { urls: "stun:stun1.l.google.com:19302"   },
@@ -31,9 +31,9 @@ const ICE_SERVERS: RTCIceServer[] = [
   { urls: "stun:stun3.l.google.com:19302"   },
 ];
 
-// ─────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // WebRTC ENGINE CLASS
-// ─────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export class WebRTCEngine {
   private roomId:     string;
   private userId:     string;
@@ -56,31 +56,35 @@ export class WebRTCEngine {
     this.userId = userId;
   }
 
-  // ── Get local media ───────────────────
   async getLocalStream(video = true, audio = true): Promise<MediaStream> {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: video ? {
-          width:       { ideal: 1920 },
-          height:      { ideal: 1080 },
-          frameRate:   { ideal: 30 },
-          facingMode:  "user",
-        } : false,
-        audio: audio ? {
-          echoCancellation:    true,
-          noiseSuppression:    true,
-          autoGainControl:     true,
-          sampleRate:          48000,
-        } : false,
-      });
-      this.localStream = stream;
-      return stream;
-    } catch (err) {
-      throw new Error(`Media access failed: ${err instanceof Error ? err.message : String(err)}`);
+    const { safeGetUserMedia } = await import("../media/safeGetUserMedia");
+
+    const constraints: MediaStreamConstraints = {
+      video: video ? {
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        frameRate:   { ideal: 30 },
+        facingMode:  "user",
+      } : false,
+      audio: audio ? {
+        echoCancellation:    true,
+        noiseSuppression:    true,
+        autoGainControl:     true,
+      } : false,
+    };
+
+    const { stream, error } = await safeGetUserMedia(constraints);
+
+    if (error || !stream) {
+      this.onError?.(error ?? "Media access failed.");
+      throw new Error(error ?? "Media access failed.");
     }
+
+    this.localStream = stream;
+    return stream;
   }
 
-  // ── Get screen share stream ───────────
+  // â”€â”€ Get screen share stream â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async getScreenStream(): Promise<MediaStream> {
     try {
       const stream = await (navigator.mediaDevices as any).getDisplayMedia({
@@ -94,7 +98,7 @@ export class WebRTCEngine {
     }
   }
 
-  // ── Stop screen share ─────────────────
+  // â”€â”€ Stop screen share â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   stopScreenShare() {
     this.screenStream?.getTracks().forEach((t) => t.stop());
     this.screenStream = null;
@@ -111,7 +115,7 @@ export class WebRTCEngine {
     }
   }
 
-  // ── Start screen share ────────────────
+  // â”€â”€ Start screen share â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async startScreenShare(): Promise<MediaStream> {
     const stream = await this.getScreenStream();
     const videoTrack = stream.getVideoTracks()[0];
@@ -126,7 +130,7 @@ export class WebRTCEngine {
     return stream;
   }
 
-  // ── Join room ─────────────────────────
+  // â”€â”€ Join room â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async joinRoom(existingPeerIds: string[]) {
     // Subscribe to signaling channel
     this.channel = supabase
@@ -144,7 +148,7 @@ export class WebRTCEngine {
     }
   }
 
-  // ── Leave room ────────────────────────
+  // â”€â”€ Leave room â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async leaveRoom() {
     await this.sendSignal({ type: "leave", from: this.userId, roomId: this.roomId, payload: {} });
 
@@ -168,7 +172,7 @@ export class WebRTCEngine {
     this.audioCtx = null;
   }
 
-  // ── Mute/unmute local audio ───────────
+  // â”€â”€ Mute/unmute local audio â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   setMuted(muted: boolean) {
     this.localStream?.getAudioTracks().forEach((t) => { t.enabled = !muted; });
     this.sendSignal({
@@ -179,7 +183,7 @@ export class WebRTCEngine {
     });
   }
 
-  // ── Enable/disable local video ────────
+  // â”€â”€ Enable/disable local video â”€â”€â”€â”€â”€â”€â”€â”€
   setVideoEnabled(enabled: boolean) {
   if (!this.localStream) return;
   const videoTracks = this.localStream.getVideoTracks();
@@ -195,7 +199,7 @@ export class WebRTCEngine {
   }
 }
 
-  // ── Audio level detection ─────────────
+  // â”€â”€ Audio level detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   startAudioLevelDetection(stream: MediaStream, userId: string) {
     if (!this.audioCtx) {
       this.audioCtx = new AudioContext();
@@ -220,7 +224,7 @@ export class WebRTCEngine {
     }
   }
 
-  // ── Create peer connection ────────────
+  // â”€â”€ Create peer connection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   private async createPeerConnection(peerId: string, initiator: boolean) {
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
 
@@ -282,7 +286,7 @@ export class WebRTCEngine {
     return pc;
   }
 
-  // ── Handle incoming signal ────────────
+  // â”€â”€ Handle incoming signal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   private async handleSignal(msg: SignalMessage) {
     if (msg.from === this.userId) return;
     if (msg.to && msg.to !== this.userId) return;
@@ -344,20 +348,20 @@ export class WebRTCEngine {
     }
   }
 
-  // ── Send signal via Supabase broadcast ─
+  // â”€â”€ Send signal via Supabase broadcast â”€
   private sendSignal(msg: SignalMessage) {
     this.channel?.send({ type: "broadcast", event: "signal", payload: msg });
   }
 
-  // ── Get peers ─────────────────────────
+  // â”€â”€ Get peers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   getPeers(): PeerConnection[] {
     return Array.from(this.peers.values());
   }
 }
 
-// ─────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // MEETING DB OPERATIONS
-// ─────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface Meeting {
   id:                     string;
   title:                  string;
@@ -518,3 +522,4 @@ export function subscribeToMeetingParticipants(
 
   return () => { supabase.removeChannel(channel); };
 }
+

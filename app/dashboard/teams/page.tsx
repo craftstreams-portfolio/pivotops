@@ -353,7 +353,7 @@ function CandidateCard({
   const scoreCls  = score >= 80 ? "text-emerald-400" : score >= 70 ? "text-amber-400" : "text-red-400";
   const scoreBar  = score >= 80 ? "bg-emerald-500"   : score >= 70 ? "bg-amber-500"   : "bg-red-500";
 
-  const handleAction = async (action: "proceed_onboarding" | "decline_candidate") => {
+  const handleAction = async (action: "schedule_interview" | "send_offer" | "proceed_onboarding" | "decline_candidate") => {
     if (!currentUser || acting) return;
     setActing(true);
     try {
@@ -371,7 +371,7 @@ function CandidateCard({
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message);
+      if (!res.ok) throw new Error(data?.error || data?.message || ("Request failed: " + res.status));
       setDone(action);
       setShowDecline(false);
       onActioned();
@@ -499,6 +499,10 @@ function CandidateCard({
                     <CheckCircle2 size={13} />
                     {done === "proceed_onboarding"
                       ? "Onboarding & compliance triggered"
+                      : done === "schedule_interview"
+                      ? "Interview scheduled"
+                      : done === "send_offer"
+                      ? "Offer sent"
                       : "Candidate declined"}
                   </div>
                 ) : (
@@ -527,6 +531,17 @@ function CandidateCard({
                             : "border-zinc-700 text-zinc-400 hover:border-red-500/30 hover:text-red-400"}`}
                       >
                         <X size={12} /> Decline
+                      </button>
+                    </div>
+
+                    <div className="flex gap-2 mt-2">
+                      <button onClick={() => handleAction("schedule_interview")} disabled={acting} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-zinc-700 text-zinc-300 hover:border-indigo-500/40 hover:text-indigo-400 text-xs font-semibold disabled:opacity-50 transition">
+                        {acting ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
+                        Schedule Interview
+                      </button>
+                      <button onClick={() => handleAction("send_offer")} disabled={acting} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-zinc-700 text-zinc-300 hover:border-blue-500/40 hover:text-blue-400 text-xs font-semibold disabled:opacity-50 transition">
+                        {acting ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
+                        Send Offer
                       </button>
                     </div>
 
@@ -911,6 +926,9 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
   });
   const [queueCount, setQueueCount] = useState(0);
 
+  const [typingUsers, setTypingUsers] = useState<Record<string, string>>({});
+  const typingChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const typingTimerRef   = useRef<Record<string, NodeJS.Timeout>>({});
   const [quotedMsg,   setQuotedMsg]   = useState<Message | null>(null);
   const [showEmoji,   setShowEmoji]   = useState(false);
   const [showMeme,    setShowMeme]    = useState(false);
@@ -942,7 +960,7 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
         full_name: session.user.email?.split("@")[0] ?? "User",
         email: session.user.email ?? null,
         department: null, position: null, role: null,
-        avatar_url: null, tenant_id: "default", timezone: null,
+        avatar_url: null, tenant_id: "", timezone: null,
         location: null, work_mode: null, date_joined: null,
         phone: null, created_at: null, updated_at: null,
       });
@@ -967,6 +985,7 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
     supabase
       .from("channels")
       .select("*")
+      .eq("tenant_id", tenantId)
       .then(({ data }) => {
         const all     = data ?? [];
         const regular = all.filter((c: any) => !c.type || c.type === "channel");
@@ -988,19 +1007,41 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
   useEffect(() => {
     if (!activeChannel) return;
     if (unsubRef.current) unsubRef.current();
-    getMessages(activeChannel.id).then((msgs) => {
-      setMessages(msgs);
-      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
-    });
+
+    const channelId = activeChannel.id;
+
+    const fetchLatest = () => {
+      getMessages(channelId).then((msgs) => {
+        setMessages((prev) => {
+          if (prev.length !== msgs.length) return msgs;
+          const prevIds = new Set(prev.map((m) => m.id));
+          const hasNew = msgs.some((m) => !prevIds.has(m.id));
+          return hasNew ? msgs : prev;
+        });
+      });
+    };
+
+    fetchLatest();
+    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+
     unsubRef.current = subscribeToChannel(
-      activeChannel.id,
+      channelId,
       (msg) => {
         setMessages((prev) => prev.find((m) => m.id === msg.id) ? prev : [...prev, msg]);
         setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
       },
       (msg) => setMessages((prev) => prev.map((m) => m.id === msg.id ? msg : m))
     );
-    return () => { if (unsubRef.current) unsubRef.current(); };
+
+    // Polling fallback -- guards against realtime websocket disconnects,
+    // which this environment has hit repeatedly. The comparison above
+    // skips the state update entirely when nothing actually changed.
+    const pollId = setInterval(fetchLatest, 8000);
+
+    return () => {
+      if (unsubRef.current) unsubRef.current();
+      clearInterval(pollId);
+    };
   }, [activeChannel]);
 
   // ── Presence ───────────────────────────
@@ -1242,7 +1283,7 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
                   ? "bg-indigo-500/15 text-white"
                   : "text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200"}`}>
               <Hash size={13} className="flex-shrink-0" />
-              <span className="text-sm flex-1 truncate">{ch.name}</span>
+              <span className="text-sm flex-1 truncate">{ch.name}</span>{(unreadCounts[ch.id] ?? 0) > 0 && activeChannel?.id !== ch.id && (<span className="ml-1 min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-500 text-white text-[10px] font-bold flex items-center justify-center">{(unreadCounts[ch.id] ?? 0) > 99 ? "99+" : unreadCounts[ch.id]}</span>)}
             </button>
           ))}
 
@@ -1439,6 +1480,36 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
                   <div ref={bottomRef} />
                 </div>
 
+                {/* Typing indicator */}
+                {Object.keys(typingUsers).length > 0 && (
+                  <div className="px-5 py-1 flex items-center gap-2">
+                    <div className="flex gap-0.5">
+                      {[0,1,2].map((i) => (
+                        <span key={i} className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce"
+                          style={{ animationDelay: `${i * 0.15}s` }} />
+                      ))}
+                    </div>
+                    <span className="text-[11px] text-zinc-500">
+                      {Object.values(typingUsers).join(", ")} {Object.keys(typingUsers).length === 1 ? "is" : "are"} typing...
+                    </span>
+                  </div>
+                )}
+
+                {/* Typing indicator */}
+                {Object.keys(typingUsers).length > 0 && (
+                  <div className="px-5 py-1 flex items-center gap-2">
+                    <div className="flex gap-0.5">
+                      {[0,1,2].map((i) => (
+                        <span key={i} className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce"
+                          style={{ animationDelay: `${i * 0.15}s` }} />
+                      ))}
+                    </div>
+                    <span className="text-[11px] text-zinc-500">
+                      {Object.values(typingUsers).join(", ")} {Object.keys(typingUsers).length === 1 ? "is" : "are"} typing...
+                    </span>
+                  </div>
+                )}
+
                 {/* Compose */}
                 <div className="flex-shrink-0 border-t border-zinc-800 bg-[#0a0a12] px-4 py-3">
                   {quotedMsg && (
@@ -1484,7 +1555,15 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
                                       focus-within:border-zinc-600 transition">
                         <MentionInput
                           value={mention.value}
-                          onChange={mention.setValue}
+                          onChange={(v) => {
+                            mention.setValue(v);
+                            if (typingChannelRef.current && currentUser && activeChannel) {
+                              typingChannelRef.current.send({
+                                type: "broadcast", event: "typing",
+                                payload: { userId: currentUser.id, userName: currentUser.full_name ?? currentUser.email ?? "Someone" },
+                              });
+                            }
+                          }}
                           onSubmit={handleSend}
                           suggestions={mention.suggestions}
                           showSuggest={mention.showSuggest}

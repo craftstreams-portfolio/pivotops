@@ -232,6 +232,7 @@ export default function TaskCenterPage() {
   const [description, setDescription] = useState("");
   const [priority,    setPriority]    = useState<Priority>("medium");
   const [dueDate,     setDueDate]     = useState("");
+  const [dueTime,     setDueTime]     = useState("");
   const [showForm,    setShowForm]    = useState(false);
 
   // Mention state
@@ -370,6 +371,7 @@ export default function TaskCenterPage() {
     setInput("");
     setDescription("");
     setDueDate("");
+    setDueTime("");
     setShowForm(false);
 
     try {
@@ -382,7 +384,7 @@ export default function TaskCenterPage() {
           status:      "active",
           done:        false,
           created_by:  currentUser.id,
-          due_date:    dueDate || null,
+          due_date:    dueDate ? (dueTime ? new Date(dueDate + "T" + dueTime).toISOString() : new Date(dueDate).toISOString()) : null,
           tenant_id:   tenantId,
           attention:   { users: [], departments: [], escalated: false },
           mention_count: 0,
@@ -592,11 +594,17 @@ export default function TaskCenterPage() {
 
             <div>
               <label className="text-xs text-zinc-500 mb-1.5 block flex items-center gap-1">
-                <Calendar size={10} /> Due Date
+                <Calendar size={10} /> Due Date & Time
               </label>
-              <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)}
-                className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5
-                           text-xs text-white outline-none focus:border-zinc-500 transition" />
+              <div className="flex gap-2">
+                <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)}
+                  className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5
+                             text-xs text-white outline-none focus:border-zinc-500 transition" />
+                <input type="time" value={dueTime} onChange={(e) => setDueTime(e.target.value)}
+                  disabled={!dueDate}
+                  className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5
+                             text-xs text-white outline-none focus:border-zinc-500 transition disabled:opacity-40" />
+              </div>
             </div>
           </div>
 
@@ -616,7 +624,7 @@ export default function TaskCenterPage() {
           )}
 
           <div className="flex gap-3">
-            <button onClick={() => { setShowForm(false); setInput(""); setDescription(""); setDueDate(""); }}
+            <button onClick={() => { setShowForm(false); setInput(""); setDescription(""); setDueDate(""); setDueTime(""); }}
               className="flex-1 py-2.5 rounded-xl border border-zinc-700 text-sm text-zinc-400 hover:text-white transition">
               Cancel
             </button>

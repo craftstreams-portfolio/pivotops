@@ -18,7 +18,12 @@ function extractMessage(err: unknown): string {
 // vercel.json:
 // { "crons": [{ "path": "/api/spotlight/reveal", "schedule": "0 5 1 * *" }] }
 // ─────────────────────────────────────────
-export async function POST() {
+export async function POST(req: Request) {
+  const authHeader = (req as any).headers?.get?.("authorization") ?? "";
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   try {
     const now = new Date();
 

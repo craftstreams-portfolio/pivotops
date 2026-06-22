@@ -38,7 +38,7 @@ export async function POST(req: Request) {
       cover_letter:     body.cover_letter?.trim()     ?? "",
       resume_url:       body.resume_url               ?? null,
       resume_name:      body.resume_name              ?? null,
-      tenant_id:        body.tenant_id                ?? "default",
+      tenant_id:        body.tenant_id,
     });
 
     const tenantId    = body.tenant_id ?? "default";

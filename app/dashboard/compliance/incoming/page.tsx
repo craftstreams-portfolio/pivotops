@@ -224,7 +224,7 @@ function CredentialCard({ cred, reviewer, onUpdate }: {
           </span>
 
           {hasFile && (
-            <button onClick={() => setViewing(true)} style={{ padding:"5px 10px", borderRadius:6, border:"1px solid rgba(255,255,255,0.1)", background:"transparent", color:"rgba(255,255,255,0.5)", fontSize:11, cursor:"pointer", display:"flex", alignItems:"center", gap:4 }}>
+            <button onClick={() => cred.file_url && window.open(cred.file_url, "_blank", "noopener,noreferrer")} style={{ padding:"5px 10px", borderRadius:6, border:"1px solid rgba(255,255,255,0.1)", background:"transparent", color:"rgba(255,255,255,0.5)", fontSize:11, cursor:"pointer", display:"flex", alignItems:"center", gap:4 }}>
               <Eye size={11} /> View
             </button>
           )}
@@ -384,7 +384,7 @@ export default function ComplianceIncomingPage() {
   // ── Realtime updates ─────────────────────────────────────────────────────
   useEffect(() => {
     const ch = supabase.channel("compliance-incoming")
-      .on("postgres_changes", { event:"*", schema:"public", table:"candidate_credentials" },
+      .on("postgres_changes", { event:"INSERT", schema:"public", table:"candidate_credentials" },
         () => setLastRefresh(Date.now()))
       .subscribe();
     return () => { supabase.removeChannel(ch); };

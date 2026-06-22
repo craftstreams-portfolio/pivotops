@@ -1,4 +1,5 @@
 "use client";
+import { safeGetUserMedia } from "@/lib/media/safeGetUserMedia";
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { supabase } from "@/lib/supabase";

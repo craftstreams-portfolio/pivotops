@@ -1,15 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
-const PUBLIC_ROUTES = ["/login","/candidate/login","/candidate/register","/candidate/portal","/applications"];
-const PUBLIC_API_PREFIXES = ["/api/recruitment/apply","/api/auth/callback","/api/auth/signout","/api/health"];
+
+const PUBLIC_ROUTES = ["/login","/onboarding","/candidate/login","/candidate/register","/candidate/portal","/applications","/apply"];
+const PUBLIC_API_PREFIXES = ["/api/recruitment/apply","/api/auth/callback","/api/auth/signout","/api/health","/api/public/tenant-lookup"];
+
 function applySecurityHeaders(response: NextResponse): NextResponse {
   response.headers.set("X-Frame-Options", "DENY");
   response.headers.set("X-Content-Type-Options", "nosniff");
   response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
-  response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  response.headers.set("Permissions-Policy", "camera=(self), microphone=(self), geolocation=()");
   response.headers.set("Content-Security-Policy", ["default-src 'self'","script-src 'self' 'unsafe-inline' 'unsafe-eval'","style-src 'self' 'unsafe-inline'","img-src 'self' data: blob: https:","font-src 'self'","connect-src 'self' https://*.supabase.co wss://*.supabase.co","frame-ancestors 'none'"].join("; "));
   return response;
 }
+
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
   if (pathname.startsWith("/_next") || pathname.startsWith("/favicon") || pathname.match(/\.(png|jpg|jpeg|svg|ico|webp|css|js|woff2?)$/)) return NextResponse.next();
@@ -34,4 +37,5 @@ export async function middleware(req: NextRequest) {
   }
   return applySecurityHeaders(response);
 }
+
 export const config = { matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"] };

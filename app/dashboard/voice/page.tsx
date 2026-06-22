@@ -1,975 +1,889 @@
 "use client";
-import { safeGetUserMedia } from "@/lib/media/safeGetUserMedia";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
-import { useTenant } from "@/lib/hooks/useTenant";
-import {
-  Mic, MicOff, PhoneOff, Plus, Users,
-  Volume2, VolumeX, Radio, Crown, X,
-  Loader2, Share2, ChevronDown, Smile,
-} from "lucide-react";
 
-// ─────────────────────────────────────────
-// TYPES
-// ─────────────────────────────────────────
+/* ────────────────────────────────────────────────────────────────────────
+   TYPES
+──────────────────────────────────────────────────────────────────────── */
 interface VoiceRoom {
-  id:         string;
-  name:       string;
+  id: string;
+  tenant_id: string;
+  name: string;
   created_by: string;
   department: string | null;
   created_at: string;
-  is_active:  boolean;
-  tenant_id:  string | null;
+  is_active: boolean;
+  ended_at: string | null;
+  duration_seconds: number | null;
 }
 
-interface RoomParticipant {
-  id:        string;
-  room_id:   string;
-  user_id:   string;
+interface VoiceRoomParticipant {
+  id: string;
+  tenant_id: string;
+  room_id: string;
+  user_id: string;
   joined_at: string;
-  left_at:   string | null;
-  tenant_id: string | null;
-  // enriched client-side
-  name?:       string;
-  role?:       "host" | "speaker" | "listener";
-  isMuted?:    boolean;
-  audioLevel?: number;
-  hasHand?:    boolean;
-  reactions?:  string[];
+  left_at: string | null;
+  hand_raised: boolean;
+  is_muted: boolean;
 }
 
-// ─────────────────────────────────────────
-// CONSTANTS
-// ─────────────────────────────────────────
-const EMOJI_LIST = ["👍","👎","❤️","😂","😮","🎉","🔥","✅","👏","🚀","💯","😎"];
-
-// ─────────────────────────────────────────
-// HELPERS
-// ─────────────────────────────────────────
-function getInitials(name: string) {
-  const p = name.trim().split(" ");
-  return p.length >= 2
-    ? `${p[0][0]}${p[p.length - 1][0]}`.toUpperCase()
-    : (name[0]?.toUpperCase() ?? "?");
+interface Profile {
+  id: string;
+  [key: string]: any;
 }
 
-function formatRelative(iso: string) {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1)  return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  return `${Math.floor(mins / 60)}h ago`;
+interface SignalMsg {
+  type: "offer" | "answer" | "ice" | "leave";
+  from: string;
+  to?: string;
+  payload: any;
 }
 
-// ─────────────────────────────────────────
-// AUDIO SPECTRUM — animated bars
-// ─────────────────────────────────────────
-function AudioSpectrum({
-  level,
-  color  = "#a855f7",
-  bars   = 16,
-  height = 32,
-}: {
-  level:   number;
-  color?:  string;
-  bars?:   number;
-  height?: number;
-}) {
-  const [tick, setTick] = useState(0);
+/* ────────────────────────────────────────────────────────────────────────
+   SELF-CONTAINED AUDIO-ONLY WEBRTC MESH
+   (mirrors the architecture of lib's WebRTCEngine, trimmed to audio-only
+   and inlined here so this page has zero cross-file import risk)
+──────────────────────────────────────────────────────────────────────── */
+const ICE_SERVERS: RTCIceServer[] = [
+  { urls: "stun:stun.l.google.com:19302" },
+  { urls: "stun:stun1.l.google.com:19302" },
+];
 
-  useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 60);
-    return () => clearInterval(id);
-  }, []);
+class AudioMeshEngine {
+  private roomId: string;
+  private userId: string;
+  private peers: Map<string, RTCPeerConnection> = new Map();
+  private localStream: MediaStream | null = null;
+  private channel: any = null;
+  private audioCtx: AudioContext | null = null;
+  private rafIds: Map<string, number> = new Map();
 
-  const barHeights = Array.from({ length: bars }, (_, i) => {
-    const center = bars / 2;
-    const dist   = Math.abs(i - center) / center;
-    const base   = (1 - dist * 0.5) * (level / 100);
-    const wave   = Math.sin(tick * 0.3 + i * 0.6) * 0.25 * base;
-    return Math.max(0.05, Math.min(1, base + wave));
-  });
+  onPeerStream?: (userId: string, stream: MediaStream) => void;
+  onPeerLevel?: (userId: string, level: number) => void;
+  onLocalLevel?: (level: number) => void;
+  onPeerLeft?: (userId: string) => void;
 
-  return (
-    <div className="flex items-center justify-center gap-[2px]" style={{ height }}>
-      {barHeights.map((h, i) => (
-        <div
-          key={i}
-          className="rounded-full transition-all duration-75"
-          style={{
-            width:           "2.5px",
-            height:          `${Math.round(h * height)}px`,
-            backgroundColor: color,
-            opacity:         0.4 + h * 0.6,
-          }}
-        />
-      ))}
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────
-// PARTICIPANT BUBBLE
-// ─────────────────────────────────────────
-function ParticipantBubble({
-  participant,
-  isSpeaking,
-  isLocal,
-  canPromote,
-  onPromote,
-  onMute,
-  onRemove,
-  onReact,
-}: {
-  participant: RoomParticipant;
-  isSpeaking:  boolean;
-  isLocal:     boolean;
-  canPromote:  boolean;
-  onPromote:   () => void;
-  onMute:      () => void;
-  onRemove:    () => void;
-  onReact:     (emoji: string) => void;
-}) {
-  const [showMenu,  setShowMenu]  = useState(false);
-  const [showEmoji, setShowEmoji] = useState(false);
-  const name = participant.name ?? participant.user_id;
-
-  const ringColor = participant.role === "host"   ? "ring-amber-400"  :
-                    participant.role === "speaker" ? "ring-indigo-500" :
-                                                     "ring-zinc-700";
-
-  const bgColor   = participant.role === "host"   ? "bg-amber-500/20 text-amber-300"   :
-                    participant.role === "speaker" ? "bg-indigo-500/20 text-indigo-300" :
-                                                     "bg-zinc-800 text-zinc-400";
-
-  return (
-    <div className="flex flex-col items-center gap-2 relative">
-      {/* Floating reactions */}
-      <div className="absolute -top-10 left-1/2 -translate-x-1/2 flex gap-1 pointer-events-none">
-        {(participant.reactions ?? []).slice(-3).map((emoji, i) => (
-          <span key={i} className="text-xl animate-bounce">{emoji}</span>
-        ))}
-      </div>
-
-      {/* Avatar */}
-      <div
-        className={`relative w-16 h-16 rounded-full flex items-center justify-center
-                    text-sm font-bold cursor-pointer transition-all select-none
-                    ${bgColor}
-                    ${isSpeaking
-                      ? `ring-2 ${ringColor} shadow-lg shadow-indigo-500/20`
-                      : `ring-1 ${ringColor}`
-                    }`}
-        onClick={() => {
-          if (canPromote) setShowMenu(!showMenu);
-        }}
-      >
-        {getInitials(name)}
-
-        {/* Speaking spectrum overlay */}
-        {isSpeaking && (
-          <div className="absolute -bottom-3 left-1/2 -translate-x-1/2">
-            <AudioSpectrum
-              level={participant.audioLevel ?? 0}
-              color={participant.role === "host" ? "#f59e0b" : "#6366f1"}
-              bars={10}
-              height={16}
-            />
-          </div>
-        )}
-
-        {/* Role badge */}
-        {participant.role === "host" && (
-          <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full
-                          bg-amber-500 flex items-center justify-center">
-            <Crown size={9} className="text-white" />
-          </div>
-        )}
-
-        {/* Muted */}
-        {participant.isMuted && participant.role !== "listener" && (
-          <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full
-                          bg-red-500 flex items-center justify-center">
-            <MicOff size={9} className="text-white" />
-          </div>
-        )}
-
-        {/* Hand raised */}
-        {participant.hasHand && (
-          <div className="absolute -top-1 -left-1 w-5 h-5 rounded-full
-                          bg-emerald-500 flex items-center justify-center text-xs">
-            ✋
-          </div>
-        )}
-      </div>
-
-      <p className="text-[10px] text-zinc-400 max-w-[64px] truncate text-center">
-        {isLocal ? "You" : name.split(" ")[0]}
-      </p>
-
-      {/* Emoji react button (always visible for self) */}
-      <div className="relative">
-        <button
-          onClick={() => setShowEmoji(!showEmoji)}
-          className="w-6 h-6 rounded-full bg-zinc-800 hover:bg-zinc-700
-                     flex items-center justify-center transition"
-        >
-          <Smile size={11} className="text-zinc-500" />
-        </button>
-        {showEmoji && (
-          <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-50
-                          bg-zinc-900 border border-zinc-700 rounded-2xl p-2
-                          grid grid-cols-6 gap-1 shadow-2xl w-max">
-            {EMOJI_LIST.map((e) => (
-              <button
-                key={e}
-                onClick={() => { onReact(e); setShowEmoji(false); }}
-                className="w-8 h-8 rounded-lg hover:bg-zinc-800 flex items-center
-                           justify-center text-base transition"
-              >
-                {e}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Host context menu */}
-      {showMenu && canPromote && (
-        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50
-                        bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl
-                        overflow-hidden w-44">
-          <button
-            onClick={() => { onPromote(); setShowMenu(false); }}
-            className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-zinc-300
-                       hover:bg-zinc-800 transition text-left"
-          >
-            <Mic size={12} className="text-indigo-400" /> Make Speaker
-          </button>
-          <button
-            onClick={() => { onMute(); setShowMenu(false); }}
-            className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-zinc-300
-                       hover:bg-zinc-800 transition text-left"
-          >
-            <VolumeX size={12} className="text-amber-400" /> Mute
-          </button>
-          <button
-            onClick={() => { onRemove(); setShowMenu(false); }}
-            className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-red-400
-                       hover:bg-zinc-800 transition text-left border-t border-zinc-800"
-          >
-            <X size={12} /> Remove
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────
-// MAIN PAGE
-// ─────────────────────────────────────────
-export default function HuddlesPage() {
-  const { tenantId, loading: tenantLoading } = useTenant();
-
-  const [currentUser,      setCurrentUser]      = useState<any>(null);
-  const [rooms,            setRooms]            = useState<VoiceRoom[]>([]);
-  const [activeRoom,       setActiveRoom]        = useState<VoiceRoom | null>(null);
-  const [roomParticipants, setRoomParticipants] = useState<RoomParticipant[]>([]);
-  const [isMuted,          setIsMuted]          = useState(false);
-  const [handRaised,       setHandRaised]       = useState(false);
-  const [audioLevels,      setAudioLevels]      = useState<Record<string, number>>({});
-  const [loading,          setLoading]          = useState(false);
-  const [showCreate,       setShowCreate]       = useState(false);
-  const [newRoomName,      setNewRoomName]      = useState("");
-  const [elapsed,          setElapsed]          = useState(0);
-  const [showEmojiBar,     setShowEmojiBar]     = useState(false);
-  const [error,            setError]            = useState<string | null>(null);
-
-  const localStreamRef = useRef<MediaStream | null>(null);
-  const audioCtxRef    = useRef<AudioContext | null>(null);
-  const analyserRef    = useRef<AnalyserNode | null>(null);
-  const rafRef         = useRef<number>(0);
-  const timerRef       = useRef<NodeJS.Timeout | null>(null);
-  const startRef       = useRef<Date | null>(null);
-
-  const isHost = activeRoom?.created_by === currentUser?.id;
-
-  // ── Load user ──────────────────────────
-  useEffect(() => {
-    const load = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user) return;
-      const { data } = await supabase
-        .from("profiles").select("*").eq("id", session.user.id).single();
-      setCurrentUser(data ?? {
-        id:        session.user.id,
-        full_name: session.user.email?.split("@")[0] ?? null,
-        email:     session.user.email ?? null,
-      });
-    };
-    load();
-  }, []);
-
-  // ── Load rooms ─────────────────────────
-  const loadRooms = useCallback(async () => {
-    if (tenantLoading) return;
-    const { data, error } = await supabase
-      .from("voice_rooms")
-      .select("*")
-      .eq("is_active", true)
-      .order("created_at", { ascending: false });
-    if (!error) setRooms((data ?? []) as VoiceRoom[]);
-  }, [tenantLoading]);
-
-  useEffect(() => { loadRooms(); }, [loadRooms]);
-
-  // ── Realtime room updates ──────────────
-  useEffect(() => {
-    const ch = supabase
-      .channel("huddles-rooms")
-      .on("postgres_changes",
-        { event: "*", schema: "public", table: "voice_rooms" },
-        () => loadRooms()
-      )
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [loadRooms]);
-
-  // ── Realtime participant updates ───────
-  useEffect(() => {
-    if (!activeRoom) return;
-    const ch = supabase
-      .channel(`huddles-participants-${activeRoom.id}`)
-      .on("postgres_changes",
-        {
-          event:  "*",
-          schema: "public",
-          table:  "voice_room_participants",
-          filter: `room_id=eq.${activeRoom.id}`,
-        },
-        () => loadRoomParticipants(activeRoom.id)
-      )
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [activeRoom]);
-
-  // ── Timer ──────────────────────────────
-  useEffect(() => {
-    if (activeRoom) {
-      startRef.current = new Date();
-      timerRef.current = setInterval(() => {
-        if (startRef.current)
-          setElapsed(Math.floor((Date.now() - startRef.current.getTime()) / 1000));
-      }, 1000);
-    }
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [activeRoom]);
-
-  function formatElapsed(secs: number) {
-    const m = Math.floor(secs / 60);
-    const s = secs % 60;
-    return `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+  constructor(roomId: string, userId: string) {
+    this.roomId = roomId;
+    this.userId = userId;
   }
 
-  // ── Start audio capture + level detection ──
-  const startAudio = useCallback(async (): Promise<MediaStream | null> => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation:  true,
-          noiseSuppression:  true,
-          autoGainControl:   true,
-          sampleRate:        48000,
-        },
-        video: false,
-      });
-      localStreamRef.current = stream;
+  async getLocalStream(): Promise<MediaStream> {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    });
+    this.localStream = stream;
+    this.meterStream(stream, "local", (lvl) => this.onLocalLevel?.(lvl));
+    return stream;
+  }
 
-      // AudioContext for level detection
-      audioCtxRef.current = new AudioContext();
-      const source   = audioCtxRef.current.createMediaStreamSource(stream);
-      const analyser = audioCtxRef.current.createAnalyser();
+  private meterStream(stream: MediaStream, key: string, cb: (lvl: number) => void) {
+    if (!this.audioCtx) {
+      try {
+        this.audioCtx = new AudioContext();
+      } catch {
+        return;
+      }
+    }
+    try {
+      const source = this.audioCtx.createMediaStreamSource(stream);
+      const analyser = this.audioCtx.createAnalyser();
       analyser.fftSize = 256;
       source.connect(analyser);
-      analyserRef.current = analyser;
       const data = new Uint8Array(analyser.frequencyBinCount);
-
       const tick = () => {
-        if (!analyserRef.current) return;
-        analyserRef.current.getByteFrequencyData(data);
+        analyser.getByteFrequencyData(data);
         const avg = data.reduce((a, b) => a + b, 0) / data.length;
-        setAudioLevels((prev) => ({
-          ...prev,
-          [currentUser?.id ?? ""]: Math.round(avg),
-        }));
-        rafRef.current = requestAnimationFrame(tick);
+        cb(Math.round(avg));
+        this.rafIds.set(key, requestAnimationFrame(tick));
       };
       tick();
-      return stream;
-    } catch (err) {
-      setError("Microphone access denied. Please allow microphone permissions.");
-      return null;
+    } catch {
+      /* AudioContext unsupported in this environment — spectrum stays flat */
     }
-  }, [currentUser]);
+  }
 
-  // ── Stop audio ─────────────────────────
-  const stopAudio = useCallback(() => {
-    cancelAnimationFrame(rafRef.current);
-    localStreamRef.current?.getTracks().forEach((t) => t.stop());
-    localStreamRef.current = null;
-    audioCtxRef.current?.close();
-    audioCtxRef.current  = null;
-    analyserRef.current  = null;
+  async join(existingPeerIds: string[]) {
+    this.channel = supabase
+      .channel(`huddle-signal-${this.roomId}`)
+      .on("broadcast", { event: "signal" }, ({ payload }: any) => this.handleSignal(payload))
+      .subscribe();
+
+    for (const peerId of existingPeerIds) {
+      if (peerId !== this.userId) await this.createPeerConnection(peerId, true);
+    }
+  }
+
+  setMuted(muted: boolean) {
+    this.localStream?.getAudioTracks().forEach((t) => (t.enabled = !muted));
+  }
+
+  async leave() {
+    this.send({ type: "leave", from: this.userId, payload: {} });
+    this.peers.forEach((pc) => pc.close());
+    this.peers.clear();
+    this.localStream?.getTracks().forEach((t) => t.stop());
+    this.localStream = null;
+    this.rafIds.forEach((id) => cancelAnimationFrame(id));
+    this.rafIds.clear();
+    if (this.channel) {
+      await supabase.removeChannel(this.channel);
+      this.channel = null;
+    }
+    if (this.audioCtx) {
+      await this.audioCtx.close();
+      this.audioCtx = null;
+    }
+  }
+
+  private async createPeerConnection(peerId: string, initiator: boolean) {
+    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    this.localStream?.getTracks().forEach((t) => pc.addTrack(t, this.localStream!));
+
+    const remote = new MediaStream();
+    pc.ontrack = (e) => {
+      e.streams[0].getTracks().forEach((t) => remote.addTrack(t));
+      this.onPeerStream?.(peerId, remote);
+      this.meterStream(remote, peerId, (lvl) => this.onPeerLevel?.(peerId, lvl));
+    };
+
+    pc.onicecandidate = (e) => {
+      if (e.candidate) {
+        this.send({ type: "ice", from: this.userId, to: peerId, payload: e.candidate.toJSON() });
+      }
+    };
+
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === "disconnected" || pc.connectionState === "failed" || pc.connectionState === "closed") {
+        this.onPeerLeft?.(peerId);
+        this.peers.delete(peerId);
+        const raf = this.rafIds.get(peerId);
+        if (raf) cancelAnimationFrame(raf);
+      }
+    };
+
+    this.peers.set(peerId, pc);
+
+    if (initiator) {
+      const offer = await pc.createOffer({ offerToReceiveAudio: true });
+      await pc.setLocalDescription(offer);
+      this.send({ type: "offer", from: this.userId, to: peerId, payload: offer });
+    }
+  }
+
+  private async handleSignal(msg: SignalMsg) {
+    if (msg.from === this.userId) return;
+    if (msg.to && msg.to !== this.userId) return;
+
+    if (msg.type === "offer") {
+      if (!this.peers.has(msg.from)) await this.createPeerConnection(msg.from, false);
+      const pc = this.peers.get(msg.from)!;
+      await pc.setRemoteDescription(new RTCSessionDescription(msg.payload));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      this.send({ type: "answer", from: this.userId, to: msg.from, payload: answer });
+    } else if (msg.type === "answer") {
+      const pc = this.peers.get(msg.from);
+      if (pc) await pc.setRemoteDescription(new RTCSessionDescription(msg.payload));
+    } else if (msg.type === "ice") {
+      const pc = this.peers.get(msg.from);
+      if (pc) {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(msg.payload));
+        } catch {
+          /* stale candidate, ignore */
+        }
+      }
+    } else if (msg.type === "leave") {
+      this.peers.get(msg.from)?.close();
+      this.peers.delete(msg.from);
+      this.onPeerLeft?.(msg.from);
+    }
+  }
+
+  private send(msg: SignalMsg) {
+    this.channel?.send({ type: "broadcast", event: "signal", payload: msg });
+  }
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   PURPLE SPEAKING SPECTRUM
+──────────────────────────────────────────────────────────────────────── */
+function Spectrum({ level, active }: { level: number; active: boolean }) {
+  const bars = [0, 1, 2, 3, 4];
+  const norm = Math.min(1, level / 130);
+  return (
+    <div className="flex items-end gap-[3px] h-5">
+      {bars.map((i) => {
+        const wobble = active ? Math.sin(Date.now() / 120 + i) * 0.15 : 0;
+        const h = active ? Math.max(0.15, Math.min(1, norm * (0.6 + 0.4 * Math.sin(i)) + wobble)) : 0.12;
+        return (
+          <span
+            key={i}
+            className="w-[3px] rounded-full transition-[height] duration-100"
+            style={{
+              height: `${Math.max(3, h * 20)}px`,
+              background: active
+                ? "linear-gradient(180deg, #c084fc, #7c3aed)"
+                : "#3f3f46",
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   HELPERS
+──────────────────────────────────────────────────────────────────────── */
+function displayName(p: Profile | undefined, fallback: string) {
+  if (!p) return fallback;
+  return p.full_name || p.name || p.display_name || p.email?.split("@")[0] || fallback;
+}
+
+function initials(name: string) {
+  return name.trim().slice(0, 2).toUpperCase();
+}
+
+function formatDuration(seconds: number) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+const EMOJIS = ["👍", "🎉", "😂", "❤️", "👏", "🔥", "😮", "✅", "🙌", "💡", "👀", "🤝"];
+
+/* ────────────────────────────────────────────────────────────────────────
+   PAGE
+──────────────────────────────────────────────────────────────────────── */
+export default function HuddlesPage() {
+  const [me, setMe] = useState<{ id: string; tenantId: string } | null>(null);
+  const [rooms, setRooms] = useState<VoiceRoom[]>([]);
+  const [participantCounts, setParticipantCounts] = useState<Record<string, number>>({});
+  const [activeRoom, setActiveRoom] = useState<VoiceRoom | null>(null);
+  const [participants, setParticipants] = useState<VoiceRoomParticipant[]>([]);
+  const [profiles, setProfiles] = useState<Record<string, Profile>>({});
+  const [levels, setLevels] = useState<Record<string, number>>({});
+  const [myMuted, setMyMuted] = useState(true);
+  const [myHandRaised, setMyHandRaised] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [summary, setSummary] = useState<{ duration: number; count: number; reason: string } | null>(null);
+  const [reactions, setReactions] = useState<Record<string, string>>({});
+  const [handQueueOpen, setHandQueueOpen] = useState(false);
+  const [newRoomName, setNewRoomName] = useState("");
+  const [showNewRoom, setShowNewRoom] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const engineRef = useRef<AudioMeshEngine | null>(null);
+  const audioElsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
+  const myParticipantIdRef = useRef<string | null>(null);
+  const participantsChanRef = useRef<any>(null);
+  const roomChanRef = useRef<any>(null);
+  const notifyChanRef = useRef<any>(null);
+
+  /* ── Bootstrap: current user + tenant ── */
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.auth.getUser();
+      const user = data.user;
+      if (!user) return;
+      const { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
+      setMe({ id: user.id, tenantId: profile?.tenant_id ?? "" });
+      if (profile) setProfiles((p) => ({ ...p, [user.id]: profile }));
+    })();
   }, []);
 
-  // ── Create room ────────────────────────
-  const handleCreateRoom = async () => {
-    if (!newRoomName.trim() || !currentUser) return;
-    setError(null);
-
-    // voice_rooms.id is TEXT — use a short readable ID
-    const roomId = `room_${Date.now()}_${Math.random().toString(36).slice(2,7)}`;
-
-    const { data, error } = await supabase
-      .from("voice_rooms")
-      .insert({
-        id:         roomId,
-        name:       newRoomName.trim(),
-        created_by: currentUser.id,
-        is_active:  true,
-        tenant_id:  tenantId,
-        created_at: new Date().toISOString(),
-      })
-      .select()
-      .single();
-
-    if (error) {
-      setError(`Failed to create room: ${error.message}`);
-      return;
-    }
-
-    setShowCreate(false);
-    setNewRoomName("");
-    if (data) await handleJoinRoom(data as VoiceRoom);
-  };
-
-  // ── Join room ──────────────────────────
-  const handleJoinRoom = async (room: VoiceRoom) => {
-    if (!currentUser) return;
-    setLoading(true);
-    setError(null);
-
-    const stream = await startAudio();
-    if (!stream) { setLoading(false); return; }
-
-    // Insert participant — room_id is TEXT
-    const { error: insertError } = await supabase
-      .from("voice_room_participants")
-      .insert({
-        room_id:   room.id,
-        user_id:   currentUser.id,
-        joined_at: new Date().toISOString(),
-        tenant_id: tenantId,
-      });
-
-    if (insertError) {
-      setError(`Failed to join room: ${insertError.message}`);
-      stopAudio();
-      setLoading(false);
-      return;
-    }
-
-    setActiveRoom(room);
-    await loadRoomParticipants(room.id);
-    setLoading(false);
-  };
-
-  // ── Load participants + enrich ─────────
-  const loadRoomParticipants = useCallback(async (roomId: string) => {
+  /* ── Load active rooms list ── */
+  const loadRooms = useCallback(async () => {
+    if (!me) return;
     const { data } = await supabase
-      .from("voice_room_participants")
+      .from("voice_rooms")
       .select("*")
-      .eq("room_id", roomId)
-      .is("left_at", null);
-
-    if (!data) return;
-
-    const userIds = [...new Set(data.map((p) => p.user_id))];
-    const { data: profiles } = await supabase
-      .from("profiles")
-      .select("id, full_name, email")
-      .in("id", userIds);
-
-    const profileMap: Record<string, string> = {};
-    (profiles ?? []).forEach((p) => {
-      profileMap[p.id] = (p.full_name ?? p.email ?? p.id) as string;
-    });
-
-    // Preserve existing client-side state (reactions, hand, muted)
-    setRoomParticipants((prev) => {
-      const prevMap: Record<string, RoomParticipant> = {};
-      prev.forEach((p) => { prevMap[p.user_id] = p; });
-
-      return data.map((p) => ({
-        ...p,
-        name:       profileMap[p.user_id] ?? p.user_id,
-        role:       (p.user_id === activeRoom?.created_by ? "host" : "speaker") as "host" | "speaker" | "listener",
-        isMuted:    prevMap[p.user_id]?.isMuted    ?? false,
-        audioLevel: prevMap[p.user_id]?.audioLevel ?? 0,
-        hasHand:    prevMap[p.user_id]?.hasHand    ?? false,
-        reactions:  prevMap[p.user_id]?.reactions  ?? [],
+      .eq("tenant_id", me.tenantId)
+      .eq("is_active", true)
+      .order("created_at", { ascending: false });
+    const roomList = (data as VoiceRoom[]) ?? [];
+    setRooms(roomList);
+    if (roomList.length > 0) {
+      const counts: Record<string, number> = {};
+      await Promise.all(roomList.map(async (r) => {
+        const { count } = await supabase
+          .from("voice_room_participants")
+          .select("id", { count: "exact", head: true })
+          .eq("room_id", r.id)
+          .is("left_at", null);
+        counts[r.id] = count ?? 0;
       }));
-    });
+      setParticipantCounts(counts);
+    }
+  }, [me]);
+
+  useEffect(() => {
+    if (me && !activeRoom) loadRooms();
+  }, [me, activeRoom, loadRooms]);
+
+  /* ── Duration ticker while in a room ── */
+  useEffect(() => {
+    if (!activeRoom) return;
+    const start = new Date(activeRoom.created_at).getTime();
+    const tick = () => setElapsed(Math.floor((Date.now() - start) / 1000));
+    tick();
+    const iv = setInterval(tick, 1000);
+    return () => clearInterval(iv);
   }, [activeRoom]);
 
-  // ── Leave room ─────────────────────────
-  const handleLeave = async () => {
-    if (!activeRoom || !currentUser) return;
-
-    await supabase
-      .from("voice_room_participants")
-      .update({ left_at: new Date().toISOString() })
-      .eq("room_id", activeRoom.id)
-      .eq("user_id", currentUser.id);
-
-    if (isHost) {
-      await supabase
-        .from("voice_rooms")
-        .update({ is_active: false })
-        .eq("id", activeRoom.id);
-    }
-
-    stopAudio();
-    setActiveRoom(null);
-    setRoomParticipants([]);
-    setElapsed(0);
-    setHandRaised(false);
-    setAudioLevels({});
-    loadRooms();
-  };
-
-  // ── Toggle mute ────────────────────────
-  const handleToggleMute = () => {
-    const tracks = localStreamRef.current?.getAudioTracks();
-    tracks?.forEach((t) => { t.enabled = isMuted; }); // flip: if was muted, enable
-    setIsMuted((m) => !m);
-    setRoomParticipants((prev) =>
-      prev.map((p) =>
-        p.user_id === currentUser?.id ? { ...p, isMuted: !isMuted } : p
-      )
-    );
-  };
-
-  // ── Raise hand ─────────────────────────
-  const handleRaiseHand = () => {
-    setHandRaised((h) => !h);
-    setRoomParticipants((prev) =>
-      prev.map((p) =>
-        p.user_id === currentUser?.id ? { ...p, hasHand: !handRaised } : p
-      )
-    );
-  };
-
-  // ── React with emoji ───────────────────
-  const handleReact = (userId: string, emoji: string) => {
-    setRoomParticipants((prev) =>
-      prev.map((p) =>
-        p.user_id === userId
-          ? { ...p, reactions: [...(p.reactions ?? []).slice(-4), emoji] }
-          : p
-      )
-    );
-    setTimeout(() => {
-      setRoomParticipants((prev) =>
-        prev.map((p) =>
-          p.user_id === userId
-            ? { ...p, reactions: [] }
-            : p
-        )
-      );
-    }, 3000);
-  };
-
-  // ── Promote to speaker ─────────────────
-  const handlePromote = (userId: string) => {
-    setRoomParticipants((prev) =>
-      prev.map((p) => p.user_id === userId ? { ...p, role: "speaker" } : p)
-    );
-  };
-
-  // ── Mute participant (host) ────────────
-  const handleMuteParticipant = (userId: string) => {
-    setRoomParticipants((prev) =>
-      prev.map((p) => p.user_id === userId ? { ...p, isMuted: true } : p)
-    );
-  };
-
-  // ── Remove participant (host) ──────────
-  const handleRemoveParticipant = async (userId: string) => {
-    await supabase
-      .from("voice_room_participants")
-      .update({ left_at: new Date().toISOString() })
-      .eq("room_id", activeRoom?.id ?? "")
-      .eq("user_id", userId);
-    setRoomParticipants((prev) => prev.filter((p) => p.user_id !== userId));
-  };
-
-  // ── Sync audio levels to participants ──
+  /* ── Fetch profiles for any participant we don't have cached ── */
   useEffect(() => {
-    setRoomParticipants((prev) =>
-      prev.map((p) => ({
-        ...p,
-        audioLevel: audioLevels[p.user_id] ?? p.audioLevel ?? 0,
-      }))
-    );
-  }, [audioLevels]);
+    const missing = participants.map((p) => p.user_id).filter((id) => !profiles[id]);
+    if (missing.length === 0) return;
+    (async () => {
+      const { data } = await supabase.from("profiles").select("*").in("id", missing);
+      if (data) {
+        const map: Record<string, Profile> = {};
+        data.forEach((p: any) => (map[p.id] = p));
+        setProfiles((prev) => ({ ...prev, ...map }));
+      }
+    })();
+  }, [participants, profiles]);
 
-  const speakers  = roomParticipants.filter((p) => p.role === "host" || p.role === "speaker");
-  const listeners = roomParticipants.filter((p) => p.role === "listener");
+  /* ── Cleanup engine on unmount ── */
+  useEffect(() => {
+    return () => {
+      engineRef.current?.leave();
+    };
+  }, []);
 
-  const activeSpeakerId = Object.entries(audioLevels)
-    .filter(([, v]) => v > 10)
-    .sort(([, a], [, b]) => b - a)
-    [0]?.[0] ?? null;
+  /* ── Join a room ── */
+  async function joinRoom(room: VoiceRoom) {
+    if (!me) return;
+    setBusy(true);
+    setError("");
+    try {
+      const { data: existingRows } = await supabase
+        .from("voice_room_participants")
+        .select("*")
+        .eq("room_id", room.id);
 
-  const myAudioLevel = audioLevels[currentUser?.id ?? ""] ?? 0;
+      const existing = (existingRows as VoiceRoomParticipant[]) ?? [];
+      const existingPeerIds = existing.map((p) => p.user_id);
 
-  // ─────────────────────────────────────
-  // RENDER: ROOM LIST
-  // ─────────────────────────────────────
-  if (!activeRoom) {
+      const { data: myRow, error: insertErr } = await supabase
+        .from("voice_room_participants")
+        .insert({
+          room_id: room.id,
+          tenant_id: me.tenantId,
+          user_id: me.id,
+          joined_at: new Date().toISOString(),
+          hand_raised: false,
+          is_muted: true,
+        })
+        .select()
+        .single();
+
+      if (insertErr) throw insertErr;
+      myParticipantIdRef.current = myRow.id;
+
+      const engine = new AudioMeshEngine(room.id, me.id);
+      engineRef.current = engine;
+
+      engine.onLocalLevel = (lvl) => setLevels((l) => ({ ...l, [me.id]: lvl }));
+      engine.onPeerLevel = (uid, lvl) => setLevels((l) => ({ ...l, [uid]: lvl }));
+      engine.onPeerStream = (uid, stream) => {
+        let el = audioElsRef.current.get(uid);
+        if (!el) {
+          el = document.createElement("audio");
+          el.autoplay = true;
+          document.body.appendChild(el);
+          audioElsRef.current.set(uid, el);
+        }
+        el.srcObject = stream;
+      };
+      engine.onPeerLeft = (uid) => {
+        const el = audioElsRef.current.get(uid);
+        el?.remove();
+        audioElsRef.current.delete(uid);
+      };
+
+      await engine.getLocalStream();
+      engine.setMuted(true);
+      await engine.join(existingPeerIds);
+
+      setParticipants([...existing, myRow as VoiceRoomParticipant]);
+      setActiveRoom(room);
+      setMyMuted(true);
+      setMyHandRaised(false);
+      subscribeRoomChannels(room.id);
+    } catch (e: any) {
+      setError(e.message ?? "Couldn't join the huddle. Check mic permissions and try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /* ── Create + join a new room ── */
+  async function createRoom() {
+    if (!me || !newRoomName.trim()) return;
+    setBusy(true);
+    setError("");
+    try {
+      const id = `room_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const { data: room, error: roomErr } = await supabase
+        .from("voice_rooms")
+        .insert({
+          id,
+          tenant_id: me.tenantId,
+          name: newRoomName.trim(),
+          created_by: me.id,
+          is_active: true,
+        })
+        .select()
+        .single();
+      if (roomErr) throw roomErr;
+      setShowNewRoom(false);
+      setNewRoomName("");
+      await joinRoom(room as VoiceRoom);
+    } catch (e: any) {
+      setError(e.message ?? "Couldn't create the huddle.");
+      setBusy(false);
+    }
+  }
+
+  /* ── Realtime: participants + room status ── */
+  function subscribeRoomChannels(roomId: string) {
+    participantsChanRef.current = supabase
+      .channel(`huddle-participants-${roomId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "voice_room_participants", filter: `room_id=eq.${roomId}` },
+        (payload) => {
+          if (payload.eventType === "DELETE") {
+            const deletedId = (payload.old as any).id;
+            if (deletedId === myParticipantIdRef.current) {
+              // I was removed by the host
+              finishCall({ duration: elapsed, count: participants.length, reason: "removed" });
+              return;
+            }
+            setParticipants((prev) => prev.filter((p) => p.id !== deletedId));
+          } else if (payload.eventType === "INSERT") {
+            setParticipants((prev) =>
+              prev.some((p) => p.id === (payload.new as any).id) ? prev : [...prev, payload.new as VoiceRoomParticipant]
+            );
+          } else if (payload.eventType === "UPDATE") {
+            setParticipants((prev) =>
+              prev.map((p) => (p.id === (payload.new as any).id ? (payload.new as VoiceRoomParticipant) : p))
+            );
+          }
+        }
+      )
+      .subscribe();
+
+    roomChanRef.current = supabase
+      .channel(`huddle-room-${roomId}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "voice_rooms", filter: `id=eq.${roomId}` },
+        (payload) => {
+          const updated = payload.new as VoiceRoom;
+          if (!updated.is_active) {
+            finishCall({
+              duration: updated.duration_seconds ?? elapsed,
+              count: participants.length,
+              reason: "ended",
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    notifyChanRef.current = supabase
+      .channel(`huddle-notify-${roomId}`)
+      .on("broadcast", { event: "reaction" }, ({ payload }: any) => {
+        setReactions((r) => ({ ...r, [payload.userId]: payload.emoji }));
+        setTimeout(() => setReactions((r) => {
+          const copy = { ...r };
+          delete copy[payload.userId];
+          return copy;
+        }), 1800);
+      })
+      .on("broadcast", { event: "invite-to-speak" }, ({ payload }: any) => {
+        if (payload.userId === me?.id) {
+          setMyHandRaised(false);
+          window.alert("The host invited you to speak — unmute when ready.");
+        }
+      })
+      .subscribe();
+  }
+
+  function teardownChannels() {
+    [participantsChanRef, roomChanRef, notifyChanRef].forEach((ref) => {
+      if (ref.current) {
+        supabase.removeChannel(ref.current);
+        ref.current = null;
+      }
+    });
+  }
+
+  /* ── Leave (non-host) ── */
+  async function leaveRoom() {
+    if (myParticipantIdRef.current) {
+      await supabase.from("voice_room_participants").delete().eq("id", myParticipantIdRef.current);
+    }
+    await finishCall(null, "left");
+  }
+
+  /* ── End huddle (host only) ── */
+  async function endHuddle() {
+    if (!activeRoom || !me) return;
+    const duration = elapsed;
+    const count = participants.length;
+
+    await supabase
+      .from("voice_rooms")
+      .update({ is_active: false, ended_at: new Date().toISOString(), duration_seconds: duration })
+      .eq("id", activeRoom.id);
+
+    await supabase.from("voice_room_participants").delete().eq("room_id", activeRoom.id);
+
+    await supabase.from("audit_logs").insert({
+      tenant_id: me.tenantId,
+      user_id: me.id,
+      action: "huddle_ended",
+      metadata: { room_id: activeRoom.id, room_name: activeRoom.name, duration_seconds: duration, participant_count: count },
+    });
+
+    await finishCall({ duration, count, reason: "ended" });
+  }
+
+  /* ── Shared cleanup ── */
+  async function finishCall(
+    explicitSummary: { duration: number; count: number; reason: string } | null,
+    reasonOverride?: string
+  ) {
+    await engineRef.current?.leave();
+    engineRef.current = null;
+    audioElsRef.current.forEach((el) => el.remove());
+    audioElsRef.current.clear();
+    teardownChannels();
+
+    const finalSummary =
+      explicitSummary ??
+      (reasonOverride === "left" ? null : { duration: elapsed, count: participants.length, reason: reasonOverride ?? "ended" });
+
+    setActiveRoom(null);
+    setParticipants([]);
+    setLevels({});
+    setReactions({});
+    myParticipantIdRef.current = null;
+    if (finalSummary) setSummary(finalSummary);
+    loadRooms();
+  }
+
+  /* ── Self mute toggle ── */
+  function toggleMute() {
+    const next = !myMuted;
+    setMyMuted(next);
+    engineRef.current?.setMuted(next);
+    if (myParticipantIdRef.current) {
+      supabase.from("voice_room_participants").update({ is_muted: next }).eq("id", myParticipantIdRef.current);
+    }
+  }
+
+  /* ── Hand raise toggle ── */
+  function toggleHand() {
+    const next = !myHandRaised;
+    setMyHandRaised(next);
+    if (myParticipantIdRef.current) {
+      supabase.from("voice_room_participants").update({ hand_raised: next }).eq("id", myParticipantIdRef.current);
+    }
+  }
+
+  /* ── Send a reaction ── */
+  function sendReaction(emoji: string) {
+    if (!me) return;
+    notifyChanRef.current?.send({ type: "broadcast", event: "reaction", payload: { userId: me.id, emoji } });
+    setReactions((r) => ({ ...r, [me.id]: emoji }));
+    setTimeout(() => setReactions((r) => {
+      const copy = { ...r };
+      delete copy[me.id];
+      return copy;
+    }), 1800);
+  }
+
+  /* ── Host: invite a raised hand to speak ── */
+  function inviteToSpeak(userId: string) {
+    notifyChanRef.current?.send({ type: "broadcast", event: "invite-to-speak", payload: { userId } });
+    supabase.from("voice_room_participants").update({ hand_raised: false }).eq("room_id", activeRoom!.id).eq("user_id", userId);
+  }
+
+  /* ── Host: remove a participant ── */
+  async function removeParticipant(participantId: string) {
+    await supabase.from("voice_room_participants").delete().eq("id", participantId);
+  }
+
+  const isHost = !!(activeRoom && me && activeRoom.created_by === me.id);
+  const raisedHands = participants.filter((p) => p.hand_raised);
+
+  /* ────────────────────────────────────────────────────────────────────
+     RENDER: SUMMARY MODAL (always on top if present)
+  ──────────────────────────────────────────────────────────────────── */
+  if (summary) {
     return (
-      <div className="p-4 md:p-6 max-w-3xl space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-3 mb-1">
-              <div className="w-9 h-9 rounded-xl bg-purple-500/15 border border-purple-500/25
-                              flex items-center justify-center">
-                <Radio size={18} className="text-purple-400" />
-              </div>
-              <h1 className="text-2xl font-bold text-white">Huddles</h1>
-            </div>
-            <p className="text-zinc-500 text-sm">Drop-in voice rooms · Pivot Spaces</p>
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center px-4">
+        <div className="max-w-sm w-full rounded-2xl border border-zinc-800 bg-zinc-900/60 p-8 text-center">
+          <div className="w-12 h-12 rounded-full bg-emerald-500/15 flex items-center justify-center mx-auto mb-4">
+            <span className="text-emerald-400 text-xl">✓</span>
           </div>
+          <h2 className="text-white font-semibold text-lg mb-1">
+            {summary.reason === "removed" ? "You were removed from the huddle" : "Huddle ended"}
+          </h2>
+          <p className="text-zinc-400 text-sm mb-6">
+            Duration {formatDuration(summary.duration)} · {summary.count} participant{summary.count === 1 ? "" : "s"}
+          </p>
           <button
-            onClick={() => setShowCreate(true)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600
-                       hover:bg-purple-500 text-white text-sm font-semibold transition"
+            onClick={() => setSummary(null)}
+            className="w-full bg-white hover:bg-zinc-200 text-zinc-900 font-semibold py-2.5 rounded-xl transition text-sm"
           >
-            <Plus size={15} /> Start Huddle
+            Back to Huddles
           </button>
         </div>
-
-        {/* Error banner */}
-        {error && (
-          <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-red-500/10
-                          border border-red-500/20 text-red-400 text-sm">
-            <X size={14} className="flex-shrink-0" />
-            {error}
-            <button onClick={() => setError(null)} className="ml-auto">
-              <X size={12} />
-            </button>
-          </div>
-        )}
-
-        {/* Room list */}
-        {rooms.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-zinc-800 p-12
-                          text-center space-y-3">
-            <Radio size={32} className="text-zinc-700 mx-auto" />
-            <p className="text-zinc-500 text-sm">No active huddles</p>
-            <p className="text-zinc-700 text-xs">Start one and your team can drop in</p>
-            <button onClick={() => setShowCreate(true)}
-              className="text-purple-400 text-sm hover:text-purple-300 transition">
-              Start a huddle →
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {rooms.map((room) => (
-              <div key={room.id}
-                className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5
-                           hover:border-zinc-700 transition">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="space-y-2 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                      <p className="text-white font-semibold truncate">{room.name}</p>
-                    </div>
-                    {room.department && (
-                      <span className="text-[10px] text-purple-400 bg-purple-500/10
-                                       border border-purple-500/20 px-2 py-0.5 rounded-full">
-                        {room.department}
-                      </span>
-                    )}
-                    <p className="text-xs text-zinc-600">
-                      Started {formatRelative(room.created_at)}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => handleJoinRoom(room)}
-                    disabled={loading}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl
-                               bg-purple-600 hover:bg-purple-500 text-white
-                               text-sm font-semibold transition disabled:opacity-50 flex-shrink-0"
-                  >
-                    {loading
-                      ? <Loader2 size={14} className="animate-spin" />
-                      : <Mic size={14} />
-                    }
-                    Join
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Create room modal */}
-        {showCreate && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4
-                          bg-black/70 backdrop-blur-sm">
-            <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800
-                            rounded-2xl p-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-base font-semibold text-white">Start a Huddle</h3>
-                <button onClick={() => { setShowCreate(false); setNewRoomName(""); }}
-                  className="w-8 h-8 rounded-lg hover:bg-zinc-800 flex items-center
-                             justify-center transition">
-                  <X size={14} className="text-zinc-400" />
-                </button>
-              </div>
-
-              {error && (
-                <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20
-                              rounded-xl px-3 py-2">{error}</p>
-              )}
-
-              <div>
-                <label className="text-xs text-zinc-500 mb-1 block">Room name</label>
-                <input
-                  value={newRoomName}
-                  onChange={(e) => setNewRoomName(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleCreateRoom()}
-                  placeholder="e.g. Quick sync, Design review..."
-                  autoFocus
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5
-                             text-sm text-white placeholder-zinc-600 outline-none
-                             focus:border-purple-500 transition"
-                />
-              </div>
-              <div className="flex gap-2">
-                <button onClick={() => { setShowCreate(false); setNewRoomName(""); setError(null); }}
-                  className="flex-1 py-2.5 rounded-xl border border-zinc-700 text-sm
-                             text-zinc-400 hover:text-white transition">Cancel</button>
-                <button
-                  onClick={handleCreateRoom}
-                  disabled={!newRoomName.trim() || loading}
-                  className="flex-1 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500
-                             text-white text-sm font-semibold transition disabled:opacity-50"
-                >
-                  {loading ? <Loader2 size={14} className="animate-spin mx-auto" /> : "Start"}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     );
   }
 
-  // ─────────────────────────────────────
-  // RENDER: ACTIVE ROOM (X Spaces style)
-  // ─────────────────────────────────────
-  return (
-    <div className="flex flex-col h-screen bg-[#060608] overflow-hidden">
-
-      {/* Room header */}
-      <div className="px-5 py-4 border-b border-zinc-800 bg-zinc-900/80 backdrop-blur-sm">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-purple-500/15 border border-purple-500/25
-                            flex items-center justify-center flex-shrink-0">
-              <Radio size={16} className="text-purple-400" />
+  /* ────────────────────────────────────────────────────────────────────
+     RENDER: ROOM LIST
+  ──────────────────────────────────────────────────────────────────── */
+  if (!activeRoom) {
+    return (
+      <div className="min-h-screen bg-[#0a0812] px-6 py-10">
+        <div className="max-w-3xl mx-auto">
+          <div className="flex items-center justify-between mb-8">
+            <div>
+              <h1 className="text-white text-2xl font-bold tracking-tight">Huddles</h1>
+              <p className="text-zinc-500 text-sm mt-1">Quick voice rooms for your team.</p>
             </div>
-            <div className="min-w-0">
-              <p className="text-white font-semibold truncate">{activeRoom.name}</p>
-              <div className="flex items-center gap-2 text-xs text-zinc-500">
-                <span className="flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  Live
-                </span>
-                <span>{formatElapsed(elapsed)}</span>
-                <span>·</span>
-                <span className="flex items-center gap-1">
-                  <Users size={10} /> {roomParticipants.length}
-                </span>
+            <button
+              onClick={() => setShowNewRoom(true)}
+              className="bg-purple-600 hover:bg-purple-500 text-white font-semibold px-4 py-2.5 rounded-xl transition text-sm"
+            >
+              New Huddle
+            </button>
+          </div>
+
+          {error && (
+            <div className="bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 text-sm text-red-400 mb-6">
+              {error}
+            </div>
+          )}
+
+          {showNewRoom && (
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-5 mb-6">
+              <p className="text-sm text-zinc-300 mb-3">Name this huddle</p>
+              <div className="flex gap-2">
+                <input
+                  autoFocus
+                  value={newRoomName}
+                  onChange={(e) => setNewRoomName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && createRoom()}
+                  placeholder="e.g. Quick sync"
+                  className="flex-1 bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm text-white placeholder-zinc-500 outline-none focus:border-emerald-500"
+                />
+                <button
+                  disabled={busy || !newRoomName.trim()}
+                  onClick={createRoom}
+                  className="bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-semibold px-4 py-2 rounded-xl transition text-sm"
+                >
+                  {busy ? "Starting…" : "Start"}
+                </button>
               </div>
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button className="w-8 h-8 rounded-lg bg-zinc-800 hover:bg-zinc-700
-                               flex items-center justify-center transition">
-              <Share2 size={14} className="text-zinc-400" />
-            </button>
-          </div>
-        </div>
-      </div>
+          )}
 
-      {/* Main content */}
-      <div className="flex-1 overflow-y-auto p-5 space-y-8">
-
-        {/* Speakers */}
-        <div>
-          <p className="text-xs text-zinc-600 uppercase tracking-widest font-semibold mb-5">
-            Speakers · {speakers.length}
-          </p>
-          <div className="flex flex-wrap gap-8">
-            {speakers.map((p) => (
-              <ParticipantBubble
-                key={p.id}
-                participant={{ ...p, audioLevel: audioLevels[p.user_id] ?? 0 }}
-                isSpeaking={
-                  activeSpeakerId === p.user_id &&
-                  (audioLevels[p.user_id] ?? 0) > 10
-                }
-                isLocal={p.user_id === currentUser?.id}
-                canPromote={isHost && p.user_id !== currentUser?.id}
-                onPromote={() => handlePromote(p.user_id)}
-                onMute={() => handleMuteParticipant(p.user_id)}
-                onRemove={() => handleRemoveParticipant(p.user_id)}
-                onReact={(emoji) => handleReact(p.user_id, emoji)}
-              />
-            ))}
-          </div>
-        </div>
-
-        {/* Divider */}
-        {listeners.length > 0 && <div className="h-px bg-zinc-800" />}
-
-        {/* Listeners */}
-        {listeners.length > 0 && (
-          <div>
-            <p className="text-xs text-zinc-600 uppercase tracking-widest font-semibold mb-4">
-              Listeners · {listeners.length}
-            </p>
-            <div className="flex flex-wrap gap-6">
-              {listeners.map((p) => (
-                <ParticipantBubble
-                  key={p.id}
-                  participant={p}
-                  isSpeaking={false}
-                  isLocal={p.user_id === currentUser?.id}
-                  canPromote={isHost}
-                  onPromote={() => handlePromote(p.user_id)}
-                  onMute={() => {}}
-                  onRemove={() => handleRemoveParticipant(p.user_id)}
-                  onReact={(emoji) => handleReact(p.user_id, emoji)}
-                />
+          {rooms.length === 0 ? (
+            <div className="rounded-2xl border border-zinc-800 p-10 text-center text-zinc-500 text-sm">
+              No active huddles right now. Start one to get your team talking.
+            </div>
+          ) : (
+            <div className="grid sm:grid-cols-2 gap-4">
+              {rooms.map((room) => (
+                <button
+                  key={room.id}
+                  disabled={busy}
+                  onClick={() => joinRoom(room)}
+                  className="text-left rounded-2xl border border-zinc-800 bg-zinc-900/30 hover:border-zinc-600 p-5 transition disabled:opacity-50"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
+                      <span className="text-xs text-purple-400 font-semibold uppercase tracking-wider">Live</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-500/15 border border-purple-500/25">
+                      <span className="text-xs font-bold text-purple-300">{participantCounts[room.id] ?? 0}</span>
+                      <div className="flex items-end gap-[2px] h-3">
+                        {[0,1,2].map((i) => (
+                          <span key={i} className="w-[2px] rounded-full bg-purple-400"
+                            style={{ height: (8 + Math.sin(Date.now()/400 + i) * 4) + "px", opacity: 0.7 }} />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <h3 className="text-white font-semibold text-base">{room.name}</h3>
+                  <p className="text-xs text-zinc-500 mt-1">{participantCounts[room.id] ?? 0} in call · Tap to join</p>
+                </button>
               ))}
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
+    );
+  }
 
-      {/* Control bar */}
-      <div className="flex-shrink-0 border-t border-zinc-800 bg-zinc-900/90
-                      backdrop-blur-sm px-5 py-4">
-
-        {/* My audio spectrum when speaking */}
-        {!isMuted && myAudioLevel > 8 && (
-          <div className="flex justify-center mb-3">
-            <AudioSpectrum level={myAudioLevel} color="#a855f7" bars={24} height={24} />
+  /* ────────────────────────────────────────────────────────────────────
+     RENDER: ACTIVE ROOM
+  ──────────────────────────────────────────────────────────────────── */
+  return (
+    <div className="min-h-screen bg-[#0a0812] px-6 py-8 flex flex-col">
+      <div className="max-w-3xl w-full mx-auto flex-1 flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-white font-semibold text-lg">{activeRoom.name}</h1>
+            <p className="text-zinc-500 text-sm font-mono mt-0.5">{formatDuration(elapsed)}</p>
           </div>
-        )}
-
-        <div className="flex items-center justify-between">
-
-          {/* Left — mic + hand + emoji */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleToggleMute}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm
-                          font-semibold transition border
-                ${isMuted
-                  ? "bg-red-500/20 border-red-500/30 text-red-400 hover:bg-red-500/30"
-                  : "bg-zinc-800 border-zinc-700 text-white hover:bg-zinc-700"
-                }`}
-            >
-              {isMuted ? <MicOff size={15} /> : <Mic size={15} />}
-              {isMuted ? "Unmute" : "Mute"}
-            </button>
-
-            <button
-              onClick={handleRaiseHand}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm
-                          font-semibold transition border
-                ${handRaised
-                  ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-400"
-                  : "bg-zinc-800 border-zinc-700 text-zinc-400 hover:text-white hover:bg-zinc-700"
-                }`}
-            >
-              <span>✋</span>
-              {handRaised ? "Lower" : "Hand"}
-            </button>
-
-            {/* Global emoji reaction */}
-            <div className="relative">
+          <div className="flex items-center gap-3">
+            {isHost && raisedHands.length > 0 && (
               <button
-                onClick={() => setShowEmojiBar(!showEmojiBar)}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm
-                            font-semibold transition border
-                  ${showEmojiBar
-                    ? "bg-yellow-500/15 border-yellow-500/30 text-yellow-400"
-                    : "bg-zinc-800 border-zinc-700 text-zinc-400 hover:text-white hover:bg-zinc-700"
-                  }`}
+                onClick={() => setHandQueueOpen((v) => !v)}
+                className="relative rounded-xl border border-zinc-700 px-3 py-2 text-sm text-zinc-200 hover:border-zinc-500 transition"
               >
-                <Smile size={15} /> React
+                ✋ {raisedHands.length}
               </button>
-              {showEmojiBar && (
-                <div className="absolute bottom-14 left-0 bg-zinc-900 border border-zinc-700
-                                rounded-2xl p-2 grid grid-cols-6 gap-1 shadow-2xl z-50 w-max">
-                  {EMOJI_LIST.map((e) => (
-                    <button
-                      key={e}
-                      onClick={() => {
-                        handleReact(currentUser?.id ?? "", e);
-                        setShowEmojiBar(false);
-                      }}
-                      className="w-9 h-9 rounded-xl hover:bg-zinc-800 flex items-center
-                                 justify-center text-xl transition"
-                    >
-                      {e}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            )}
+            {isHost ? (
+              <button
+                onClick={endHuddle}
+                className="bg-red-600 hover:bg-red-500 text-white font-semibold px-4 py-2 rounded-xl transition text-sm"
+              >
+                End Huddle
+              </button>
+            ) : (
+              <button
+                onClick={leaveRoom}
+                className="border border-zinc-700 hover:border-zinc-500 text-zinc-200 font-medium px-4 py-2 rounded-xl transition text-sm"
+              >
+                Leave
+              </button>
+            )}
           </div>
-
-          {/* Right — leave / end */}
-          <button
-            onClick={handleLeave}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm
-                        font-semibold transition
-              ${isHost
-                ? "bg-red-500 hover:bg-red-400 text-white shadow-lg shadow-red-500/20"
-                : "bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300"
-              }`}
-          >
-            <PhoneOff size={15} />
-            {isHost ? "End Huddle" : "Leave"}
-          </button>
         </div>
 
-        <p className="text-[10px] text-zinc-700 text-center mt-2">
-          {isHost
-            ? "You are the host · ending the huddle removes all participants"
-            : "You are a listener"
-          }
-        </p>
+        {/* Hand-raise queue (host only) */}
+        {isHost && handQueueOpen && raisedHands.length > 0 && (
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-3 mb-6 space-y-2">
+            {raisedHands.map((p) => (
+              <div key={p.id} className="flex items-center justify-between text-sm">
+                <span className="text-zinc-200">✋ {displayName(profiles[p.user_id], "Member")}</span>
+                <button
+                  onClick={() => inviteToSpeak(p.user_id)}
+                  className="text-emerald-400 hover:text-emerald-300 text-xs font-medium"
+                >
+                  Invite to speak
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Participant grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-5 flex-1">
+          {participants.map((p) => {
+            const profile = profiles[p.user_id];
+            const name = displayName(profile, p.user_id === me?.id ? "You" : "Member");
+            const level = levels[p.user_id] ?? 0;
+            const speaking = level > 18 && !(p.user_id === me?.id ? myMuted : p.is_muted);
+            const reaction = reactions[p.user_id];
+            return (
+              <div key={p.id} className="relative flex flex-col items-center text-center group">
+                {reaction && (
+                  <span className="absolute -top-2 text-2xl animate-bounce z-10">{reaction}</span>
+                )}
+                {p.hand_raised && (
+                  <span className="absolute top-0 right-6 text-base z-10">✋</span>
+                )}
+                <div
+                  className="w-16 h-16 rounded-full flex items-center justify-center text-white font-semibold text-sm relative"
+                  style={{
+                    background: "linear-gradient(135deg, #27272a, #18181b)",
+                    boxShadow: speaking ? "0 0 0 3px rgba(124,58,237,0.55)" : "0 0 0 1px #27272a",
+                  }}
+                >
+                  {initials(name)}
+                </div>
+                <p className="text-zinc-200 text-sm mt-2 truncate max-w-full">{name}</p>
+                <div className="mt-1.5 flex items-center gap-1.5">
+                  <Spectrum level={level} active={speaking} />
+                  {(p.user_id === me?.id ? myMuted : p.is_muted) && (
+                    <span className="text-zinc-600 text-xs">🔇</span>
+                  )}
+                </div>
+
+                {isHost && p.user_id !== me?.id && (
+                  <button
+                    onClick={() => removeParticipant(p.id)}
+                    className="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 transition w-6 h-6 rounded-full bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-red-400 text-xs"
+                    title="Remove from huddle"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Control bar */}
+        <div className="mt-8 flex items-center justify-center gap-3">
+          <button
+            onClick={toggleMute}
+            className={`px-5 py-3 rounded-xl text-sm font-medium transition ${
+              myMuted ? "bg-zinc-800 text-zinc-300 border border-zinc-700" : "bg-purple-600 text-white"
+            }`}
+          >
+            {myMuted ? "🔇 Unmute" : "🎙️ Mute"}
+          </button>
+          <button
+            onClick={toggleHand}
+            className={`px-5 py-3 rounded-xl text-sm font-medium transition border ${
+              myHandRaised ? "bg-white text-zinc-900 border-white" : "border-zinc-700 text-zinc-300"
+            }`}
+          >
+            ✋ {myHandRaised ? "Lower hand" : "Raise hand"}
+          </button>
+          <div className="relative">
+            <details className="group">
+              <summary className="list-none cursor-pointer px-5 py-3 rounded-xl text-sm font-medium border border-zinc-700 text-zinc-300">
+                😊 React
+              </summary>
+              <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-zinc-900 border border-zinc-700 rounded-xl p-2 grid grid-cols-6 gap-1 w-56 z-20">
+                {EMOJIS.map((e) => (
+                  <button
+                    key={e}
+                    onClick={() => sendReaction(e)}
+                    className="text-lg hover:scale-125 transition p-1"
+                  >
+                    {e}
+                  </button>
+                ))}
+              </div>
+            </details>
+          </div>
+        </div>
       </div>
     </div>
   );

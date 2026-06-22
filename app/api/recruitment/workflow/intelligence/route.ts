@@ -1,21 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { withSecurity } from "@/lib/security/withSecurity";
+import { RATE_LIMITS } from "@/lib/security/rateLimit";
 import { getCandidateIntelligence } from "@/lib/workflow.intelligence";
 
-export async function POST(req: NextRequest) {
-  const { candidateId } = await req.json();
+const Schema = z.object({ candidateId: z.string().uuid() });
 
-  if (!candidateId) {
-    return NextResponse.json(
-      { error: "candidateId required" },
-      { status: 400 }
-    );
-  }
-
-  const intelligence = await getCandidateIntelligence(candidateId);
-
-  return NextResponse.json({
-    success: true,
-    candidateId,
-    intelligence,
-  });
-}
+export const POST = withSecurity(
+  async (_req, { body }) => {
+    const intelligence = await getCandidateIntelligence(body.candidateId);
+    return NextResponse.json({ success: true, candidateId: body.candidateId, intelligence });
+  },
+  { schema: Schema, requireAuth: true, rateLimit: RATE_LIMITS.authenticated }
+);

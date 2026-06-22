@@ -319,18 +319,23 @@ export default function ClockingPage() {
   const handleClockIn = async () => {
     if (!currentUser || actionLoading) return;
 
-    // Schedule gate — only block if schedules exist
-    if (schedules.length > 0) {
-      const now = new Date();
-      const active = schedules.find((s) => {
-        const start = new Date(s.start_time);
-        const end   = new Date(s.end_time);
-        return now >= start && now <= end;
-      });
-      if (!active) {
-        showToast("error", "No active schedule for this time. Check your Schedules tab.");
-        return;
-      }
+    // Block clocking if no schedules have been set up at all
+    if (schedules.length === 0) {
+      showToast("error", "No schedules found. Go to the Schedules tab and add your work schedule before clocking in.");
+      setActiveTab("schedules");
+      return;
+    }
+
+    // Block if no schedule is active right now
+    const now = new Date();
+    const active = schedules.find((s) => {
+      const start = new Date(s.start_time);
+      const end   = new Date(s.end_time);
+      return now >= start && now <= end;
+    });
+    if (!active) {
+      showToast("error", "No active schedule for this time window. Check your Schedules tab.");
+      return;
     }
 
     setActionLoading(true);

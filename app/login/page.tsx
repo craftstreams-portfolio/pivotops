@@ -1,239 +1,418 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
-function PivotLogo() {
+// ─────────────────────────────────────────────────────────────────────────────
+// ROUTING LOGIC — single source of truth
+// ─────────────────────────────────────────────────────────────────────────────
+interface RoutingResult {
+  destination: "dashboard" | "onboarding" | "error";
+  reason: string;
+}
+
+async function resolvePostLoginRoute(user: { id: string; email?: string | null; user_metadata?: any }): Promise<RoutingResult> {
+  const userId = user.id;
+  const { data: profile, error: profileErr } = await supabase
+    .from("profiles")
+    .select("id, tenant_id, onboarding_complete, onboarding_step")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (profileErr) {
+    console.error("[routing] Profile fetch failed:", profileErr.message);
+    return { destination: "error", reason: profileErr.message };
+  }
+
+  const meta = user.user_metadata ?? {};
+
+  // Invited teammate: always (re)apply the invite's tenant/role, even if a
+  // placeholder profile already exists (e.g. created by the auth.users
+  // signup trigger), since that placeholder may carry a stale tenant_id.
+  if (meta.invited && meta.tenant_id && (!profile || profile.tenant_id !== meta.tenant_id)) {
+    const now = new Date().toISOString();
+    const invitedEmail = normalizeEmail(user.email ?? "");
+    const { data: tenantRow } = await supabase.from("tenants").select("org_name, org_size, org_industry, org_country").eq("id", meta.tenant_id).maybeSingle();
+    await supabase.from("profiles").upsert({
+      id: userId,
+      email: invitedEmail,
+      email_normalized: invitedEmail,
+      tenant_id: meta.tenant_id,
+      role: meta.role ?? "operator",
+      org_name: tenantRow?.org_name ?? "",
+      org_size: tenantRow?.org_size ?? "",
+      org_industry: tenantRow?.org_industry ?? "",
+      org_country: tenantRow?.org_country ?? "",
+      onboarding_complete: true,
+      first_login_at: now,
+      date_joined: now.slice(0, 10),
+      created_at: now,
+      updated_at: now,
+    }, { onConflict: "id" });
+    await supabase.from("team_invites")
+      .update({ status: "accepted", accepted_at: now })
+      .eq("tenant_id", meta.tenant_id)
+      .eq("email_normalized", invitedEmail);
+    return { destination: "dashboard", reason: "invited_teammate_joined" };
+  }
+
+  if (!profile) {
+    return { destination: "onboarding", reason: "no_profile" };
+  }
+
+  if (profile.onboarding_complete === true) {
+    return { destination: "dashboard", reason: "onboarding_complete_flag" };
+  }
+
+  if (profile.tenant_id) {
+    const { data: tenant } = await supabase
+      .from("tenants")
+      .select("id")
+      .eq("id", profile.tenant_id)
+      .maybeSingle();
+
+    if (tenant) {
+      await supabase
+        .from("profiles")
+        .update({ onboarding_complete: true, updated_at: new Date().toISOString() })
+        .eq("id", userId);
+      return { destination: "dashboard", reason: "tenant_exists_self_healed" };
+    }
+  }
+
+  return { destination: "onboarding", reason: "no_tenant" };
+}
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PIVOTOPS LOGO SVG — silver/chrome gradient (matches dashboard splash)
+// ─────────────────────────────────────────────────────────────────────────────
+function PivotOpsLogo({ size = 48 }: { size?: number }) {
   return (
     <svg
-      width="72"
-      height="62"
-      viewBox="0 0 100 86"
+      width={size}
+      height={Math.round(size * 0.87)}
+      viewBox="0 0 100 87"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      className="mx-auto"
     >
-      <path
-        d="M50 2L98 84H2L50 2Z"
-        stroke="url(#silver)"
-        strokeWidth="4"
-      />
-
-      <path
-        d="M50 22L82 76H18L50 22Z"
-        stroke="url(#silver2)"
-        strokeWidth="2"
-        opacity="0.5"
-      />
-
       <defs>
-        <linearGradient id="silver" x1="0" y1="0" x2="100" y2="86">
-          <stop offset="0%" stopColor="#ffffff" />
-          <stop offset="50%" stopColor="#d4d4d4" />
-          <stop offset="100%" stopColor="#737373" />
+        <linearGradient id="chromeOuter" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%"   stopColor="#d0d0d0" />
+          <stop offset="35%"  stopColor="#ffffff" />
+          <stop offset="65%"  stopColor="#909090" />
+          <stop offset="100%" stopColor="#b8b8b8" />
         </linearGradient>
-
-        <linearGradient id="silver2" x1="100" y1="0" x2="0" y2="86">
-          <stop offset="0%" stopColor="#737373" />
-          <stop offset="50%" stopColor="#d4d4d4" />
-          <stop offset="100%" stopColor="#404040" />
+        <linearGradient id="chromeInner" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%"   stopColor="#606060" />
+          <stop offset="50%"  stopColor="#c8c8c8" />
+          <stop offset="100%" stopColor="#484848" />
         </linearGradient>
       </defs>
+      <path
+        d="M50 3L97 84H3L50 3Z"
+        fill="rgba(255,255,255,0.03)"
+        stroke="url(#chromeOuter)"
+        strokeWidth="4"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M50 24L80 75H20L50 24Z"
+        fill="none"
+        stroke="url(#chromeInner)"
+        strokeWidth="2"
+        strokeLinejoin="round"
+        strokeOpacity="0.7"
+      />
     </svg>
   );
 }
 
-export default function LoginPage() {
-  const router = useRouter();
+// ─────────────────────────────────────────────────────────────────────────────
+// PAGE
+// ─────────────────────────────────────────────────────────────────────────────
+function LoginPage() {
+  const router       = useRouter();
+  const searchParams = useSearchParams();
 
-  const [email, setEmail] = useState("");
+  const [email,    setEmail]    = useState("");
   const [password, setPassword] = useState("");
+  const [mode,     setMode]     = useState<"login" | "signup" | "forgot">(searchParams.get("mode") === "signup" ? "signup" : "login");
+  const [loading,  setLoading]  = useState(false);
+  const [error,    setError]    = useState("");
+  const [success,  setSuccess]  = useState("");
 
-  const [loading, setLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
+  // ── Helper: route after auth, respecting ?redirect= when it points to dashboard ──
+  function routeAfterAuth(result: RoutingResult) {
+    if (result.destination === "dashboard") {
+      const redirectTo = searchParams.get("redirect");
+      // Only honor redirect param if it's a safe internal dashboard path
+      if (redirectTo && redirectTo.startsWith("/dashboard")) {
+        router.replace(redirectTo);
+      } else {
+        router.replace("/dashboard");
+      }
+    } else if (result.destination === "onboarding") {
+      router.replace("/onboarding");
+    } else {
+      setError("Something went wrong loading your account. Please try again or contact support.");
+    }
+  }
 
-  const [mode, setMode] = useState<"login" | "signup">("login");
+  // Auto-redirect if already authenticated (covers page refresh,
+  // direct navigation to /login while already logged in)
+  useEffect(() => {
+    let cancelled = false;
 
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+    if (searchParams.get("mode") === "signup") {
+      supabase.auth.signOut().catch(() => {});
+      return;
+    }
+
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (cancelled) return;
+      if (session) {
+        const result = await resolvePostLoginRoute(session.user);
+        if (!cancelled) routeAfterAuth(result);
+      }
+    });
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleSubmit() {
     if (!email || !password) return;
-
     setLoading(true);
     setError("");
     setSuccess("");
 
     try {
+      const normalizedEmail = normalizeEmail(email);
+
       if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({
-          email: email.trim().toLowerCase(),
-          password,
-        });
+        const { data: existing } = await supabase
+          .from("profiles")
+          .select("id")
+          .eq("email_normalized", normalizedEmail)
+          .maybeSingle();
 
-        if (error) {
-          setError(error.message);
-        } else {
-          setSuccess(
-            "Account created successfully. Check your email to verify your account."
-          );
+        if (existing) {
+          setError("An account with this email already exists. Please sign in instead.");
           setMode("login");
+          setLoading(false);
+          return;
         }
+
+        const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
+          email: normalizedEmail,
+          password,
+          options: {
+            emailRedirectTo: window.location.origin + "/onboarding",
+          },
+        });
+
+        if (signUpErr) {
+          if (signUpErr.message.toLowerCase().includes("already registered")) {
+            setError("An account with this email already exists. Please sign in instead.");
+            setMode("login");
+          } else {
+            setError(signUpErr.message);
+          }
+          setLoading(false);
+          return;
+        }
+
+        setSuccess("Account created. Check your email to verify your account, then you'll be taken straight to setup.");
+        setMode("login");
+
       } else {
-        const { error } = await supabase.auth.signInWithPassword({
-          email: email.trim().toLowerCase(),
+        const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
+          email: normalizedEmail,
           password,
         });
 
-        if (error) {
-          setError(error.message);
-        } else {
-          router.push("/dashboard");
-        }
+        if (signInErr) { setError(signInErr.message); setLoading(false); return; }
+        if (!signInData.user) { setError("Login failed. Please try again."); setLoading(false); return; }
+
+        const result = await resolvePostLoginRoute(signInData.user);
+        console.log("[routing]", result);
+        routeAfterAuth(result);
       }
-    } catch {
-      setError("Unexpected error occurred.");
+    } catch (err) {
+      console.error("Login error:", err);
+      setError(err instanceof Error ? err.message : "Unexpected error occurred.");
     } finally {
       setLoading(false);
     }
   }
 
+  async function handleForgotPassword() {
+    if (!email.trim()) { setError("Please enter your email address."); return; }
+    setLoading(true); setError(""); setSuccess("");
+    try {
+      const { error: resetErr } = await supabase.auth.resetPasswordForEmail(
+        normalizeEmail(email),
+        { redirectTo: window.location.origin + "/auth/callback" }
+      );
+      if (resetErr) throw resetErr;
+      setSuccess("Reset link sent — check your inbox. The link expires in 1 hour.");
+      setMode("login");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to send reset email.");
+    } finally { setLoading(false); }
+  }
+
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-zinc-950 px-4">
-      {/* Background Glow */}
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(16,185,129,0.08),transparent_65%)]" />
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden
+                    bg-zinc-950 px-4">
+      {/* Background glow */}
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.05),transparent_65%)]" />
+
+      {/* Subtle grid */}
+      <div className="absolute inset-0 opacity-[0.025]"
+        style={{
+          backgroundImage: `linear-gradient(#ffffff 1px, transparent 1px),
+                            linear-gradient(90deg, #ffffff 1px, transparent 1px)`,
+          backgroundSize: "60px 60px",
+        }}
+      />
 
       <div className="relative z-10 w-full max-w-md">
-        {/* Logo */}
-        <div className="mb-8 text-center">
-          <div className="animate-pulse">
-            <PivotLogo />
+
+        {/* ── LOGO ── */}
+        <div className="flex flex-col items-center gap-3 mb-8">
+          <div className="relative">
+            <div className="absolute inset-0 rounded-full blur-2xl bg-white/10 scale-150" />
+            <PivotOpsLogo size={56} />
           </div>
-
-          <h1 className="mt-4 text-3xl font-bold text-white">
-            PivotOps
-          </h1>
-
-          <p className="mt-1 text-sm text-zinc-500">
-            Autonomous Workforce OS
-          </p>
+          <div className="text-center">
+            <h1 className="text-2xl font-bold text-white tracking-tight">PivotOps</h1>
+            <p className="text-xs text-zinc-500 font-medium tracking-widest uppercase mt-0.5">
+              Autonomous Workforce OS
+            </p>
+          </div>
         </div>
 
-        {/* Card */}
-        <div className="rounded-3xl border border-zinc-800 bg-zinc-900/70 p-8 backdrop-blur-xl">
-          <h2 className="mb-2 text-xl font-semibold text-white">
-            {mode === "login"
-              ? "Sign in to your account"
-              : "Create your account"}
-          </h2>
+        {/* ── CARD ── */}
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-900/80
+                        backdrop-blur-sm p-6 space-y-4 shadow-2xl shadow-black/40">
 
-          <p className="mb-6 text-sm text-zinc-500">
-            Access your workforce operations dashboard
-          </p>
+          <div className="text-center pb-1">
+            <p className="text-sm text-zinc-400">
+              {mode === "login" ? "Sign in to your account" : "Create your account"}
+            </p>
+          </div>
 
           {error && (
-            <div className="mb-4 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+            <div className="bg-red-500/10 border border-red-500/20 rounded-xl
+                            px-4 py-3 text-sm text-red-400">
               {error}
             </div>
           )}
-
           {success && (
-            <div className="mb-4 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-400">
+            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl
+                            px-4 py-3 text-sm text-emerald-400">
               {success}
             </div>
           )}
 
-          <div className="space-y-4">
-            {/* Email */}
-            <div>
-              <label className="mb-2 block text-sm text-zinc-400">
-                Email
-              </label>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+            placeholder="you@company.com"
+            autoComplete="email"
+            className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3
+                       text-sm text-white placeholder-zinc-500 outline-none
+                       focus:border-emerald-500 transition"
+          />
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+            placeholder="Password"
+            autoComplete={mode === "login" ? "current-password" : "new-password"}
+            className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3
+                       text-sm text-white placeholder-zinc-500 outline-none
+                       focus:border-emerald-500 transition"
+          />
 
-              <input
-                type="email"
-                value={email}
-                onChange={(e) =>
-                  setEmail(e.target.value)
-                }
-                placeholder="you@company.com"
-                className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-3 text-white outline-none transition focus:border-emerald-500"
-              />
+          {mode === "login" && (
+            <div className="flex justify-end -mt-1">
+              <button
+                onClick={() => { setMode("forgot"); setError(""); setSuccess(""); }}
+                className="text-xs text-zinc-600 hover:text-indigo-400 transition">
+                Forgot password?
+              </button>
             </div>
+          )}
 
-            {/* Password */}
-            <div>
-              <label className="mb-2 block text-sm text-zinc-400">
-                Password
-              </label>
-
-              <div className="relative">
-                <input
-                  type={
-                    showPassword ? "text" : "password"
-                  }
-                  value={password}
-                  onChange={(e) =>
-                    setPassword(e.target.value)
-                  }
-                  placeholder="••••••••"
-                  className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-3 pr-16 text-white outline-none transition focus:border-emerald-500"
-                />
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    setShowPassword((v) => !v)
-                  }
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-zinc-500 hover:text-white"
-                >
-                  {showPassword ? "Hide" : "Show"}
-                </button>
-              </div>
+          {mode === "forgot" && (
+            <div className="space-y-3">
+              <p className="text-xs text-zinc-500 text-center">
+                Enter your email and we will send a password reset link.
+              </p>
+              <button
+                onClick={handleForgotPassword}
+                disabled={loading || !email}
+                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold
+                           py-3 rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed">
+                {loading ? "Sending..." : "Send Reset Email"}
+              </button>
+              <button
+                onClick={() => { setMode("login"); setError(""); setSuccess(""); }}
+                className="w-full text-center text-xs text-zinc-500 hover:text-emerald-400 transition">
+                Back to sign in
+              </button>
             </div>
+          )}
 
-            {/* Submit */}
-            <button
-              onClick={handleSubmit}
-              disabled={
-                loading || !email || !password
-              }
-              className="w-full rounded-xl bg-emerald-600 py-3 font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {loading
-                ? "Please wait..."
-                : mode === "login"
-                ? "Sign In"
-                : "Create Account"}
-            </button>
-          </div>
+          {mode !== "forgot" && <button
+            onClick={handleSubmit}
+            disabled={loading || !email || !password}
+            className="w-full bg-emerald-500 hover:opacity-90 text-zinc-950 font-semibold
+                       py-3 rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loading
+              ? "Please wait..."
+              : mode === "login" ? "Sign In" : "Create Account"
+            }
+          </button>}
 
-          {/* Toggle */}
-          <div className="mt-6 text-center">
-            <button
-              onClick={() => {
-                setMode(
-                  mode === "login"
-                    ? "signup"
-                    : "login"
-                );
-                setError("");
-                setSuccess("");
-              }}
-              className="text-sm text-zinc-500 transition hover:text-zinc-300"
-            >
-              {mode === "login"
-                ? "Don't have an account? Sign up"
-                : "Already have an account? Sign in"}
-            </button>
-          </div>
+          {mode !== "forgot" && <button
+            onClick={() => {
+              setMode(mode === "login" ? "signup" : "login");
+              setError("");
+              setSuccess("");
+            }}
+            className="w-full text-center text-xs text-zinc-500 hover:text-emerald-400 transition"
+          >
+            {mode === "login"
+              ? "Need an account? Sign up"
+              : "Already have an account? Sign in"
+            }
+          </button>}
         </div>
 
-        <p className="mt-6 text-center text-xs text-zinc-600">
-          © 2026 PivotOps · Autonomous Workforce OS
+        <p className="text-center text-[10px] text-zinc-700 mt-6">
+          Secured by PivotOps · All data encrypted in transit
         </p>
       </div>
     </div>
+  );
+}
+
+export default function LoginPageWrapper() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-zinc-950" />}>
+      <LoginPage />
+    </Suspense>
   );
 }
