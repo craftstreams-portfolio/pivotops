@@ -1,56 +1,15 @@
+import type { Metadata } from "next";
 import "./globals.css";
 
-import type { Metadata } from "next";
-
-
-import { startWorkers } from "../lib/workers/start-workers";
-
-// ===============================
-// FONT
-// ===============================
-
-// ===============================
-// SAFE WORKER BOOT
-// ===============================
-if (
-  typeof window === "undefined" &&
-  process.env.NODE_ENV !== "test"
-) {
-  startWorkers().catch(
-    (err: unknown) => {
-      console.error(
-        "🔥 Worker startup failed:",
-        err
-      );
-    }
-  );
-}
-
-// ===============================
-// METADATA
-// ===============================
 export const metadata: Metadata = {
-  title: "PivotOps",
-
-  description:
-    "Enterprise Workforce OS",
+  title: "PivotOps — Autonomous Workforce OS",
+  description: "Automate hiring, onboarding, compliance, and team coordination in one system.",
 };
 
-// ===============================
-// ROOT LAYOUT
-// ===============================
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body
-        className={
-          "font-sans"
-        }
-      >
+      <body className="font-sans antialiased">
         {children}
       </body>
     </html>
