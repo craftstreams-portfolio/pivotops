@@ -1,24 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const PUBLIC_ROUTES = [
-  "/login", "/onboarding", "/candidate/login",
-  "/candidate/register", "/candidate/portal", "/candidate/verify",
-  "/applications", "/apply", "/legal",
-];
-
-const PUBLIC_API_PREFIXES = [
-  "/api/recruitment/apply", "/api/auth/callback",
-  "/api/auth/signout", "/api/health",
-  "/api/public/tenant-lookup", "/api/dashboard/metrics",
-  "/api/recruitment/offer-response", "/api/recruitment/interview-confirm",
-];
-
-function applySecurityHeaders(response: NextResponse): NextResponse {
-  response.headers.set("X-Frame-Options", "DENY");
-  response.headers.set("X-Content-Type-Options", "nosniff");
-  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
-  response.headers.set("Permissions-Policy", "camera=(self), microphone=(self), geolocation=()");
-  response.headers.set(
+function applySecurityHeaders(res: NextResponse): NextResponse {
+  res.headers.set("X-Frame-Options", "DENY");
+  res.headers.set("X-Content-Type-Options", "nosniff");
+  res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.headers.set("Permissions-Policy", "camera=(self), microphone=(self), geolocation=()");
+  res.headers.set(
     "Content-Security-Policy",
     [
       "default-src 'self'",
@@ -30,83 +17,10 @@ function applySecurityHeaders(response: NextResponse): NextResponse {
       "frame-ancestors 'none'",
     ].join("; ")
   );
-  return response;
+  return res;
 }
 
-export async function middleware(req: NextRequest) {
-  const { pathname } = req.nextUrl;
-
-  // Static assets — pass through immediately
-  if (
-    pathname.startsWith("/_next") ||
-    pathname.startsWith("/favicon") ||
-    /\.(png|jpg|jpeg|svg|ico|webp|css|js|woff2?)$/.test(pathname)
-  ) {
-    return NextResponse.next();
-  }
-
-  // Public routes — no auth check needed
-  const isPublicPage = PUBLIC_ROUTES.some(
-    (r) => pathname === r || pathname.startsWith(r + "/")
-  );
-  const isPublicApi = PUBLIC_API_PREFIXES.some((p) => pathname.startsWith(p));
-
-  if (isPublicPage || isPublicApi) {
-    return applySecurityHeaders(NextResponse.next());
-  }
-
-  // Landing page is always public
-  if (pathname === "/") {
-    return applySecurityHeaders(NextResponse.next());
-  }
-
-  // Only protect /dashboard and /api routes
-  const isDashboard    = pathname.startsWith("/dashboard");
-  const isProtectedApi = pathname.startsWith("/api") && !isPublicApi;
-
-  if (!isDashboard && !isProtectedApi) {
-    return applySecurityHeaders(NextResponse.next());
-  }
-
-  // Auth check — Edge-compatible, no Node.js APIs
-  const projectRef = process.env.NEXT_PUBLIC_SUPABASE_URL
-    ?.split("//")[1]?.split(".")[0] ?? "";
-
-  const token =
-    req.cookies.get("sb-access-token")?.value ||
-    req.cookies.get(`sb-${projectRef}-auth-token`)?.value ||
-    req.cookies.get(`sb-${projectRef}-auth-token.0`)?.value;
-
-  let authenticated = false;
-
-  if (token) {
-    try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/user`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-          },
-        }
-      );
-      authenticated = res.ok;
-    } catch {
-      authenticated = false;
-    }
-  }
-
-  if (!authenticated) {
-    if (isProtectedApi) {
-      return applySecurityHeaders(
-        NextResponse.json({ error: "Authentication required." }, { status: 401 })
-      );
-    }
-    const loginUrl = new URL("/login", req.url);
-    loginUrl.searchParams.set("redirect", pathname);
-    return applySecurityHeaders(NextResponse.redirect(loginUrl));
-  }
-
+export function middleware(req: NextRequest) {
   return applySecurityHeaders(NextResponse.next());
 }
 
