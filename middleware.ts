@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+const isDev = process.env.NODE_ENV === "development";
+
 // Rate limit store (edge-compatible, resets on cold start)
 const rateLimitMap = new Map<string, { count: number; reset: number }>();
 
@@ -24,36 +26,40 @@ const PUBLIC_RATE_LIMITED = [
 ];
 
 function applySecurityHeaders(res: NextResponse): NextResponse {
-  // Prevent clickjacking
   res.headers.set("X-Frame-Options", "DENY");
-  // Prevent MIME sniffing
   res.headers.set("X-Content-Type-Options", "nosniff");
-  // Referrer policy
   res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
-  // Permissions policy
   res.headers.set("Permissions-Policy", "camera=(self), microphone=(self), geolocation=(), payment=()");
-  // HSTS — enforce HTTPS for 1 year including subdomains
-  res.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
-  // Cache control for sensitive routes
+
+  // HSTS only in production — breaks localhost in dev
+  if (!isDev) {
+    res.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
+  }
+
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
-  // XSS protection (legacy browsers)
   res.headers.set("X-XSS-Protection", "1; mode=block");
-  // CSP — removed unsafe-eval, restricted img-src
+
+  // CSP: allow unsafe-eval in dev (React needs it), block in production
+  const scriptSrc = isDev
+    ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
+    : "script-src 'self' 'unsafe-inline'";
+
   res.headers.set(
     "Content-Security-Policy",
     [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline'",
+      scriptSrc,
       "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: blob: https://*.supabase.co https://*.supabase.in",
+      "img-src 'self' data: blob: https:",
       "font-src 'self' https://fonts.gstatic.com",
       "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://nominatim.openstreetmap.org https://api.anthropic.com",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
-      "upgrade-insecure-requests",
+      ...(!isDev ? ["upgrade-insecure-requests"] : []),
     ].join("; ")
   );
+
   return res;
 }
 
