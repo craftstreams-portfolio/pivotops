@@ -249,19 +249,21 @@ export function subscribeToNotifications(
   tenantId: string,
   onNew:    (n: AppNotification) => void
 ) {
-  const channel = supabase
-    .channel(`notifications-${userId}`)
-    .on(
-      "postgres_changes",
-      {
-        event:  "INSERT",
-        schema: "public",
-        table:  "notifications",
-        filter: `user_id=eq.${userId}`,
-      },
-      (payload) => onNew(payload.new as AppNotification)
-    )
-    .subscribe();
+  // Must call .on() before .subscribe() — Supabase throws if order is reversed
+  const channel = supabase.channel(`notif-${userId}-${Date.now()}`);
 
-  return () => supabase.removeChannel(channel);
+  channel.on(
+    "postgres_changes" as any,
+    {
+      event:  "INSERT",
+      schema: "public",
+      table:  "notifications",
+      filter: `user_id=eq.${userId}`,
+    },
+    (payload: any) => onNew(payload.new as AppNotification)
+  );
+
+  channel.subscribe();
+
+  return () => { supabase.removeChannel(channel); };
 }
