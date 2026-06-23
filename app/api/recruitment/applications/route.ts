@@ -56,7 +56,6 @@ async function POST_IMPL(req: Request) {
       candidateId,
       stage:         "application_received",
       candidateName,
-      score:         result.score,
     });
 
     // ── Route based on decision ───────────────
@@ -66,7 +65,6 @@ async function POST_IMPL(req: Request) {
         candidateId,
         stage:         "auto_interview",
         candidateName,
-        score:         result.score,
       });
 
     } else if (result.decision === "manual_review") {
@@ -75,7 +73,6 @@ async function POST_IMPL(req: Request) {
         candidateId,
         stage:         "manual_review",
         candidateName,
-        score:         result.score,
       });
 
     } else {
@@ -85,16 +82,14 @@ async function POST_IMPL(req: Request) {
         candidateId,
         stage:         "auto_reject",
         candidateName,
-        score:         result.score,
       });
 
       // Fire-and-forget rejection email (don't fail the request if email fails)
       sendRejectionEmail({
-        toEmail:       body.email.trim(),
+        to:            body.email.trim(),
+        orgName:       body.tenantId ?? "PivotOps",
         candidateName,
-        role:          body.role.trim(),
-        score:         result.score,
-        summary:       result.summary,
+        roleName:      body.role.trim(),
       }).catch((err: unknown) => {
         console.error("Rejection email failed:", extractMessage(err));
       });
@@ -102,7 +97,6 @@ async function POST_IMPL(req: Request) {
 
     return NextResponse.json({
       candidateId,
-      score:    result.score,
       decision: result.decision,
       message:  result.summary,
     });

@@ -626,8 +626,6 @@ export default function RecruitmentBoard() {
             candidate_id: c.id,
             tenant_id:    tenantId,
             position:     c.role ?? "Position",
-            department:   "Recruitment",
-            salary:       "To be discussed",
             start_date:   new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
             status:       "sent",
             sent_at:      new Date().toISOString(),
@@ -653,13 +651,11 @@ export default function RecruitmentBoard() {
         // Send offer email
         const baseUrl = window.location.origin;
         await sendOfferLetterEmail({
-          toEmail:       c.email,
+          to:            c.email,
+          orgName:       tenantId ?? "PivotOps",
           candidateName: c.name,
-          role:          c.role ?? "Position",
-          department:    "Recruitment",
-          salary:        "To be discussed",
+          roleName:      c.role ?? "Position",
           startDate:     new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toLocaleDateString(),
-          offerId:       offer?.id ?? "",
           acceptUrl:     `${baseUrl}/api/recruitment/offer?offerId=${offer?.id}&action=accept&candidateId=${c.id}`,
           declineUrl:    `${baseUrl}/api/recruitment/offer?offerId=${offer?.id}&action=decline&candidateId=${c.id}`,
         });
