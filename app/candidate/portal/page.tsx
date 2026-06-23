@@ -85,6 +85,43 @@ function DocViewer({ url, name, onClose }: { url: string; name: string; onClose:
   const [zoom, setZoom] = useState(1);
   const isPdf = name.toLowerCase().endsWith(".pdf") || url.includes(".pdf");
 
+
+  // ── VULN-003 FIX: Session guard — verify candidate is authenticated ─────────
+  const [authChecked,    setAuthChecked]    = useState(false);
+  const [authError,      setAuthError]      = useState("");
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) {
+        const params = new URLSearchParams(window.location.search);
+        const cId = params.get("candidateId") ?? "";
+        const tId = params.get("tenantId") ?? "default";
+        setAuthError("Your session has expired. Please log in again.");
+        setTimeout(() => {
+          window.location.href = `/candidate/login?candidateId=${cId}&tenantId=${tId}`;
+        }, 2000);
+        return;
+      }
+      setAuthChecked(true);
+    };
+    checkAuth();
+  }, []);
+
+  // Block render until auth confirmed
+  if (!authChecked) return (
+    <div className="min-h-screen bg-[#080810] flex items-center justify-center">
+      <div className="text-center space-y-3">
+        {authError ? (
+          <p className="text-red-400 text-sm">{authError}</p>
+        ) : (
+          <><Loader2 size={24} className="animate-spin text-indigo-400 mx-auto" />
+          <p className="text-zinc-500 text-xs mt-2">Verifying session...</p></>
+        )}
+      </div>
+    </div>
+  );
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", handler);

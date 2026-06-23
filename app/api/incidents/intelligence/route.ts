@@ -1,3 +1,4 @@
+import { getApiAuth, unauthorized } from "@/lib/auth/apiAuth";
 import { buildIncidentGraph } from "@/lib/incidents/incident.graph.engine";
 import { scoreIncident } from "@/lib/incidents/incident.scoring.engine";
 import { recoverEvent } from "@/lib/recovery/recovery.engine";
@@ -5,7 +6,7 @@ import { recoverEvent } from "@/lib/recovery/recovery.engine";
 // ===============================
 // INCIDENT INTELLIGENCE API
 // ===============================
-export async function GET(req: Request) {
+export async function GET_INNER(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
 
@@ -56,4 +57,10 @@ export async function GET(req: Request) {
       { status: 500 }
     );
   }
+}
+
+export async function GET(req: Request) {
+  const auth = await getApiAuth(req as any);
+  if (!auth) return unauthorized();
+  return GET_INNER(req as any);
 }

@@ -1,3 +1,4 @@
+import { getApiAuth, unauthorized } from "@/lib/auth/apiAuth";
 import { NextResponse }             from "next/server";
 import { processApplication }       from "@/lib/recruitment/scoring.engine";
 import { xavierNotify }             from "@/lib/recruitment/xavier.notifications";
@@ -12,6 +13,11 @@ function extractMessage(err: unknown): string {
 }
 
 export async function POST(req: Request) {
+  const auth = await getApiAuth(req as any);
+  if (!auth) return unauthorized();
+  return POST_IMPL(req);
+}
+async function POST_IMPL(req: Request) {
   try {
     const body = await req.json();
 

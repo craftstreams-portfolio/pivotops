@@ -1,4 +1,4 @@
-import { replayStreamHandler } from "@/lib/replay/replay.sse";
+import { getApiAuth, unauthorized } from "@/lib/auth/apiAuth";import { replayStreamHandler } from "@/lib/replay/replay.sse";
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);

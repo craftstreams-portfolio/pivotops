@@ -1,3 +1,4 @@
+import { getApiAuth, unauthorized } from "@/lib/auth/apiAuth";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";

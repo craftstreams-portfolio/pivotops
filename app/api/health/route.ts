@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-
 export async function GET() {
-  return NextResponse.json({
-    status: "ok",
-    uptime: process.uptime(),
-    timestamp: new Date().toISOString(),
+  return NextResponse.json({ status: "ok" }, {
+    headers: {
+      "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff",
+    }
   });
 }
