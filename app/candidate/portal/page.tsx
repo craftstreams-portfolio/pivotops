@@ -372,18 +372,37 @@ function CandidatePortalPage({ candidateId, tenantId }: { candidateId: string; t
   // ── Load account + role_category + credentials ────────────────────────────
   useEffect(() => {
     const load = async () => {
-      if (!candidateId) { setError("Invalid portal link."); setLoading(false); return; }
+      if (!candidateId && !tenantId) { setError("Invalid portal link."); setLoading(false); return; }
 
       try {
-        const { data: accs, error: accErr } = await supabase
-          .from("candidate_accounts")
-          .select("*")
-          .eq("candidate_id", candidateId)
-          .order("created_at", { ascending: false })
-          .limit(1);
+        // Primary lookup: by auth session user ID (works for self-registered candidates)
+        const { data: { session } } = await supabase.auth.getSession();
+        const authUserId = session?.user?.id ?? null;
 
-        if (accErr) throw new Error(accErr.message);
-        const acc = accs?.[0] ?? null;
+        let acc = null;
+
+        // Try by auth_user_id first (self-registered candidates)
+        if (authUserId) {
+          const { data: byAuth } = await supabase
+            .from("candidate_accounts")
+            .select("*")
+            .eq("auth_user_id", authUserId)
+            .order("created_at", { ascending: false })
+            .limit(1);
+          acc = byAuth?.[0] ?? null;
+        }
+
+        // Fallback: try by candidate_id (invited candidates from recruitment pipeline)
+        if (!acc && candidateId) {
+          const { data: byCandId, error: accErr } = await supabase
+            .from("candidate_accounts")
+            .select("*")
+            .eq("candidate_id", candidateId)
+            .order("created_at", { ascending: false })
+            .limit(1);
+          if (accErr) throw new Error(accErr.message);
+          acc = byCandId?.[0] ?? null;
+        }
 
         if (!acc) {
           setError("Account not found. Please register first.");
