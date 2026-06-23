@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import TeamInvitePanel from "@/app/dashboard/components/team/TeamInvitePanel";
 import DashboardTour from "@/app/dashboard/components/team/DashboardTour";
+import { NotificationBell } from "@/lib/mentions/NotificationBell";
 import XavierIntro from "@/app/dashboard/components/team/XavierIntro";
 
 function PivotLogo({ size = 32 }: { size?: number }) {
@@ -106,6 +107,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [loggingOut,  setLoggingOut]  = useState(false);
   const [userEmail,   setUserEmail]   = useState("");
   const [userInitial, setUserInitial] = useState("P");
+  const [userId,      setUserId]      = useState("");
   const [notifCount,  setNotifCount]  = useState(0);
   const [openGroups,  setOpenGroups]  = useState<Record<string,boolean>>({
     "Workforce Operations": true,
@@ -128,6 +130,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       const email = session.user.email ?? "";
       setUserEmail(email);
       setUserInitial((session.user.user_metadata?.full_name?.[0] ?? email[0] ?? "P").toUpperCase());
+      setUserId(session.user.id);
       supabase.from("profiles").select("org_name, tenant_id, org_size").eq("id", session.user.id).maybeSingle()
         .then(({ data }) => {
           if (data) {
@@ -289,18 +292,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => router.push("/dashboard/notifications")}
-              className="relative w-9 h-9 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
-              title="Notifications"
-            >
-              <Bell size={17} />
-              {notifCount > 0 && (
-                <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-red-500 text-[9px] text-white flex items-center justify-center font-bold animate-pulse">
-                  {notifCount > 9 ? "9+" : notifCount}
-                </span>
-              )}
-            </button>
+            <NotificationBell userId={userId} tenantId={tenantId} />
             <button onClick={() => setShowLogoutConfirm(true)} disabled={loggingOut}
               className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-zinc-800 text-xs text-zinc-400 hover:text-red-400 hover:border-red-500/20 transition-colors disabled:opacity-40">
               {loggingOut ? <div className="w-3 h-3 border border-zinc-500 border-t-transparent rounded-full animate-spin" /> : <LogOut size={13} />}
