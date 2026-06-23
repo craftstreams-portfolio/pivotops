@@ -1,23 +1,23 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
-import { useRouter }                   from "next/navigation";
-import { DndContext, useDraggable, useDroppable } from "@dnd-kit/core";
+import { useEffect, useState, useRef }                              from "react";
+import { useRouter }                                                from "next/navigation";
+import { DndContext, useDraggable, useDroppable }                   from "@dnd-kit/core";
 
-import { supabase }                        from "../../../lib/supabase";
-import { useUser }                         from "../../../lib/useUser";
-import { moveCandidateOptimistic }         from "../../../lib/realtime/optimistic";
-import { emitCandidateEvent }              from "../../../lib/core/event-bus";
-import { handleRecruitmentToOnboarding }   from "../../../lib/recruitment/recruitment.hooks";
-import { xavierNotify }                    from "../../../lib/recruitment/xavier.notifications";
-import { getXavierNotifications }          from "../../../lib/recruitment/xavier.notifications";
-import { getScoreThresholds, upsertScoreThresholds } from "../../../lib/recruitment/scoring.engine";
-import { sendOfferLetterEmail }            from "../../../lib/recruitment/email.service";
+import { supabase }                                                 from "../../../lib/supabase";
+import { useUser }                                                  from "../../../lib/useUser";
+import { moveCandidateOptimistic }                                  from "../../../lib/realtime/optimistic";
+import { emitCandidateEvent }                                       from "../../../lib/core/event-bus";
+import { handleRecruitmentToOnboarding }                            from "../../../lib/recruitment/recruitment.hooks";
+import { xavierNotify, getXavierNotifications }                     from "../../../lib/recruitment/xavier.notifications";
+import { getScoreThresholds, upsertScoreThresholds }                from "../../../lib/recruitment/scoring.engine";
+import { sendOfferLetterEmail }                                     from "../../../lib/recruitment/email.service";
 
 import {
   Brain, Bell, Settings2, Plus, CheckCircle2,
   XCircle, Send, ChevronDown, ExternalLink,
   FileText, Loader2, X, AlertTriangle,
+  Link2, Copy,
 } from "lucide-react";
 
 // ─────────────────────────────────────────
@@ -534,6 +534,8 @@ export default function RecruitmentBoard() {
   const [candidates,      setCandidates]      = useState<Candidate[]>([]);
   const [notifications,   setNotifications]   = useState<XavierNotification[]>([]);
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
+  const [applyLink,          setApplyLink]          = useState("");
+  const [copied,             setCopied]             = useState(false);
   const [showThresholds,  setShowThresholds]  = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [tenantId,        setTenantId]        = useState("");
@@ -864,6 +866,27 @@ export default function RecruitmentBoard() {
                   actor:        { id: user?.id ?? "system", email: user?.email ?? null, name: user?.email ?? "System" },
                   timestamp:    new Date().toISOString(),
                 },
+              });
+
+              // Xavier notification to Candidates channel
+              const stageMap: Record<string, any> = {
+                interview:          "interview_scheduled",
+                interview_scheduled:"interview_scheduled",
+                offer_sent:         "offer_sent",
+                offer_accepted:     "offer_accepted",
+                offer_declined:     "offer_declined",
+                onboarding:         "onboarding_triggered",
+                hired:              "onboarding_triggered",
+                rejected:           "auto_reject",
+                manual_review:      "manual_review",
+              };
+              const mappedStage = stageMap[newStatus] ?? "interview_scheduled";
+              await xavierNotify({
+                tenantId,
+                candidateId,
+                stage:         mappedStage,
+                candidateName: candidate.name ?? "Candidate",
+                extra:         `Moved by ${user?.email ?? "a recruiter"} from ${candidate.status?.replace(/_/g, " ")} to ${newStatus.replace(/_/g, " ")}`,
               });
               await handleRecruitmentToOnboarding(candidate, supabase, newStatus);
             } catch (err) {
