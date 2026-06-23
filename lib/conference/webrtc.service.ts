@@ -419,6 +419,7 @@ export async function createMeeting(payload: {
       room_code:              roomCode,
       max_participants:       50,
       waiting_room_enabled:   true,
+      tenant_id:              payload.tenantId,
     })
     .select()
     .single();
@@ -431,10 +432,11 @@ export async function getMeetings(tenantId: string): Promise<Meeting[]> {
   const { data, error } = await supabase
     .from("meetings")
     .select("*")
+    .eq("tenant_id", tenantId)
     .order("scheduled_start", { ascending: true });
 
   if (error) throw new Error(error.message);
-  return data as Meeting[];
+  return data ?? [];
 }
 
 export async function updateMeetingStatus(

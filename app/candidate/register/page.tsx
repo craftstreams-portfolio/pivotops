@@ -110,9 +110,10 @@ function RegisterForm({ candidateId, tenantId }: { candidateId: string; tenantId
       if (!userId) throw new Error("Account creation failed — no user ID returned.");
 
       await withRetry(async () => {
+        // Try INSERT first; if duplicate auth_user_id, update instead
         const { error: accErr } = await supabase
           .from("candidate_accounts")
-          .upsert({
+          .insert({
             candidate_id: candidateId || null,
             tenant_id:    tenantId,
             auth_user_id: userId,
@@ -123,10 +124,25 @@ function RegisterForm({ candidateId, tenantId }: { candidateId: string; tenantId
             state:        state.trim()   || null,
             country:      country.trim() || "United States",
             role:         "candidate",
-            updated_at:   new Date().toISOString(),
-            created_at:   new Date().toISOString(),
-          }, { onConflict: "auth_user_id", ignoreDuplicates: false });
-        if (accErr) throw new Error(accErr.message);
+          });
+        // If duplicate, update the existing record
+        if (accErr && (accErr.code === "23505" || accErr.message.includes("duplicate"))) {
+          const { error: updErr } = await supabase
+            .from("candidate_accounts")
+            .update({
+              full_name:  fullName.trim(),
+              email:      email.trim().toLowerCase(),
+              ssn_last4:  ssn4.trim()    || null,
+              city:       city.trim()    || null,
+              state:      state.trim()   || null,
+              country:    country.trim() || "United States",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("auth_user_id", userId);
+          if (updErr) throw new Error(updErr.message);
+        } else if (accErr) {
+          throw new Error(accErr.message);
+        }
       });
 
       if (candidateId) {
@@ -140,15 +156,21 @@ function RegisterForm({ candidateId, tenantId }: { candidateId: string; tenantId
         });
       }
 
-      if (!authData.session && authData.user) {
+      // Always show email verification screen after signup.
+      // Supabase may return a session immediately if email confirmation is disabled,
+      // but we enforce the verification step regardless for security.
+      if (authData.user) {
+        // If Supabase returned a session (email confirm disabled), sign out
+        // so the candidate must verify before accessing the portal.
+        if (authData.session) {
+          await supabase.auth.signOut();
+        }
         setEmailVerifying(true);
         return;
       }
 
-      showToast("success", "Account created! Redirecting to your portal...", 3000);
-      setTimeout(() => {
-        window.location.href = `/candidate/portal?candidateId=${candidateId}&tenantId=${tenantId}`;
-      }, 1500);
+      // Fallback — should not reach here
+      showToast("success", "Account created! Check your email to verify.", 5000);
 
     } catch (err) {
       console.error("Registration error:", err);
@@ -305,6 +327,30 @@ function RegisterForm({ candidateId, tenantId }: { candidateId: string; tenantId
               <label className={`flex items-start gap-3 px-4 py-3.5 rounded-xl border cursor-pointer transition select-none ${
                 agreed ? "border-emerald-500/40 bg-emerald-500/5" : "border-zinc-700 bg-zinc-800/40 hover:border-zinc-600"
               }`}>
+                <input
+                  type="checkbox"
+                  checked={agreed}
+                  onChange={e => setAgreed(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 accent-emerald-500 cursor-pointer flex-shrink-0"
+                />
+                <span className="text-xs text-zinc-400 leading-relaxed">
+                  I have read and agree to the PivotOps{" "}
+                  <a href="/legal/terms" target="_blank" rel="noopener noreferrer"
+                    onClick={e => e.stopPropagation()}
+                    className="text-indigo-400 hover:text-indigo-300 underline underline-offset-2">
+                    Terms of Use
+                  </a>
+                  {" "}and{" "}
+                  <a href="/legal/privacy" target="_blank" rel="noopener noreferrer"
+                    onClick={e => e.stopPropagation()}
+                    className="text-indigo-400 hover:text-indigo-300 underline underline-offset-2">
+                    Privacy Policy
+                  </a>
+                  . I understand how my data will be collected and used.
+                </span>
+              </label>
+
+              <label className={`flex items-start gap-3 px-4 py-3.5 rounded-xl border cursor-pointer transition select-none ${agreed ? "border-emerald-500/40 bg-emerald-500/5" : "border-zinc-700 bg-zinc-800/40 hover:border-zinc-600"}`}>
                 <input
                   type="checkbox"
                   checked={agreed}

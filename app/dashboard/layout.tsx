@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import TeamInvitePanel from "@/app/dashboard/components/team/TeamInvitePanel";
 import DashboardTour from "@/app/dashboard/components/team/DashboardTour";
+import XavierIntro from "@/app/dashboard/components/team/XavierIntro";
 
 function PivotLogo({ size = 32 }: { size?: number }) {
   return (
@@ -114,6 +115,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   });
 
   const [orgName,    setOrgName]    = useState("");
+  const [userName,   setUserName]   = useState("");
   const [tenantId,   setTenantId]   = useState("");
   const [orgSize,    setOrgSize]    = useState("");
   const [showInvite, setShowInvite] = useState(false);
@@ -132,6 +134,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             setOrgName(data.org_name ?? "");
             setTenantId(data.tenant_id ?? "");
             setOrgSize(data.org_size ?? "");
+            setUserName((data as any).full_name ?? "");
             if (data.tenant_id) {
               supabase.from("xavier_notifications").select("id", { count:"exact" }).eq("read", false).eq("tenant_id", data.tenant_id)
                 .then(({ count }) => setNotifCount(count ?? 0));
@@ -336,6 +339,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </div>
       )}
+
+      <XavierIntro userName={userName} />
 
       <TeamInvitePanel
         open={showInvite}
