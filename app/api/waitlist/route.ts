@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
           { label: "Company",   value: company?.trim() || "—" },
           { label: "Team size", value: teamSize || "—" },
         ])}
-        ${p("In the meantime, if you have any questions or want to move faster, reply directly to this email or reach out at support@pivotops.app.")}
+        ${p("In the meantime, if you have any questions or want to move faster, reply directly to this email or reach out at inquiries@pivotops.app.")}
         ${btn("Learn more about PivotOps", "https://www.pivotops.app")}
       `,
     });
@@ -55,12 +55,12 @@ export async function POST(req: NextRequest) {
       subject: "You're on the PivotOps waitlist",
       html,
       from:    EMAIL_SENDERS.notifications,
-      replyTo: "support@pivotops.app",
+      replyTo: "inquiries@pivotops.app",
     });
 
     // Notify Steve via email
     await sendEmail({
-      to:      "steveake01@gmail.com",
+      to:      "craftstreams@gmail.com",
       subject: `New waitlist signup: ${fullName.trim()} — ${company?.trim() || "No company"}`,
       html:    baseLayout({
         title: "New waitlist signup",

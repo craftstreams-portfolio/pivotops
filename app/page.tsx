@@ -625,7 +625,7 @@ export default function LandingPage() {
                 <p>Built by Craftstreams</p>
                 <p>Distribution partner: Shopline</p>
                 <p>Serving US, Singapore and APAC</p>
-                <a href="mailto:support@pivotops.app" className="block hover:text-white transition">support@pivotops.app</a>
+                <a href="mailto:inquiries@pivotops.app" className="block hover:text-white transition">inquiries@pivotops.app</a>
               </div>
             </div>
             <div className="space-y-3">
