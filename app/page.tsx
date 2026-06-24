@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import CookieConsent from "@/app/components/CookieConsent";
+import WaitlistModal  from "@/app/components/WaitlistModal";
 
 // ── Logo ─────────────────────────────────────────────────────────────────────
 function PivotOpsLogo({ size = 40 }: { size?: number }) {
@@ -158,8 +159,7 @@ const TIERS = [
   },
 ];
 
-function PricingSection() {
-  const router = useRouter();
+function PricingSection({ onJoinWaitlist }: { onJoinWaitlist: () => void }) {
   const [annual, setAnnual] = useState(false);
   return (
     <section id="pricing" className="max-w-6xl mx-auto px-6 py-20 border-t border-zinc-900">
@@ -197,7 +197,7 @@ function PricingSection() {
                 ))}
               </ul>
               <button
-                onClick={() => router.push("/login?mode=signup&tier=" + t.name.toLowerCase())}
+                onClick={() => onJoinWaitlist()}
                 className={`mt-7 w-full py-3 rounded-xl text-sm font-bold transition ${t.highlight ? "bg-emerald-500 hover:bg-emerald-400 text-zinc-950" : "bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700"}`}>
                 Get started
               </button>
@@ -250,8 +250,7 @@ async function askXavier(messages: { role: string; content: string }[]): Promise
   return data.content?.[0]?.text ?? "I could not process that. Please try again.";
 }
 
-function XavierChat() {
-  const router = useRouter();
+function XavierChat({ onJoinWaitlist }: { onJoinWaitlist: () => void }) {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<{ role: string; content: string; id: number }[]>([
     { role: "assistant", content: "Hi, I am Xavier, PivotOps AI advisor. Ask me anything about the platform, pricing, or whether it is the right fit for your team.", id: 0 }
@@ -364,7 +363,7 @@ function XavierChat() {
 
       {/* Quick actions */}
       <div className="px-4 pb-2 flex gap-2">
-        <button onClick={() => router.push("/login?mode=signup")}
+        <button onClick={() => onJoinWaitlist()}
           className="flex-1 py-1.5 rounded-lg text-xs font-semibold transition text-white"
           style={{ background: "linear-gradient(135deg, #1E56E0, #00BFA6)" }}>
           Get started
@@ -428,6 +427,7 @@ function FAQAccordion() {
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function LandingPage() {
   const router = useRouter();
+  const [waitlistOpen, setWaitlistOpen] = useState(false);
   return (
     <div className="bg-zinc-950 text-white min-h-screen">
 
@@ -446,9 +446,9 @@ export default function LandingPage() {
             <a href="#pricing" className="hover:text-white transition">Pricing</a>
             <a href="#faq" className="hover:text-white transition">FAQ</a>
           </nav>
-          <button onClick={() => router.push("/login")}
+          <button onClick={() => setWaitlistOpen(true)}
             className="bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold px-4 py-2 rounded-xl text-sm transition">
-            Sign in
+            Join waitlist
           </button>
         </div>
       </header>
@@ -476,7 +476,7 @@ export default function LandingPage() {
               PivotOps replaces the 7 disconnected tools your team is fighting with every day and compresses a 14-30 day hiring cycle into a 72-hour automated loop. One system. No more WhatsApp threads.
             </p>
             <div className="flex flex-wrap items-center gap-3">
-              <button onClick={() => router.push("/login?mode=signup")}
+              <button onClick={() => setWaitlistOpen(true)}
                 className="bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black px-8 py-4 rounded-xl text-base transition shadow-2xl shadow-emerald-500/20">
                 Get started today
               </button>
@@ -565,7 +565,7 @@ export default function LandingPage() {
 
       {/* Cost savings + Pricing */}
       <CostSavings />
-      <PricingSection />
+      <PricingSection onJoinWaitlist={() => setWaitlistOpen(true)} />
 
       {/* Final CTA */}
       <section className="border-t border-zinc-900">
@@ -577,7 +577,7 @@ export default function LandingPage() {
           </h2>
           <p className="text-zinc-400 max-w-xl mx-auto text-lg mb-10">No migration required. No six-month implementation. Bring your current pipeline and we will show you the compression in weeks.</p>
           <div className="flex flex-wrap items-center justify-center gap-4">
-            <button onClick={() => router.push("/login?mode=signup")}
+            <button onClick={() => setWaitlistOpen(true)}
               className="bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black px-10 py-4 rounded-xl text-lg transition shadow-2xl shadow-emerald-500/25">
               Get started now
             </button>
@@ -658,10 +658,13 @@ export default function LandingPage() {
       </footer>
 
       {/* Xavier chat widget */}
-      <XavierChat />
+      <XavierChat onJoinWaitlist={() => setWaitlistOpen(true)} />
 
       {/* Cookie consent banner */}
       <CookieConsent />
+
+      {/* Waitlist modal */}
+      <WaitlistModal open={waitlistOpen} onClose={() => setWaitlistOpen(false)} />
     </div>
   );
 }
