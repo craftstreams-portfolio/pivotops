@@ -173,12 +173,19 @@ function LoginPage() {
       return;
     }
 
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (cancelled) return;
-      if (session) {
-        const result = await resolvePostLoginRoute(session.user);
-        if (!cancelled) routeAfterAuth(result);
-      }
+    // Hardened session check — getSession() returns null on Edge/Safari
+    // on first load due to cookie timing. getUser() forces a server
+    // round-trip and is always accurate regardless of browser.
+    const getReliableUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) return session.user;
+      const { data: { user } } = await supabase.auth.getUser();
+      return user ?? null;
+    };
+    getReliableUser().then(async (user) => {
+      if (cancelled || !user) return;
+      const result = await resolvePostLoginRoute(user);
+      if (!cancelled) routeAfterAuth(result);
     });
 
     return () => { cancelled = true; };
@@ -195,10 +202,11 @@ function LoginPage() {
       const normalizedEmail = normalizeEmail(email);
 
       if (mode === "signup") {
+        // Check both email and email_normalized to catch case variations
         const { data: existing } = await supabase
           .from("profiles")
           .select("id")
-          .eq("email_normalized", normalizedEmail)
+          .or(`email_normalized.eq.${normalizedEmail},email.eq.${normalizedEmail}`)
           .maybeSingle();
 
         if (existing) {

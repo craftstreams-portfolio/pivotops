@@ -24,6 +24,7 @@ const CandidateActionSchema = z.object({
   messageId: z.string().uuid().optional(),
   startDate: z.string().max(100).optional(),
   offerNotes: z.string().max(2000).optional(),
+  completedActions: z.array(z.string()).optional().default([]),
 });
 type CandidateActionInput = z.infer<typeof CandidateActionSchema>;
 
@@ -46,7 +47,7 @@ export const POST = withSecurity<CandidateActionInput>(
     const admin = getAdmin();
     const tenantId = auth!.tenantId;
     const actorId = auth!.userId;
-    const { action, candidateId, actorName, declineReason, messageId, startDate, offerNotes } = body;
+    const { action, candidateId, actorName, declineReason, messageId, startDate, offerNotes, completedActions } = body;
     const { data: candidate, error } = await admin.from("candidates").select("*").eq("id", candidateId).eq("tenant_id", tenantId).single();
     if (error || !candidate) return NextResponse.json({ error: "Candidate not found in your tenant." }, { status: 404 });
     const now = new Date().toISOString();
@@ -63,7 +64,23 @@ export const POST = withSecurity<CandidateActionInput>(
     if (messageId) {
       await safeSideEffect("update message meta", async () => {
         const { data: msg } = await admin.from("messages").select("meta").eq("id", messageId).single();
-        if (msg) await admin.from("messages").update({ meta: { ...(msg.meta ?? {}), actioned: true, actioned_by: actorName, actioned_at: now, action, candidate_id: candidateId } }).eq("id", messageId);
+        if (msg) {
+          const prevMeta = (msg.meta ?? {}) as any;
+          const prevActions: string[] = Array.isArray(prevMeta.completed_actions) ? prevMeta.completed_actions : [];
+          const mergedActions = Array.from(new Set([...prevActions, ...(completedActions ?? []), action]));
+          const isTerminalAction = action === "proceed_onboarding" || action === "decline_candidate";
+          await admin.from("messages").update({
+            meta: {
+              ...prevMeta,
+              completed_actions: mergedActions,
+              actioned: isTerminalAction,
+              last_action: action,
+              last_actioned_by: actorName,
+              last_actioned_at: now,
+              candidate_id: candidateId,
+            },
+          }).eq("id", messageId);
+        }
       });
     }
 
@@ -159,9 +176,18 @@ export const POST = withSecurity<CandidateActionInput>(
         return NextResponse.json({ error: "Candidate has no email on file." }, { status: 400 });
       }
 
+      // Idempotency guard — if an offer is already accepted/declined, do not resend
+      if (candidate.offer_status === "accepted" || candidate.status === "hired") {
+        return NextResponse.json({ error: "Candidate has already accepted an offer." }, { status: 409 });
+      }
+      if (candidate.status === "rejected") {
+        return NextResponse.json({ error: "Candidate has been declined and cannot receive an offer." }, { status: 409 });
+      }
+
       const { data: tenantRow } = await admin.from("tenants").select("name").eq("id", tenantId).maybeSingle();
       const tenantName = tenantRow?.name ?? "the team";
 
+      // Always regenerate a fresh token on (re)send so old links are invalidated
       const offerToken = crypto.randomUUID();
       await admin.from("candidates").update({ offer_token: offerToken }).eq("id", candidateId);
       const offerBase = (process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000") + "/api/recruitment/offer-response";

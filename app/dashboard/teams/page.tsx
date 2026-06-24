@@ -343,9 +343,14 @@ function CandidateCard({
   const isCard  = meta?.type === "candidate_card";
   const content = message.content ?? "";
 
-  const [acting,      setActing]      = useState(false);
-  const [done,        setDone]        = useState<string | null>(meta?.actioned ? meta.action : null);
+  const [acting,      setActing]      = useState<string | null>(null);
+  const [completed,   setCompleted]   = useState<string[]>(
+    Array.isArray(meta?.completed_actions) ? meta.completed_actions
+    : meta?.actioned ? [meta.action] : []
+  );
   const [showDecline, setShowDecline] = useState(false);
+  // Terminal actions close the whole card; others can stack independently
+  const isTerminal = completed.includes("proceed_onboarding") || completed.includes("decline_candidate");
   const [reason,      setReason]      = useState("");
   const [copied,      setCopied]      = useState(false);
 
@@ -355,7 +360,8 @@ function CandidateCard({
 
   const handleAction = async (action: "schedule_interview" | "send_offer" | "proceed_onboarding" | "decline_candidate") => {
     if (!currentUser || acting) return;
-    setActing(true);
+    if (completed.includes(action)) return; // already done — idempotent guard
+    setActing(action);
     try {
       const res = await fetch("/api/recruitment/candidate-action", {
         method:  "POST",
@@ -368,17 +374,18 @@ function CandidateCard({
           actorName:     currentUser.full_name ?? currentUser.email ?? "Recruiter",
           messageId:     message.id,
           declineReason: reason.trim() || undefined,
+          completedActions: completed,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || data?.message || ("Request failed: " + res.status));
-      setDone(action);
+      setCompleted((prev) => prev.includes(action) ? prev : [...prev, action]);
       setShowDecline(false);
       onActioned();
     } catch (err) {
       console.error("Candidate action failed:", err instanceof Error ? err.message : err);
     } finally {
-      setActing(false);
+      setActing(null);
     }
   };
 
@@ -489,40 +496,51 @@ function CandidateCard({
                   </div>
                 )}
 
-                {/* Action buttons */}
-                {done ? (
-                  <div className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border
-                                   text-xs font-semibold
-                    ${done === "proceed_onboarding"
+                {/* Action buttons — each tracks its own state independently */}
+                {isTerminal ? (
+                  <div className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-xs font-semibold
+                    ${completed.includes("proceed_onboarding")
                       ? "border-emerald-500/25 bg-emerald-500/5 text-emerald-400"
-                      : "border-zinc-700 bg-zinc-900 text-zinc-500"}`}>
+                      : "border-red-500/25 bg-red-500/5 text-red-400"}`}>
                     <CheckCircle2 size={13} />
-                    {done === "proceed_onboarding"
-                      ? "Onboarding & compliance triggered"
-                      : done === "schedule_interview"
-                      ? "Interview scheduled"
-                      : done === "send_offer"
-                      ? "Offer sent"
+                    {completed.includes("proceed_onboarding")
+                      ? "Onboarding & compliance triggered — candidate hired"
                       : "Candidate declined"}
                   </div>
                 ) : (
                   <div className="space-y-2">
+                    {/* Status chips for completed non-terminal actions */}
+                    {(completed.includes("schedule_interview") || completed.includes("send_offer")) && (
+                      <div className="flex flex-wrap gap-1.5 mb-1">
+                        {completed.includes("schedule_interview") && (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/25 text-indigo-400 text-[10px] font-semibold">
+                            <CheckCircle2 size={10} /> Interview scheduled
+                          </span>
+                        )}
+                        {completed.includes("send_offer") && (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-500/10 border border-blue-500/25 text-blue-400 text-[10px] font-semibold">
+                            <CheckCircle2 size={10} /> Offer sent — awaiting candidate response
+                          </span>
+                        )}
+                      </div>
+                    )}
+
                     <div className="flex gap-2">
                       <button
                         onClick={() => handleAction("proceed_onboarding")}
-                        disabled={acting}
+                        disabled={acting !== null}
                         className="flex-1 flex items-center justify-center gap-1.5 py-2.5
                                    rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white
                                    text-xs font-semibold disabled:opacity-50 transition"
                       >
-                        {acting && !showDecline
+                        {acting === "proceed_onboarding"
                           ? <Loader2 size={12} className="animate-spin" />
                           : <CheckCircle2 size={12} />}
                         Proceed to Onboarding
                       </button>
                       <button
                         onClick={() => setShowDecline((o) => !o)}
-                        disabled={acting}
+                        disabled={acting !== null}
                         className={`flex-1 flex items-center justify-center gap-1.5 py-2.5
                                    rounded-xl border text-xs font-semibold
                                    disabled:opacity-50 transition
@@ -535,13 +553,31 @@ function CandidateCard({
                     </div>
 
                     <div className="flex gap-2 mt-2">
-                      <button onClick={() => handleAction("schedule_interview")} disabled={acting} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-zinc-700 text-zinc-300 hover:border-indigo-500/40 hover:text-indigo-400 text-xs font-semibold disabled:opacity-50 transition">
-                        {acting ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
-                        Schedule Interview
+                      <button
+                        onClick={() => handleAction("schedule_interview")}
+                        disabled={acting !== null || completed.includes("schedule_interview")}
+                        className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border text-xs font-semibold disabled:opacity-50 transition
+                          ${completed.includes("schedule_interview")
+                            ? "border-indigo-500/30 bg-indigo-500/10 text-indigo-400 cursor-default"
+                            : "border-zinc-700 text-zinc-300 hover:border-indigo-500/40 hover:text-indigo-400"}`}
+                      >
+                        {acting === "schedule_interview"
+                          ? <Loader2 size={12} className="animate-spin" />
+                          : <CheckCircle2 size={12} />}
+                        {completed.includes("schedule_interview") ? "Interview Scheduled" : "Schedule Interview"}
                       </button>
-                      <button onClick={() => handleAction("send_offer")} disabled={acting} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-zinc-700 text-zinc-300 hover:border-blue-500/40 hover:text-blue-400 text-xs font-semibold disabled:opacity-50 transition">
-                        {acting ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
-                        Send Offer
+                      <button
+                        onClick={() => handleAction("send_offer")}
+                        disabled={acting !== null || completed.includes("send_offer")}
+                        className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border text-xs font-semibold disabled:opacity-50 transition
+                          ${completed.includes("send_offer")
+                            ? "border-blue-500/30 bg-blue-500/10 text-blue-400 cursor-default"
+                            : "border-zinc-700 text-zinc-300 hover:border-blue-500/40 hover:text-blue-400"}`}
+                      >
+                        {acting === "send_offer"
+                          ? <Loader2 size={12} className="animate-spin" />
+                          : <CheckCircle2 size={12} />}
+                        {completed.includes("send_offer") ? "Offer Sent" : "Send Offer"}
                       </button>
                     </div>
 
@@ -558,11 +594,11 @@ function CandidateCard({
                         />
                         <button
                           onClick={() => handleAction("decline_candidate")}
-                          disabled={acting}
+                          disabled={acting !== null}
                           className="w-full py-2 rounded-xl bg-red-600 hover:bg-red-500
                                      text-white text-xs font-semibold disabled:opacity-50 transition"
                         >
-                          {acting
+                          {acting === "decline_candidate"
                             ? <Loader2 size={12} className="animate-spin mx-auto" />
                             : "Confirm Decline"}
                         </button>

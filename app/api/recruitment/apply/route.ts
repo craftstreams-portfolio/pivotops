@@ -58,6 +58,38 @@ const GENERAL_CREDENTIAL_TYPES = [
   { key: "license_certification", name: "License / Certification" },
 ];
 
+async function getOrCreateChannelAdmin(
+  admin: ReturnType<typeof getAdmin>,
+  tenantId: string,
+  name: string
+): Promise<string> {
+  const { data: existing } = await admin
+    .from("channels")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("name", name)
+    .maybeSingle();
+  if (existing?.id) return existing.id;
+
+  const { data: created, error } = await admin
+    .from("channels")
+    .insert({ name, tenant_id: tenantId, type: "channel", created_at: new Date().toISOString() })
+    .select("id")
+    .single();
+  if (!error && created?.id) return created.id;
+
+  // Race fallback
+  const { data: retry } = await admin
+    .from("channels")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("name", name)
+    .maybeSingle();
+  if (retry?.id) return retry.id;
+
+  throw new Error("Unable to resolve channel " + name + ": " + (error?.message ?? "unknown"));
+}
+
 async function postCandidateCard(
   admin: ReturnType<typeof getAdmin>,
   payload: {
@@ -80,8 +112,8 @@ async function postCandidateCard(
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       const channelId = decision === "manual_review"
-        ? await getOrCreateChannel(tenantId, "Recruitment Review")
-        : await getOrCreateChannel(tenantId, "Candidates");
+        ? await getOrCreateChannelAdmin(admin, tenantId, "Recruitment Review")
+        : await getOrCreateChannelAdmin(admin, tenantId, "Candidates");
 
       const { error } = await admin.from("messages").insert({
         channel_id: channelId,

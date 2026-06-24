@@ -357,10 +357,13 @@ export default function OnboardingPage() {
         .replace(/^-|-$/g, "")
         .slice(0, 30) + "-" + Date.now().toString(36);
 
+      const applyLinkUrl = `${process.env.NEXT_PUBLIC_APP_URL || window.location.origin}/apply/${tid}`;
       const { error: tenantErr } = await supabase.from("tenants").upsert({
         id: tid, slug: tid, name: orgName.trim(), org_name: orgName.trim(), org_industry: industry,
         org_size: teamSize, org_country: country,
         owner_id: userId, owner_email: userEmail,
+        apply_link: applyLinkUrl,
+        tenant_slug: tid,
         created_at: now, updated_at: now,
       }, { onConflict: "id" });
       if (tenantErr) throw new Error("Tenant creation failed: " + tenantErr.message);
@@ -411,8 +414,7 @@ export default function OnboardingPage() {
         created_at: now,
       });
 
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
-      setApplyLink(`${baseUrl}/apply/${tid}`);
+      setApplyLink(applyLinkUrl);
       setAnimState("exit-left");
       setTimeout(() => {
         setSaving(false);
