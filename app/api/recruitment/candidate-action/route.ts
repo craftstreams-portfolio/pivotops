@@ -90,7 +90,7 @@ export const POST = withSecurity<CandidateActionInput>(
 
       let onboarding;
       try {
-        onboarding = await createOnboardingUser(admin, { candidate_id: candidateId, name: candidate.name, email: candidate.email, department: candidate.department ?? null, status: "pending" });
+        onboarding = await createOnboardingUser(admin, { candidate_id: candidateId, tenant_id: tenantId, name: candidate.name, email: candidate.email, department: candidate.department ?? null, status: "pending" });
       } catch (err) {
         console.error("[candidate-action] createOnboardingUser failed", err);
         return NextResponse.json({ error: "Failed to create onboarding record: " + (err instanceof Error ? err.message : "Unknown error") }, { status: 500 });

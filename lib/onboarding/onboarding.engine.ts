@@ -11,6 +11,7 @@ export type OnboardingStatus =
 export interface OnboardingUser {
   id: string;
   candidate_id: string;
+  tenant_id: string;
   name: string;
   email: string;
   department?: string | null;
@@ -64,6 +65,7 @@ export async function createOnboardingUser(
     .from("onboarding")
     .insert({
       candidate_id: payload.candidate_id,
+      tenant_id:    payload.tenant_id  ?? null,
       name:         payload.name       ?? null,
       email:        payload.email      ?? null,
       department:   payload.department ?? null,

@@ -83,6 +83,7 @@ export async function GET(req: NextRequest) {
     try {
       await createOnboardingUser(admin, {
         candidate_id: candidateId,
+        tenant_id: tenantId,
         name: candidate.name,
         email: candidate.email,
         department: candidate.department ?? null,
