@@ -344,6 +344,7 @@ function CandidateCard({
   const content = message.content ?? "";
 
   const [acting,      setActing]      = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string>("");
   const [completed,   setCompleted]   = useState<string[]>(
     Array.isArray(meta?.completed_actions) ? meta.completed_actions
     : meta?.actioned ? [meta.action] : []
@@ -383,7 +384,10 @@ function CandidateCard({
       setShowDecline(false);
       onActioned();
     } catch (err) {
-      console.error("Candidate action failed:", err instanceof Error ? err.message : err);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("Candidate action failed:", msg);
+      setActionError(msg);
+      setTimeout(() => setActionError(""), 5000);
     } finally {
       setActing(null);
     }
@@ -493,6 +497,13 @@ function CandidateCard({
                         : <Copy size={10} />}
                       {copied ? "Copied" : "Copy"}
                     </button>
+                  </div>
+                )}
+
+                {actionError && (
+                  <div className="mb-2 flex items-center gap-2 px-3 py-2 rounded-xl border border-red-500/25 bg-red-500/10 text-red-400 text-[11px] font-medium">
+                    <X size={12} className="flex-shrink-0" />
+                    {actionError}
                   </div>
                 )}
 
