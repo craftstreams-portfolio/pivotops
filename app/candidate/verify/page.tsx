@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { CheckCircle2, Loader2, AlertCircle, Brain } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 
 export default function CandidateVerifyPage() {
   const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
@@ -18,6 +19,10 @@ export default function CandidateVerifyPage() {
         if (!token) {
           throw new Error("This verification link is missing its token. Please use the link from your email.");
         }
+
+        // SECURITY: clear any lingering session from a previous candidate before
+        // verifying, so a stale session can never bleed into this flow.
+        await supabase.auth.signOut();
 
         const res = await fetch("/api/candidate/verify-token", {
           method:  "POST",

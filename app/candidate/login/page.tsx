@@ -28,16 +28,16 @@ function LoginForm({ candidateId, tenantId }: { candidateId: string; tenantId: s
     setTimeout(() => setToast(null), duration);
   };
 
-  // ── Check if already logged in ───────────────────────────────────────────
+  // ── Check if already logged in (only confirmed-email sessions) ────────────
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        const cId = session.user.user_metadata?.candidate_id || candidateId;
-        const tId = session.user.user_metadata?.tenant_id    || tenantId;
-        window.location.href = `/candidate/portal?candidateId=${cId}&tenantId=${tId}`;
+      // Only auto-redirect a fully confirmed session. The portal resolves the
+      // account from the auth session itself, so we do not pass a candidate id.
+      if (session?.user?.email_confirmed_at) {
+        window.location.href = "/candidate/portal";
       }
     });
-  }, [candidateId, tenantId]);
+  }, []);
 
   // ── Rate limiting — lock after 5 failed attempts ─────────────────────────
   useEffect(() => {
@@ -73,9 +73,6 @@ function LoginForm({ candidateId, tenantId }: { candidateId: string; tenantId: s
         return;
       }
 
-      const cId = data.user?.user_metadata?.candidate_id || candidateId;
-      const tId = data.user?.user_metadata?.tenant_id    || tenantId;
-
       // Set session explicitly before redirect
       await supabase.auth.setSession({
         access_token:  data.session!.access_token,
@@ -84,7 +81,8 @@ function LoginForm({ candidateId, tenantId }: { candidateId: string; tenantId: s
 
       showToast("success", "Signed in successfully. Redirecting...", 2000);
       setTimeout(() => {
-        window.location.href = `/candidate/portal?candidateId=${cId}&tenantId=${tId}`;
+        // Portal resolves the account from the auth session — no URL ids passed.
+        window.location.href = "/candidate/portal";
       }, 800);
 
     } catch (err) {
