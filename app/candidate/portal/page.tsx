@@ -349,10 +349,11 @@ function CredentialRow({ type, credential, accountId, candidateId, tenantId, onU
 }
 
 // ── Main Portal ───────────────────────────────────────────────────────────────
-function CandidatePortalPage({ candidateId: urlCandidateId, tenantId }: { candidateId: string; tenantId: string }) {
-  // SECURITY: never trust the URL candidate id for data access. We resolve the
-  // real candidate id from the authenticated account and use it everywhere.
+function CandidatePortalPage({ candidateId: urlCandidateId, tenantId: urlTenantId }: { candidateId: string; tenantId: string }) {
+  // SECURITY: never trust the URL candidate id / tenant id for data access.
+  // We resolve both from the authenticated account and use them everywhere.
   const [candidateId, setResolvedCandidateId] = useState("");
+  const [tenantId,    setResolvedTenantId]    = useState("");
   const [account, setAccount] = useState<CandidateAccount | null>(null);
   const [roleCategory, setRoleCategory] = useState<"healthcare" | "general">("healthcare");
   const [credentials, setCredentials] = useState<Credential[]>([]);
@@ -419,7 +420,9 @@ function CandidatePortalPage({ candidateId: urlCandidateId, tenantId }: { candid
 
         // Use the AUTHENTICATED account's own candidate_id — never the URL param
         const ownCandidateId = (acc as any).candidate_id ?? (acc as any).id ?? null;
+        const ownTenantId     = (acc as any).tenant_id ?? "";
         setResolvedCandidateId(ownCandidateId ?? "");
+        setResolvedTenantId(ownTenantId);
 
         if (ownCandidateId) {
           const { data: candidateRow } = await supabase
