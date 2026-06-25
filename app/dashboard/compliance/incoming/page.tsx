@@ -389,7 +389,10 @@ export default function ComplianceIncomingPage() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load, lastRefresh]);
+  // Initial load only. Manual refresh and realtime use silent load(true) so the
+  // list never unmounts (which would collapse expanded folders).
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+  useEffect(() => { if (lastRefresh) load(true); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [lastRefresh]);
 
   // ── Realtime updates ─────────────────────────────────────────────────────
   useEffect(() => {
