@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { useTenant } from "@/lib/hooks/useTenant";
+import { FeatureGate } from "@/app/components/FeatureGate";
 import {
   Users, Clock, TrendingUp, AlertTriangle,
   CheckCircle2, XCircle, Brain, Briefcase,
@@ -502,6 +503,7 @@ export default function AnalyticsPage() {
   };
 
   return (
+    <FeatureGate tenantId={tenantId} feature="analytics" title="Analytics">
     <div className="p-4 md:p-6 max-w-7xl space-y-8">
 
       {/* ── HEADER ── */}
@@ -875,5 +877,6 @@ export default function AnalyticsPage() {
         )}
       </div>
     </div>
+    </FeatureGate>
   );
 }

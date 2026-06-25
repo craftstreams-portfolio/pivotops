@@ -7,12 +7,13 @@ import { supabase } from "@/lib/supabase";
 import {
   LayoutDashboard, ShieldAlert, RefreshCcw, Workflow,
   Users, BarChart3, Settings, Activity, Bell, Search,
-  Menu, X, Siren, Clock3, Trophy, Sparkles, Briefcase,
+  Menu, X, Siren, Clock3, Trophy, Sparkles, Briefcase, Lock,
   ClipboardList, UserPlus, UserMinus, BadgeCheck,
   ChevronDown, ChevronRight, CalendarDays, Phone,
   Video, MessageSquare, LogOut, Plus,
 } from "lucide-react";
 import TeamInvitePanel from "@/app/dashboard/components/team/TeamInvitePanel";
+import { useSubscription } from "@/lib/paddle/gate";
 import DashboardTour from "@/app/dashboard/components/team/DashboardTour";
 import { NotificationBell } from "@/lib/mentions/NotificationBell";
 import XavierIntro from "@/app/dashboard/components/team/XavierIntro";
@@ -63,6 +64,11 @@ function AppLoadingScreen() {
 
 type NavChild = { label:string; href:string; icon?:any };
 type NavItem  = { label:string; href?:string; icon:any; children?:NavChild[] };
+
+const GATED_HREFS: Record<string, "compliance" | "analytics"> = {
+  "/dashboard/compliance": "compliance",
+  "/dashboard/analytics":  "analytics",
+};
 
 const navItems: NavItem[] = [
   { label:"Overview", href:"/dashboard", icon:LayoutDashboard },
@@ -119,6 +125,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [orgName,    setOrgName]    = useState("");
   const [userName,   setUserName]   = useState("");
   const [tenantId,   setTenantId]   = useState("");
+  const sub = useSubscription(tenantId);
+
+  // Helper: is a nav href locked for the current plan?
+  const isLocked = (href?: string) => {
+    if (!href) return false;
+    const feat = GATED_HREFS[href];
+    if (!feat) return false;
+    return sub.features[feat] !== true;
+  };
   const [orgSize,    setOrgSize]    = useState("");
   const [showInvite, setShowInvite] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -229,6 +244,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                             className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${active ? "bg-emerald-500/10 text-emerald-400" : "text-zinc-400 hover:bg-zinc-800 hover:text-white"}`}>
                             {ChildIcon && <ChildIcon size={14} />}
                             <span>{child.label}</span>
+                            {isLocked(child.href) && <Lock size={11} className="ml-auto text-zinc-600" />}
                           </Link>
                         );
                       })}
@@ -243,6 +259,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 ref={(el) => { tourTargets.current[`nav-${item.label}`] = el; }}
                 className={`flex items-center gap-3 rounded-xl border px-4 py-2.5 text-sm transition-colors ${active ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400" : "border-transparent text-zinc-400 hover:bg-zinc-800"}`}>
                 <Icon size={16} /><span>{item.label}</span>
+                {isLocked(item.href) && <Lock size={11} className="ml-auto text-zinc-600" />}
               </Link>
             );
           })}

@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { supabase }          from "@/lib/supabase";
 import { useTenant }         from "@/lib/hooks/useTenant";
+import { FeatureGate }       from "@/app/components/FeatureGate";
 import { getCurrentProfile } from "@/lib/profile/profile.service";
 import {
   ShieldCheck, Search, Eye, CheckCircle2, XCircle,
@@ -901,6 +902,7 @@ export default function CompliancePage() {
   );
 
   return (
+    <FeatureGate tenantId={tenantId} feature="compliance" title="Compliance">
     <div className="p-4 md:p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-white">Compliance</h1>
@@ -919,5 +921,6 @@ export default function CompliancePage() {
         : <OutgoingTab tenantId={tenantId}/>
       }
     </div>
+    </FeatureGate>
   );
 }
