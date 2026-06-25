@@ -349,7 +349,10 @@ function CredentialRow({ type, credential, accountId, candidateId, tenantId, onU
 }
 
 // ── Main Portal ───────────────────────────────────────────────────────────────
-function CandidatePortalPage({ candidateId, tenantId }: { candidateId: string; tenantId: string }) {
+function CandidatePortalPage({ candidateId: urlCandidateId, tenantId }: { candidateId: string; tenantId: string }) {
+  // SECURITY: never trust the URL candidate id for data access. We resolve the
+  // real candidate id from the authenticated account and use it everywhere.
+  const [candidateId, setResolvedCandidateId] = useState("");
   const [account, setAccount] = useState<CandidateAccount | null>(null);
   const [roleCategory, setRoleCategory] = useState<"healthcare" | "general">("healthcare");
   const [credentials, setCredentials] = useState<Credential[]>([]);
@@ -372,57 +375,65 @@ function CandidatePortalPage({ candidateId, tenantId }: { candidateId: string; t
   // ── Load account + role_category + credentials ────────────────────────────
   useEffect(() => {
     const load = async () => {
-      if (!candidateId && !tenantId) { setError("Invalid portal link."); setLoading(false); return; }
-
       try {
-        // Primary lookup: by auth session user ID (works for self-registered candidates)
+        // SECURITY: portal access REQUIRES an authenticated session.
+        // The account is resolved ONLY by the session auth_user_id — never by
+        // a URL candidate_id (which would let anyone load another candidate's
+        // portal). The URL candidateId is treated as untrusted and ignored for
+        // data fetching; we use the authenticated account's own candidate_id.
         const { data: { session } } = await supabase.auth.getSession();
-        const authUserId = session?.user?.id ?? null;
+        let authUserId = session?.user?.id ?? null;
 
-        let acc = null;
-
-        // Try by auth_user_id first (self-registered candidates)
-        if (authUserId) {
-          const { data: byAuth } = await supabase
-            .from("candidate_accounts")
-            .select("*")
-            .eq("auth_user_id", authUserId)
-            .order("created_at", { ascending: false })
-            .limit(1);
-          acc = byAuth?.[0] ?? null;
+        // Force a server round-trip if no session cookie yet (Edge/Safari timing)
+        if (!authUserId) {
+          const { data: { user } } = await supabase.auth.getUser();
+          authUserId = user?.id ?? null;
         }
 
-        // Fallback: try by candidate_id (invited candidates from recruitment pipeline)
-        if (!acc && candidateId) {
-          const { data: byCandId, error: accErr } = await supabase
-            .from("candidate_accounts")
-            .select("*")
-            .eq("candidate_id", candidateId)
-            .order("created_at", { ascending: false })
-            .limit(1);
-          if (accErr) throw new Error(accErr.message);
-          acc = byCandId?.[0] ?? null;
+        if (!authUserId) {
+          setError("Please log in to access your portal.");
+          setLoading(false);
+          setTimeout(() => {
+            window.location.href = "/candidate/login";
+          }, 1500);
+          return;
         }
+
+        // Resolve account STRICTLY by the authenticated user
+        const { data: byAuth, error: accErr } = await supabase
+          .from("candidate_accounts")
+          .select("*")
+          .eq("auth_user_id", authUserId)
+          .order("created_at", { ascending: false })
+          .limit(1);
+        if (accErr) throw new Error(accErr.message);
+        const acc = byAuth?.[0] ?? null;
 
         if (!acc) {
-          setError("Account not found. Please register first.");
+          setError("No portal found for your account. Please register first.");
           setLoading(false);
           return;
         }
 
         setAccount(acc as CandidateAccount);
 
-        const { data: candidateRow } = await supabase
-          .from("candidates")
-          .select("role_category")
-          .eq("id", candidateId)
-          .maybeSingle();
-        if (candidateRow?.role_category === "general") setRoleCategory("general");
+        // Use the AUTHENTICATED account's own candidate_id — never the URL param
+        const ownCandidateId = (acc as any).candidate_id ?? (acc as any).id ?? null;
+        setResolvedCandidateId(ownCandidateId ?? "");
+
+        if (ownCandidateId) {
+          const { data: candidateRow } = await supabase
+            .from("candidates")
+            .select("role_category")
+            .eq("id", ownCandidateId)
+            .maybeSingle();
+          if (candidateRow?.role_category === "general") setRoleCategory("general");
+        }
 
         const { data: creds, error: credsErr } = await supabase
           .from("candidate_credentials")
           .select("*")
-          .eq("candidate_id", candidateId)
+          .eq("candidate_id", ownCandidateId)
           .order("updated_at", { ascending: false });
 
         if (credsErr) console.warn("Credentials fetch error:", credsErr.message);
@@ -436,7 +447,9 @@ function CandidatePortalPage({ candidateId, tenantId }: { candidateId: string; t
       }
     };
     load();
-  }, [candidateId]);
+    // Runs once on mount; account is resolved from auth session inside load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Real-time credential updates ──────────────────────────────────────────
   useEffect(() => {
@@ -813,15 +826,8 @@ function ParamsReader() {
     </div>
   );
 
-  if (!candidateId) return (
-    <div className="min-h-screen bg-[#080810] flex items-center justify-center p-4">
-      <div className="text-center space-y-3 max-w-sm">
-        <AlertCircle size={36} className="text-red-400 mx-auto" />
-        <p className="text-white font-semibold">Invalid Portal Link</p>
-        <p className="text-zinc-400 text-sm">This link is missing a candidate ID. Please use the link sent by the recruitment team.</p>
-      </div>
-    </div>
-  );
+  // No URL-param gate: portal access is resolved from the authenticated session,
+  // not the URL. The component handles "not logged in" and "no account" internally.
 
   return <CandidatePortalPage candidateId={candidateId} tenantId={tenantId} />;
 }
