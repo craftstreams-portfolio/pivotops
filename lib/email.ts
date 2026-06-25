@@ -72,7 +72,8 @@ export async function sendEmail(payload: EmailPayload): Promise<EmailResult> {
 
       if (res.ok) {
         const data = await res.json().catch(() => ({}));
-        console.log(`[Email] Sent "${payload.subject}" to ${to.join(", ")} (id: ${data?.id})`);
+        const redacted = to.map(a => { const [u, d] = a.split("@"); return d ? `${u.slice(0,2)}***@${d}` : "***"; });
+      console.log(`[Email] Sent "${payload.subject}" to ${redacted.join(", ")} (id: ${data?.id})`);
         return { ok: true, id: data?.id };
       }
 

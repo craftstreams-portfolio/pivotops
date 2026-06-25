@@ -219,9 +219,6 @@ function LoginPage() {
         const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
           email: normalizedEmail,
           password,
-          options: {
-            emailRedirectTo: window.location.origin + "/onboarding",
-          },
         });
 
         if (signUpErr) {
@@ -235,7 +232,32 @@ function LoginPage() {
           return;
         }
 
-        setSuccess("Account created. Check your email to verify your account, then you'll be taken straight to setup.");
+        const newUserId = signUpData.user?.id;
+        if (!newUserId) {
+          setError("Account creation failed — no user returned.");
+          setLoading(false);
+          return;
+        }
+
+        // Send verification via Resend (bypasses flaky Supabase SMTP)
+        const verifRes = await fetch("/api/owner/send-verification", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ authUserId: newUserId, email: normalizedEmail, fullName: "" }),
+        });
+        const verifData = await verifRes.json();
+        if (!verifRes.ok) {
+          setError(verifData?.error ?? "Account created but verification email failed. Contact support@pivotops.app.");
+          setLoading(false);
+          return;
+        }
+
+        // Sign out so they must verify before setup
+        if (signUpData.session) {
+          await supabase.auth.signOut();
+        }
+
+        setSuccess("Account created. Check your email to verify, then sign in to start workspace setup.");
         setMode("login");
 
       } else {
@@ -248,7 +270,6 @@ function LoginPage() {
         if (!signInData.user) { setError("Login failed. Please try again."); setLoading(false); return; }
 
         const result = await resolvePostLoginRoute(signInData.user);
-        console.log("[routing]", result);
         routeAfterAuth(result);
       }
     } catch (err) {
