@@ -253,18 +253,19 @@ function CredentialCard({ cred, reviewer, onUpdate }: {
 }
 
 // ── Candidate row ─────────────────────────────────────────────────────────────
-function CandidateRow({ group, reviewer, onUpdate }: {
+function CandidateRow({ group, reviewer, onUpdate, expanded, onToggle }: {
   group:    CandidateGroup;
   reviewer: string;
   onUpdate: (cid: string, updated: Credential) => void;
+  expanded: boolean;
+  onToggle: () => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const approved = group.credentials.filter(c => c.status === "approved").length;
   const total    = group.credentials.length;
 
   return (
     <div style={{ background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:10, overflow:"hidden", marginBottom:8 }}>
-      <button onClick={() => setExpanded(e => !e)}
+      <button onClick={onToggle}
         style={{ width:"100%", padding:"14px 16px", display:"flex", alignItems:"center", gap:12, background:"none", border:"none", cursor:"pointer", textAlign:"left" }}>
         <div style={{ width:36, height:36, borderRadius:8, background:"rgba(99,102,241,0.2)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
           <User size={16} color="#818cf8" />
@@ -311,6 +312,15 @@ export default function ComplianceIncomingPage() {
   const [filter,   setFilter]   = useState<"all"|"pending"|"partial"|"complete"|"rejected">("all");
   const [reviewer, setReviewer] = useState("admin");
   const [lastRefresh, setLastRefresh] = useState(Date.now());
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+
+  const toggleRow = useCallback((cid: string) => {
+    setExpandedRows(prev => {
+      const next = new Set(prev);
+      next.has(cid) ? next.delete(cid) : next.add(cid);
+      return next;
+    });
+  }, []);
 
   // ── Stats ────────────────────────────────────────────────────────────────
   const stats = {
@@ -322,8 +332,8 @@ export default function ComplianceIncomingPage() {
   };
 
   // ── Load data ────────────────────────────────────────────────────────────
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       // Fetch all credentials + join candidate_accounts
       const { data: creds, error } = await supabase
@@ -385,7 +395,7 @@ export default function ComplianceIncomingPage() {
   useEffect(() => {
     const ch = supabase.channel("compliance-incoming")
       .on("postgres_changes", { event:"INSERT", schema:"public", table:"candidate_credentials" },
-        () => setLastRefresh(Date.now()))
+        () => load(true))
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);
@@ -478,7 +488,7 @@ export default function ComplianceIncomingPage() {
           </div>
         ) : (
           filtered.map(g => (
-            <CandidateRow key={g.candidate_id} group={g} reviewer={reviewer} onUpdate={handleUpdate} />
+            <CandidateRow key={g.candidate_id} group={g} reviewer={reviewer} onUpdate={handleUpdate} expanded={expandedRows.has(g.candidate_id)} onToggle={() => toggleRow(g.candidate_id)} />
           ))
         )}
       </div>
