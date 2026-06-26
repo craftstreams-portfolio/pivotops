@@ -192,6 +192,34 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   if (!appReady) return <AppLoadingScreen />;
 
+  // 7-day free trial expired -> lock the entire dashboard behind an upgrade wall.
+  // Only affects free/trialing tenants past their trial_ends_at; paid plans never hit this.
+  if (!sub.loading && sub.isExpired) {
+    return (
+      <div className="min-h-screen bg-[#080810] flex items-center justify-center p-6">
+        <div className="max-w-md w-full text-center rounded-2xl border border-zinc-800 bg-zinc-900/60 p-10">
+          <div className="w-16 h-16 rounded-2xl bg-indigo-500/15 border border-indigo-500/25 flex items-center justify-center mx-auto mb-6">
+            <Lock size={28} className="text-indigo-400" />
+          </div>
+          <h1 className="text-2xl font-bold text-white">Your free trial has ended</h1>
+          <p className="text-sm text-zinc-400 mt-3 leading-relaxed">
+            Your 7-day PivotOps trial is over. Choose a plan to restore access to your workspace and all features.
+          </p>
+          <a href="/dashboard/settings/billing"
+            className="inline-flex items-center gap-2 mt-7 px-6 py-3 rounded-xl
+                       bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500
+                       text-white text-sm font-semibold transition">
+            <Sparkles size={16} />
+            Choose a plan
+          </a>
+          <p className="mt-5 text-xs text-zinc-600">
+            Questions? <a href="/contact" className="text-indigo-400 hover:text-indigo-300">Contact us</a>
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-screen overflow-hidden bg-zinc-950 text-white">
 
