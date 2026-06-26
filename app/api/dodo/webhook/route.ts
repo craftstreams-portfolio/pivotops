@@ -43,10 +43,13 @@ export async function POST(req: NextRequest) {
 
   let event: any;
   try {
-    const wh = new Webhook(secret);
+    // standardwebhooks expects a base64 secret. Dodo provides "whsec_<base64>".
+    // Strip the prefix if present so the library decodes the correct key.
+    const normalizedSecret = secret.startsWith("whsec_") ? secret.slice(6) : secret;
+    const wh = new Webhook(normalizedSecret);
     event = wh.verify(rawBody, headers);
   } catch (err) {
-    console.error("[dodo/webhook] signature verification failed");
+    console.error("[dodo/webhook] signature verification failed:", err instanceof Error ? err.message : String(err));
     return new NextResponse("Invalid signature", { status: 401 });
   }
 
