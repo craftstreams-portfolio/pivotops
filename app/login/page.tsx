@@ -232,6 +232,17 @@ function LoginPage() {
           return;
         }
 
+        // Supabase returns a user with an EMPTY identities[] array when the email
+        // is already registered (it does NOT throw an error in this case).
+        // Detect that and route them to sign in instead of creating a bogus
+        // verification row pointing at an unusable user id.
+        if (signUpData.user && (signUpData.user.identities?.length ?? 0) === 0) {
+          setError("An account with this email already exists. Please sign in instead.");
+          setMode("login");
+          setLoading(false);
+          return;
+        }
+
         const newUserId = signUpData.user?.id;
         if (!newUserId) {
           setError("Account creation failed — no user returned.");
