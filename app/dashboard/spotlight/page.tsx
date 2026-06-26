@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { supabase }          from "@/lib/supabase";
 import { useTenant }         from "@/lib/hooks/useTenant";
+import { FeatureGate } from "@/app/components/FeatureGate";
 import { getCurrentProfile } from "@/lib/profile/profile.service";
 import {
   Star, Pin, Plus, X, Upload, Heart,
@@ -637,7 +638,7 @@ function ComposerModal({
 // ─────────────────────────────────────────
 // MAIN PAGE
 // ─────────────────────────────────────────
-export default function SpotlightPage() {
+function SpotlightPageInner() {
   const { tenantId, loading: tenantLoading } = useTenant();
 
   const [posts,         setPosts]         = useState<SpotlightPost[]>([]);
@@ -846,5 +847,13 @@ export default function SpotlightPage() {
         )}
       </div>
     </>
+  );
+}
+export default function SpotlightPage() {
+  const { tenantId } = useTenant();
+  return (
+    <FeatureGate tenantId={tenantId} feature="spotlight" title="Spotlight">
+      <SpotlightPageInner />
+    </FeatureGate>
   );
 }

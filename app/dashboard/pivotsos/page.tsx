@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { supabase }          from "@/lib/supabase";
 import { useTenant }         from "@/lib/hooks/useTenant";
+import { FeatureGate } from "@/app/components/FeatureGate";
 import { getCurrentProfile } from "@/lib/profile/profile.service";
 import {
   Siren, AlertTriangle, ShieldAlert, CheckCircle2,
@@ -592,7 +593,7 @@ function IncidentRow({ incident, onClick }: { incident: Incident; onClick: () =>
 // ─────────────────────────────────────────
 // MAIN PAGE
 // ─────────────────────────────────────────
-export default function PivotSOSPage() {
+function PivotSOSPageInner() {
   const { tenantId, loading: tenantLoading } = useTenant();
 
   const [incidents,    setIncidents]    = useState<Incident[]>([]);
@@ -827,5 +828,13 @@ export default function PivotSOSPage() {
         )}
       </div>
     </>
+  );
+}
+export default function PivotSOSPage() {
+  const { tenantId } = useTenant();
+  return (
+    <FeatureGate tenantId={tenantId} feature="pivotsos" title="PivotSOS">
+      <PivotSOSPageInner />
+    </FeatureGate>
   );
 }

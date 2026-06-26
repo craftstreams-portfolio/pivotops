@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { supabase }          from "@/lib/supabase";
 import { useTenant }         from "@/lib/hooks/useTenant";
+import { FeatureGate } from "@/app/components/FeatureGate";
 import { getCurrentProfile } from "@/lib/profile/profile.service";
 import {
   ShieldAlert, AlertTriangle, AlertCircle, Activity,
@@ -260,7 +261,7 @@ function IntelligencePanel({
 // ─────────────────────────────────────────
 // MAIN PAGE
 // ─────────────────────────────────────────
-export default function IncidentsPage() {
+function IncidentsPageInner() {
   const { tenantId, loading: tenantLoading } = useTenant();
 
   const [incidents,    setIncidents]    = useState<Incident[]>([]);
@@ -620,5 +621,13 @@ export default function IncidentsPage() {
         )}
       </div>
     </>
+  );
+}
+export default function IncidentsPage() {
+  const { tenantId } = useTenant();
+  return (
+    <FeatureGate tenantId={tenantId} feature="pivotsos" title="Incidents">
+      <IncidentsPageInner />
+    </FeatureGate>
   );
 }

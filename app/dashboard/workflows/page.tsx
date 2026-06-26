@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { useTenant } from "@/lib/hooks/useTenant";
+import { FeatureGate } from "@/app/components/FeatureGate";
 import { Workflow, Plus, Play, Pause, Trash2, CheckCircle2, XCircle, Clock, Loader2, RefreshCw, Zap, AlertTriangle, ChevronDown, ChevronUp } from "lucide-react";
 
 interface WorkflowRow { id:string; name:string; description:string|null; status:string; trigger:string|null; steps:any[]; run_count:number; last_run_at:string|null; created_at:string; created_by:string|null; }
@@ -16,7 +17,7 @@ const STATUS_CFG: Record<string,{cls:string;icon:any}> = {
 };
 function fmt(iso:string|null){if(!iso)return"—";return new Date(iso).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});}
 
-export default function WorkflowsPage(){
+function WorkflowsPageInner(){
   const {tenantId}=useTenant();
   const [workflows,setWorkflows]=useState<WorkflowRow[]>([]);
   const [runs,setRuns]=useState<WorkflowRun[]>([]);
@@ -191,5 +192,13 @@ export default function WorkflowsPage(){
         </div>
       )}
     </div>
+  );
+}
+export default function WorkflowsPage() {
+  const { tenantId } = useTenant();
+  return (
+    <FeatureGate tenantId={tenantId} feature="workflows" title="Workflows">
+      <WorkflowsPageInner />
+    </FeatureGate>
   );
 }

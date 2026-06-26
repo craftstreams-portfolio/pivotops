@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { supabase }          from "@/lib/supabase";
 import { useTenant }         from "@/lib/hooks/useTenant";
+import { FeatureGate } from "@/app/components/FeatureGate";
 import { getCurrentProfile } from "@/lib/profile/profile.service";
 import {
   Zap, CheckCircle2, XCircle, Clock,
@@ -282,7 +283,7 @@ function RecoveryPlanCard({
 // ─────────────────────────────────────────
 // MAIN PAGE
 // ─────────────────────────────────────────
-export default function RecoveryPage() {
+function RecoveryPageInner() {
   const { tenantId, loading: tenantLoading } = useTenant();
 
   const [plans,       setPlans]       = useState<RecoveryPlan[]>([]);
@@ -577,5 +578,13 @@ export default function RecoveryPage() {
         </div>
       )}
     </div>
+  );
+}
+export default function RecoveryPage() {
+  const { tenantId } = useTenant();
+  return (
+    <FeatureGate tenantId={tenantId} feature="pivotsos" title="Recovery">
+      <RecoveryPageInner />
+    </FeatureGate>
   );
 }

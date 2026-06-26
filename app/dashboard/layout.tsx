@@ -65,13 +65,19 @@ function AppLoadingScreen() {
 type NavChild = { label:string; href:string; icon?:any };
 type NavItem  = { label:string; href?:string; icon:any; children?:NavChild[] };
 
-const GATED_HREFS: Record<string, "compliance" | "analytics" | "conference" | "clocking" | "tasks"> = {
+const GATED_HREFS: Record<string, "compliance" | "analytics" | "conference" | "clocking" | "tasks" | "showcase" | "spotlight" | "pivotsos" | "workflows"> = {
   "/dashboard/compliance":        "compliance",
   "/dashboard/analytics":         "analytics",
   "/dashboard/compliance-status": "compliance",
   "/dashboard/meetings":          "conference",
   "/dashboard/clocking":          "clocking",
   "/dashboard/tasks":             "tasks",
+  "/dashboard/showcase":          "showcase",
+  "/dashboard/spotlight":         "spotlight",
+  "/dashboard/workflows":         "workflows",
+  "/dashboard/pivotsos":          "pivotsos",
+  "/dashboard/incidents":         "pivotsos",
+  "/dashboard/recovery":          "pivotsos",
 };
 
 const navItems: NavItem[] = [

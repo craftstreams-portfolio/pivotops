@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { supabase }          from "@/lib/supabase";
 import { useTenant }         from "@/lib/hooks/useTenant";
+import { FeatureGate } from "@/app/components/FeatureGate";
 import { getCurrentProfile } from "@/lib/profile/profile.service";
 import {
   Award, Plus, X, Upload, Search,
@@ -428,7 +429,7 @@ function ShowcaseModal({
 // ─────────────────────────────────────────
 // MAIN PAGE
 // ─────────────────────────────────────────
-export default function ShowcasePage() {
+function ShowcasePageInner() {
   const { tenantId, loading: tenantLoading } = useTenant();
 
   const [profiles,    setProfiles]    = useState<ShowcaseProfile[]>([]);
@@ -572,5 +573,13 @@ export default function ShowcasePage() {
         )}
       </div>
     </>
+  );
+}
+export default function ShowcasePage() {
+  const { tenantId } = useTenant();
+  return (
+    <FeatureGate tenantId={tenantId} feature="showcase" title="Showcase">
+      <ShowcasePageInner />
+    </FeatureGate>
   );
 }
