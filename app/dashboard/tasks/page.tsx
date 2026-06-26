@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { supabase }        from "@/lib/supabase";
 import { useTenant }       from "@/lib/hooks/useTenant";
+import { FeatureGate } from "@/app/components/FeatureGate";
 import { getCurrentProfile } from "@/lib/profile/profile.service";
 import { processMentions, extractMentions, getUserNotifications, markUserNotificationsRead } from "@/lib/mentions/mention.engine";
 import {
@@ -215,7 +216,7 @@ function NotificationsPanel({
 // ─────────────────────────────────────────
 // MAIN PAGE
 // ─────────────────────────────────────────
-export default function TaskCenterPage() {
+function TaskCenterPageInner() {
   const { tenantId, loading: tenantLoading } = useTenant();
 
   const [tasks,         setTasks]         = useState<Task[]>([]);
@@ -782,5 +783,13 @@ export default function TaskCenterPage() {
         </div>
       )}
     </div>
+  );
+}
+export default function TaskCenterPage() {
+  const { tenantId } = useTenant();
+  return (
+    <FeatureGate tenantId={tenantId} feature="tasks" title="Task Center">
+      <TaskCenterPageInner />
+    </FeatureGate>
   );
 }

@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { useTenant } from "@/lib/hooks/useTenant";
+import { FeatureGate } from "@/app/components/FeatureGate";
 import { clockIn, clockOut, getClockingLogs } from "@/lib/clocking/clocking.service";
 import { analyzeEmployeeFatigue, type XavierFatigueReport, type FatigueLevel } from "../../../lib/ai/xavier";
 import {
@@ -170,7 +171,7 @@ function ToastContainer({ toasts }: { toasts: Toast[] }) {
 // ─────────────────────────────────────────
 // MAIN PAGE
 // ─────────────────────────────────────────
-export default function ClockingPage() {
+function ClockingPageInner() {
   const { tenantId, loading: tenantLoading } = useTenant();
 
   const [currentUser,   setCurrentUser]   = useState<Profile | null>(null);
@@ -1098,4 +1099,12 @@ async function getGeoLocation(): Promise<{latitude:number;longitude:number;addre
       { timeout: 5000, maximumAge: 60000 }
     );
   });
+}
+export default function ClockingPage() {
+  const { tenantId } = useTenant();
+  return (
+    <FeatureGate tenantId={tenantId} feature="clocking" title="Clocking">
+      <ClockingPageInner />
+    </FeatureGate>
+  );
 }

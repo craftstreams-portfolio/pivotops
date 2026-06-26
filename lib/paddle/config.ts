@@ -27,6 +27,9 @@ export const PLAN_FEATURES: Record<PlanTier, {
   maxRecruiters:  number;
   compliance:     boolean;
   analytics:      boolean;
+  conference:     boolean;
+  clocking:       boolean;
+  tasks:          boolean;
   customIntegrations: boolean;
   prioritySupport:    boolean;
 }> = {
@@ -35,6 +38,9 @@ export const PLAN_FEATURES: Record<PlanTier, {
     maxRecruiters:      2,
     compliance:         false,
     analytics:          false,
+    conference:         false,
+    clocking:           false,
+    tasks:              false,
     customIntegrations: false,
     prioritySupport:    false,
   },
@@ -43,6 +49,9 @@ export const PLAN_FEATURES: Record<PlanTier, {
     maxRecruiters:      5,
     compliance:         false,
     analytics:          false,
+    conference:         false,
+    clocking:           false,
+    tasks:              false,
     customIntegrations: false,
     prioritySupport:    false,
   },
@@ -51,6 +60,9 @@ export const PLAN_FEATURES: Record<PlanTier, {
     maxRecruiters:      20,
     compliance:         true,
     analytics:          true,
+    conference:         true,
+    clocking:           true,
+    tasks:              true,
     customIntegrations: false,
     prioritySupport:    false,
   },
@@ -59,6 +71,9 @@ export const PLAN_FEATURES: Record<PlanTier, {
     maxRecruiters:      999,
     compliance:         true,
     analytics:          true,
+    conference:         true,
+    clocking:           true,
+    tasks:              true,
     customIntegrations: true,
     prioritySupport:    true,
   },

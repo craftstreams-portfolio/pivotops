@@ -4,6 +4,7 @@ import { safeGetUserMedia } from "@/lib/media/safeGetUserMedia";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { useTenant } from "@/lib/hooks/useTenant";
+import { FeatureGate } from "@/app/components/FeatureGate";
 import {
   WebRTCEngine, createMeeting, getMeetings, updateMeetingStatus,
   joinMeeting, admitParticipant, kickParticipant,
@@ -382,7 +383,7 @@ function DeviceTest({
 // ─────────────────────────────────────────
 // MAIN PAGE
 // ─────────────────────────────────────────
-export default function ConferencePage() {
+function ConferencePageInner() {
   const { tenantId, loading: tenantLoading } = useTenant();
 
   const [currentUser,    setCurrentUser]    = useState<any>(null);
@@ -1105,5 +1106,13 @@ export default function ConferencePage() {
         </button>
       </div>
     </div>
+  );
+}
+export default function ConferencePage() {
+  const { tenantId } = useTenant();
+  return (
+    <FeatureGate tenantId={tenantId} feature="conference" title="Conference">
+      <ConferencePageInner />
+    </FeatureGate>
   );
 }

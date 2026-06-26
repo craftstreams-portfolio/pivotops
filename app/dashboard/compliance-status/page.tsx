@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { useTenant } from "@/lib/hooks/useTenant";
+import { FeatureGate } from "@/app/components/FeatureGate";
 import { ShieldCheck, AlertTriangle, XCircle, CheckCircle2, Clock, Search, RefreshCw, Download, Loader2, X } from "lucide-react";
 
 interface ComplianceDoc { id:string; candidate_id:string|null; employee_name:string; name:string; status:string; file_url:string|null; reviewed_by_name:string|null; reviewed_at:string|null; submitted_at:string|null; rejection_reason:string|null; updated_at:string; }
@@ -16,7 +17,7 @@ const STATUS_CFG: Record<string,{cls:string;icon:any;label:string}> = {
 
 function fmt(iso:string|null){if(!iso)return"—";return new Date(iso).toLocaleDateString([],{month:"short",day:"numeric",year:"numeric"});}
 
-export default function ComplianceStatusPage(){
+function ComplianceStatusPageInner(){
   const {tenantId}=useTenant();
   const [docs,setDocs]=useState<ComplianceDoc[]>([]);
   const [loading,setLoading]=useState(true);
@@ -153,5 +154,13 @@ export default function ComplianceStatusPage(){
         </div>
       )}
     </div>
+  );
+}
+export default function ComplianceStatusPage() {
+  const { tenantId } = useTenant();
+  return (
+    <FeatureGate tenantId={tenantId} feature="compliance" title="Compliance Status">
+      <ComplianceStatusPageInner />
+    </FeatureGate>
   );
 }

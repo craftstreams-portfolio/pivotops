@@ -6,12 +6,15 @@ import { useSubscription } from "@/lib/paddle/gate";
 import { PLAN_FEATURES } from "@/lib/paddle/config";
 import type { PlanTier } from "@/lib/paddle/config";
 
-type GatedFeature = "compliance" | "analytics" | "customIntegrations" | "prioritySupport";
+type GatedFeature = "compliance" | "analytics" | "conference" | "clocking" | "tasks" | "customIntegrations" | "prioritySupport";
 
 // The minimum plan that unlocks each feature (for the upgrade prompt copy)
 const FEATURE_MIN_PLAN: Record<GatedFeature, PlanTier> = {
   compliance:         "professional",
   analytics:          "professional",
+  conference:         "professional",
+  clocking:           "professional",
+  tasks:              "professional",
   customIntegrations: "enterprise",
   prioritySupport:    "enterprise",
 };
