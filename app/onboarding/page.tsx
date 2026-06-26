@@ -358,61 +358,37 @@ export default function OnboardingPage() {
         .slice(0, 30) + "-" + Date.now().toString(36);
 
       const applyLinkUrl = `${process.env.NEXT_PUBLIC_APP_URL || window.location.origin}/apply/${tid}`;
-      const { error: tenantErr } = await supabase.from("tenants").upsert({
-        id: tid, slug: tid, name: orgName.trim(), org_name: orgName.trim(), org_industry: industry,
-        org_size: teamSize, org_country: country,
-        owner_id: userId, owner_email: userEmail,
-        apply_link: applyLinkUrl,
-        tenant_slug: tid,
-        created_at: now, updated_at: now,
-      }, { onConflict: "id" });
-      if (tenantErr) throw new Error("Tenant creation failed: " + tenantErr.message);
+      // Bootstrap the entire workspace server-side (bypasses RLS chicken-and-egg
+      // where the owner has no tenant_id yet). The route uses the service-role
+      // client and fires the provision_free_subscription trigger (7-day trial).
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) throw new Error("Your session expired. Please sign in again.");
 
-      const { error: profileErr } = await supabase.from("profiles").upsert({
-        id: userId, email: userEmail,
-        full_name: adminName.trim() || userEmail.split("@")[0],
-        tenant_id: tid, role: "admin",
-        org_name: orgName.trim(), org_industry: industry,
-        org_size: teamSize, org_country: country,
-        onboarding_complete: true,
-        first_login_at: now, date_joined: now.slice(0,10),
-        updated_at: now,
-      }, { onConflict: "id" });
-      if (profileErr) throw new Error("Profile update failed: " + profileErr.message);
-
-      await supabase.from("settings").upsert({
-        tenant_id: tid, org_name: orgName.trim(),
-        org_departments: departments,
-        ai_enabled: autoScore, onboarding_automation: autoOnboard,
-        geo_tagging_enabled: geoTag, updated_at: now,
-      }, { onConflict: "tenant_id" });
-
-      const { data: ex } = await supabase.from("score_thresholds")
-        .select("id").eq("tenant_id", tid).is("manager_id", null).maybeSingle();
-      if (!ex) {
-        await supabase.from("score_thresholds").insert({
-          tenant_id: tid, manager_id: null,
-          auto_interview: thresholdAI, manual_review: thresholdMR,
-        });
-      }
-
-      for (const ch of ["candidates","recruitment-review","general","teams-media"]) {
-        const { data: ec } = await supabase.from("channels")
-          .select("id").eq("name", ch).eq("tenant_id", tid).maybeSingle();
-        if (!ec) {
-          await supabase.from("channels").insert({
-            name: ch, tenant_id: tid, type: "channel",
-            created_by: userId, created_at: now,
-          });
-        }
-      }
-
-      await supabase.from("audit_logs").insert({
-        tenant_id: tid, user_id: userId,
-        action: "workspace_created", entity_type: "tenant", entity_id: tid,
-        metadata: { org_name: orgName, industry, team_size: teamSize },
-        created_at: now,
+      const res = await fetch("/api/owner/create-tenant", {
+        method:  "POST",
+        headers: {
+          "Content-Type":  "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          tid,
+          orgName:    orgName.trim(),
+          industry,
+          teamSize,
+          country,
+          adminName:  adminName.trim(),
+          departments,
+          autoScore,
+          autoOnboard,
+          geoTag,
+          thresholdAI,
+          thresholdMR,
+          applyLinkUrl,
+        }),
       });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result?.error ?? "Workspace creation failed.");
 
       setApplyLink(applyLinkUrl);
       setAnimState("exit-left");
