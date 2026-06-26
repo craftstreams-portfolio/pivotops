@@ -90,7 +90,13 @@ export default function BillingPage() {
     if (!confirm("Are you sure you want to cancel? Your access continues until the end of the billing period.")) return;
     setCanceling(true);
     try {
-      await fetch("/api/paddle/cancel", { method: "POST" });
+      const res = await fetch("/api/dodo/cancel", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Failed to cancel. Contact support@pivotops.app.");
+        setCanceling(false);
+        return;
+      }
       window.location.reload();
     } catch {
       setError("Failed to cancel. Contact support@pivotops.app.");
