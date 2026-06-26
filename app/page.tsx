@@ -626,6 +626,7 @@ export default function LandingPage() {
                 <p>Distribution partner: Shopline</p>
                 <p>Serving US, Singapore and APAC</p>
                 <a href="mailto:inquiries@pivotops.app" className="block hover:text-white transition">inquiries@pivotops.app</a>
+                <a href="/contact" className="block hover:text-white transition">Contact Us</a>
               </div>
             </div>
             <div className="space-y-3">
@@ -647,6 +648,7 @@ export default function LandingPage() {
               <a href="/legal/terms" className="hover:text-zinc-400 transition">Terms of Use</a>
               <span>·</span>
               <a href="/legal/privacy" className="hover:text-zinc-400 transition">Privacy Policy</a>
+              <a href="/contact" className="hover:text-zinc-400 transition">Contact</a>
               <span>·</span>
               <a href="/legal/refunds" className="hover:text-zinc-400 transition">Refund Policy</a>
               <span>·</span>

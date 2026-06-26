@@ -65,10 +65,10 @@ export default function ShoplinePrivacyPage() {
 
         <h2 className="text-xl font-semibold text-zinc-900 mt-10">6. Data location and security</h2>
         <p className="mt-3 leading-relaxed">
-          Data is stored with our infrastructure providers (Supabase and Vercel) and may be processed outside the
-          merchant&rsquo;s country, including outside the European Economic Area. We apply industry-standard
-          safeguards including encryption in transit, access controls, tenant isolation enforced at the database
-          level, and signed/verified webhooks. PivotOps does not currently operate an establishment in Europe.
+          PivotOps is operated by Craftstreams, which is established in Lagos, Nigeria. Data is stored with our
+          infrastructure providers (Supabase and Vercel) in the United States and other global regions, and may be
+          processed outside the merchant&rsquo;s country. We apply industry-standard safeguards including encryption
+          in transit, access controls, tenant isolation enforced at the database level, and signed/verified webhooks.
         </p>
 
         <h2 className="text-xl font-semibold text-zinc-900 mt-10">7. GDPR &amp; data subject requests</h2>

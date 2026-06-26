@@ -31,7 +31,7 @@ export default function PrivacyPolicyPage() {
           {[
             {
               n: "1", title: "Who We Are and Scope",
-              body: `Craftstreams is the data controller for information collected through PivotOps. Our principal place of business is in the United States.
+              body: `Craftstreams is the data controller for information collected through PivotOps. Craftstreams is established in Lagos, Nigeria. Our platform and data are hosted by our infrastructure providers (Supabase and Vercel) in the United States and other global regions.
 
 This Policy applies to:
 - Business customers and their administrators ("Customers") who subscribe to PivotOps;
@@ -184,11 +184,11 @@ If you are located in California, you may have additional rights under the Calif
             },
             {
               n: "10", title: "International Data Transfers",
-              body: `Our servers are located in the United States. If you are located in the European Economic Area, the United Kingdom, or another jurisdiction with data transfer restrictions, your data may be transferred to and processed in the United States.
+              body: `Craftstreams is established in Nigeria, and our data is hosted by our infrastructure providers (Supabase and Vercel) in the United States and other global regions. If you are located in the European Economic Area, the United Kingdom, or another jurisdiction with data transfer restrictions, your data may be transferred to and processed in the United States and other countries.
 
 For EEA and UK transfers, we rely on Standard Contractual Clauses (SCCs) approved by the European Commission and the UK Information Commissioner's Office, as applicable, to ensure adequate protection of personal data.
 
-By using the Service, you acknowledge that your data will be transferred to and processed in the United States in accordance with this Policy.`
+By using the Service, you acknowledge that your data will be transferred to and processed in the United States and other countries in accordance with this Policy.`
             },
             {
               n: "11", title: "Children's Privacy",
