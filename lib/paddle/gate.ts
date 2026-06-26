@@ -10,8 +10,9 @@ export interface SubscriptionState {
   status:      string;
   isActive:    boolean;
   isTrial:     boolean;
-  isExpired:   boolean;
-  trialEndsAt: string | null;
+  isExpired:        boolean;
+  trialEndsAt:      string | null;
+  cancelAtPeriodEnd: boolean;
   features:    typeof PLAN_FEATURES["free"];
   loading:     boolean;
 }
@@ -22,8 +23,9 @@ export function useSubscription(tenantId: string): SubscriptionState {
     status:      "trialing",
     isActive:    true,
     isTrial:     true,
-    isExpired:   false,
-    trialEndsAt: null,
+    isExpired:        false,
+    trialEndsAt:      null,
+    cancelAtPeriodEnd: false,
     features:    PLAN_FEATURES["free"],
     loading:     true,
   });
@@ -43,6 +45,7 @@ export function useSubscription(tenantId: string): SubscriptionState {
         const plan        = (data.plan ?? "free") as PlanTier;
         const status      = data.status ?? "trialing";
         const trialEndsAt = data.trial_ends_at ?? null;
+        const cancelAtPeriodEnd = data.cancel_at_period_end === true;
         const isTrial     = status === "trialing";
         // A free/trialing plan whose trial window has passed is expired.
         // Paid plans (active professional/enterprise) are NEVER expired.
@@ -57,6 +60,7 @@ export function useSubscription(tenantId: string): SubscriptionState {
           isTrial,
           isExpired,
           trialEndsAt,
+          cancelAtPeriodEnd,
           features: PLAN_FEATURES[plan],
           loading:  false,
         });

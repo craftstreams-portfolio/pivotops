@@ -149,10 +149,15 @@ export default function BillingPage() {
               Status: <span className={`font-semibold ${sub.isActive ? "text-emerald-400" : "text-red-400"}`}>
                 {sub.status.replace("_", " ")}
               </span>
-              {sub.isTrial && " · 14-day trial"}
+              {sub.isTrial && " · trial"}
             </p>
+            {sub.cancelAtPeriodEnd && (
+              <p className="text-xs text-amber-400 mt-2">
+                Your plan is set to cancel at the end of the current billing period. You keep full access until then.
+              </p>
+            )}
           </div>
-          {sub.plan !== "free" && sub.isActive && !sub.isTrial && (
+          {sub.plan !== "free" && sub.isActive && !sub.isTrial && !sub.cancelAtPeriodEnd && (
             <button onClick={handleCancel} disabled={canceling}
               className="text-xs text-zinc-500 hover:text-red-400 transition border border-zinc-700 hover:border-red-500/30 px-4 py-2 rounded-xl">
               {canceling ? "Canceling..." : "Cancel plan"}
