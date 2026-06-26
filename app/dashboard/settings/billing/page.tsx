@@ -50,7 +50,7 @@ export default function BillingPage() {
   useEffect(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
-      if (params.get("success") === "true") setSuccess(true);
+      if (params.get("status") === "success") setSuccess(true);
     }
   }, []);
 
@@ -58,16 +58,26 @@ export default function BillingPage() {
     setLoading(plan);
     setError("");
     try {
-      const res = await fetch("/api/paddle/checkout", {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        setError("Your session expired. Please sign in again.");
+        setLoading(null);
+        return;
+      }
+      const res = await fetch("/api/dodo/checkout", {
         method:  "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type":  "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
         body:    JSON.stringify({ plan, cycle: annual ? "annual" : "monthly" }),
       });
       const data = await res.json();
-      if (data.url) {
-        window.location.href = data.url;
+      if (data.checkout_url) {
+        window.location.href = data.checkout_url;
       } else {
-        setError("Failed to start checkout. Please try again.");
+        setError(data.error || "Failed to start checkout. Please try again.");
       }
     } catch {
       setError("Something went wrong. Please try again.");
@@ -228,7 +238,7 @@ export default function BillingPage() {
       </div>
 
       <p className="text-center text-zinc-600 text-xs">
-        Payments processed securely by Paddle · All prices in USD · Tax included where applicable
+        Payments processed securely by Dodo Payments · All prices in USD · Tax included where applicable
       </p>
     </div>
   );

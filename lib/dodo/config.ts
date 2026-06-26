@@ -10,7 +10,7 @@ export const DODO_CONFIG = {
   // "test_mode" | "live_mode" — Dodo SDK environment
   environment:   (process.env.DODO_PAYMENTS_ENV ?? "test_mode") as "test_mode" | "live_mode",
   // Where Dodo redirects after checkout completes
-  returnUrl:     (process.env.NEXT_PUBLIC_APP_URL ?? "https://www.pivotops.app") + "/dashboard/billing?status=success",
+  returnUrl:     (process.env.NEXT_PUBLIC_APP_URL ?? "https://www.pivotops.app") + "/dashboard/settings/billing?status=success",
   products: {
     starter: {
       monthly: process.env.DODO_PRODUCT_STARTER_MONTHLY ?? "",
