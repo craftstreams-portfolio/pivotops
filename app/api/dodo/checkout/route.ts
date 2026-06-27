@@ -62,7 +62,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ checkout_url: session.checkout_url, session_id: session.session_id });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error("[dodo/checkout]", msg);
-    return NextResponse.json({ error: "Checkout failed" }, { status: 500 });
+    console.error("[dodo/checkout]", msg, err);
+    // TEMP: surface the real Dodo error to the client for live-launch debugging
+    return NextResponse.json({ error: "Checkout failed", detail: msg }, { status: 500 });
   }
 }
