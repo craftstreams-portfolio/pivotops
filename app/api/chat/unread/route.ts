@@ -22,7 +22,8 @@ export const GET = withSecurity(
     await Promise.all(channelIds.map(async (channelId: string) => {
       const lastRead = readMap[channelId];
       let query = db.from("messages").select("id", { count: "exact", head: true })
-        .eq("channel_id", channelId).eq("retracted", false).neq("user_id", userId);
+        .eq("channel_id", channelId).eq("retracted", false)
+        .or(`user_id.is.null,user_id.neq.${userId}`);
       if (lastRead) query = query.gt("created_at", lastRead);
       const { count } = await query;
       if (count && count > 0) counts[channelId] = count;
