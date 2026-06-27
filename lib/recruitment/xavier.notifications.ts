@@ -1,6 +1,12 @@
 import { supabase } from "../supabase";
 import { getAdmin } from "@/lib/supabase-admin";
 
+// Isomorphic client: server has no session -> service-role; client has the
+// user's session -> anon (satisfies tenant RLS, and never exposes the key).
+function db() {
+  return typeof window === "undefined" ? getAdmin() : supabase;
+}
+
 export type NotificationStage =
   | "application_received"
   | "auto_interview"
@@ -32,7 +38,7 @@ export interface XavierNotificationPayload {
 // created on first use and reused after that. If a concurrent call wins
 // the insert race first, we fall back to a re-select instead of failing.
 export async function getOrCreateChannel(tenantId: string, name: string): Promise<string> {
-  const { data: existing } = await supabase
+  const { data: existing } = await db()
     .from("channels")
     .select("id")
     .eq("tenant_id", tenantId)
@@ -40,7 +46,7 @@ export async function getOrCreateChannel(tenantId: string, name: string): Promis
     .maybeSingle();
   if (existing) return existing.id;
 
-  const { data: created, error } = await supabase
+  const { data: created, error } = await db()
     .from("channels")
     .insert({ name, tenant_id: tenantId })
     .select("id")
@@ -48,7 +54,7 @@ export async function getOrCreateChannel(tenantId: string, name: string): Promis
 
   if (!error && created) return created.id;
 
-  const { data: retry } = await supabase
+  const { data: retry } = await db()
     .from("channels")
     .select("id")
     .eq("tenant_id", tenantId)
@@ -69,7 +75,7 @@ async function resolveChannel(stage: NotificationStage, tenantId: string): Promi
       return null;
     case "manual_review":
     case "auto_reject":
-      return getOrCreateChannel(tenantId, "Recruitment Review");
+      return getOrCreateChannel(tenantId, "recruitment-review");
     case "auto_interview":
     case "interview_scheduled":
     case "interview_approved":
@@ -80,7 +86,7 @@ async function resolveChannel(stage: NotificationStage, tenantId: string): Promi
     case "onboarding_triggered":
     case "onboarding_complete":
     case "compliance_initiated":
-      return getOrCreateChannel(tenantId, "Candidates");
+      return getOrCreateChannel(tenantId, "candidates");
     default:
       return null;
   }
@@ -151,7 +157,7 @@ async function postToChannel(
   tenantId:  string
 ) {
   try {
-    const { error } = await getAdmin().from("messages").insert({
+    const { error } = await db().from("messages").insert({
       channel_id: channelId,
       content:    message,
       user_id:    null,

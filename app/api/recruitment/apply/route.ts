@@ -112,8 +112,8 @@ async function postCandidateCard(
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       const channelId = decision === "manual_review"
-        ? await getOrCreateChannelAdmin(admin, tenantId, "Recruitment Review")
-        : await getOrCreateChannelAdmin(admin, tenantId, "Candidates");
+        ? await getOrCreateChannelAdmin(admin, tenantId, "recruitment-review")
+        : await getOrCreateChannelAdmin(admin, tenantId, "candidates");
 
       const { error } = await admin.from("messages").insert({
         channel_id: channelId,
