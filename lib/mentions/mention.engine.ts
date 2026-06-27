@@ -1,6 +1,7 @@
 import { supabase }    from "../supabase";
 import { emitEvent }   from "../events/event-bus";
 import type { MentionType, MentionContext } from "../events/event-types";
+import { getAdmin } from "@/lib/supabase-admin";
 
 // ─────────────────────────────────────────
 // TYPES
@@ -306,7 +307,7 @@ async function xavierEscalationBroadcast({
   });
 
   // Post to recruitment-review channel as system message
-  await supabase.from("messages").insert({
+  await getAdmin().from("messages").insert({
     channel_id:  "1da7f9fa-7f21-4557-bc59-7b0cb2a53b63",
     content:     message,
     user_id:     "00000000-0000-0000-0000-000000000000",

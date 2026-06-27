@@ -1,4 +1,5 @@
 import { supabase } from "../supabase";
+import { getAdmin } from "@/lib/supabase-admin";
 
 export type NotificationStage =
   | "application_received"
@@ -150,7 +151,7 @@ async function postToChannel(
   tenantId:  string
 ) {
   try {
-    const { error } = await supabase.from("messages").insert({
+    const { error } = await getAdmin().from("messages").insert({
       channel_id: channelId,
       content:    message,
       user_id:    null,

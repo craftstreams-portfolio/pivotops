@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabase }     from "@/lib/supabase";
+import { getAdmin } from "@/lib/supabase-admin";
 
 const TEAMS_MEDIA_CHANNEL = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
 
@@ -84,7 +85,7 @@ export async function POST(req: Request) {
         `Their avatar is now displayed on every employee's dashboard for ${monthLabel}.`,
       ].filter(Boolean).join("\n");
 
-      await supabase.from("messages").insert({
+      await getAdmin().from("messages").insert({
         channel_id:  TEAMS_MEDIA_CHANNEL,
         content,
         user_id:     "00000000-0000-0000-0000-000000000000",
