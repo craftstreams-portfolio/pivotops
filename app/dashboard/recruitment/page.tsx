@@ -899,25 +899,36 @@ export default function RecruitmentBoard() {
 
               // Xavier notification to Candidates channel
               const stageMap: Record<string, any> = {
-                interview:          "interview_scheduled",
-                interview_scheduled:"interview_scheduled",
-                offer_sent:         "offer_sent",
-                offer_accepted:     "offer_accepted",
-                offer_declined:     "offer_declined",
-                onboarding:         "onboarding_triggered",
-                hired:              "onboarding_triggered",
-                rejected:           "auto_reject",
-                manual_review:      "manual_review",
+                interview:           "interview_scheduled",
+                interview_scheduled: "interview_scheduled",
+                recruitment_review:  "manual_review",
+                offer_sent:          "offer_sent",
+                offer_accepted:      "offer_accepted",
+                offer_declined:      "offer_declined",
+                onboarding:          "onboarding_triggered",
+                hired:               "onboarding_triggered",
+                rejected:            "auto_reject",
+                manual_review:       "manual_review",
               };
-              const mappedStage = stageMap[newStatus] ?? "interview_scheduled";
-              await xavierNotify({
-                tenantId,
-                candidateId,
-                stage:         mappedStage,
-                candidateName: candidate.name ?? "Candidate",
-                extra:         `Moved by ${user?.email ?? "a recruiter"} from ${candidate.status?.replace(/_/g, " ")} to ${newStatus.replace(/_/g, " ")}`,
-              });
-              await handleRecruitmentToOnboarding(candidate, supabase, newStatus);
+              const mappedStage = stageMap[newStatus];
+              if (mappedStage) {
+                try {
+                  await xavierNotify({
+                    tenantId,
+                    candidateId,
+                    stage:         mappedStage,
+                    candidateName: candidate.name ?? "Candidate",
+                    extra:         `Moved by ${user?.email ?? "a recruiter"} from ${candidate.status?.replace(/_/g, " ")} to ${newStatus.replace(/_/g, " ")}`,
+                  });
+                } catch (notifyErr) {
+                  console.error("Xavier notify failed (non-blocking):", notifyErr);
+                }
+              }
+              try {
+                await handleRecruitmentToOnboarding(candidate, supabase, newStatus);
+              } catch (onbErr) {
+                console.error("Onboarding sync failed (non-blocking):", onbErr);
+              }
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err);
               console.error("Move failed:", msg);
