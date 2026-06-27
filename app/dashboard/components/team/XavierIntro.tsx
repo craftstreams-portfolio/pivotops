@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
+import XavierAvatar, { type XavierExpression } from "@/app/dashboard/components/team/XavierAvatar";
 
 // ── Xavier brand colours ──────────────────────────────────────────────────────
 const NAVY  = "#0B1D3A";
@@ -13,6 +14,7 @@ const CARDS = [
   {
     icon: "🎯",
     title: "Smart Sourcing",
+    expression: "analyzing" as XavierExpression,
     body: "I score every applicant 0–100 the moment they apply. Top talent gets routed to interview before your competitor opens their inbox.",
     link: "/dashboard/recruitment",
     color: TEAL,
@@ -20,6 +22,7 @@ const CARDS = [
   {
     icon: "📅",
     title: "Interview Assistant",
+    expression: "friendly" as XavierExpression,
     body: "I schedule interviews, send candidate confirmations, and generate token-gated links — no calendar ping needed from your team.",
     link: "/dashboard/recruitment",
     color: BLUE,
@@ -27,6 +30,7 @@ const CARDS = [
   {
     icon: "⚡",
     title: "Workflow Automation",
+    expression: "thinking" as XavierExpression,
     body: "Hire confirmed → onboarding starts. Compliance docs requested. Tasks assigned. Everything triggered automatically the moment a decision is made.",
     link: "/dashboard/onboarding",
     color: TEAL,
@@ -34,6 +38,7 @@ const CARDS = [
   {
     icon: "🛡️",
     title: "Compliance Tracking",
+    expression: "thinking" as XavierExpression,
     body: "I track every required credential per employee, send reminders, and flag gaps before they become audit problems.",
     link: "/dashboard/compliance",
     color: BLUE,
@@ -41,6 +46,7 @@ const CARDS = [
   {
     icon: "📊",
     title: "Insights & Reporting",
+    expression: "analyzing" as XavierExpression,
     body: "Time-to-hire, conversion rates, fatigue analysis, and workforce health — all updated in real time as your team moves.",
     link: "/dashboard/analytics",
     color: TEAL,
@@ -48,6 +54,7 @@ const CARDS = [
   {
     icon: "💬",
     title: "Ask Me Anything",
+    expression: "celebrating" as XavierExpression,
     body: "Your pipeline, your team, your compliance gaps — ask me anything about your workforce and I will surface the answer immediately.",
     link: "/dashboard/teams",
     color: BLUE,
@@ -94,34 +101,6 @@ function VolumeBars({ active }: { active: boolean }) {
 }
 
 // ── Xavier avatar ─────────────────────────────────────────────────────────────
-function XavierAvatar({ size = 80, pulse = false }: { size?: number; pulse?: boolean }) {
-  return (
-    <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
-      {pulse && (
-        <div
-          className="absolute inset-0 rounded-full animate-ping opacity-20"
-          style={{ background: TEAL }}
-        />
-      )}
-      <div
-        className="w-full h-full rounded-full flex items-center justify-center text-white font-black"
-        style={{
-          background: `linear-gradient(135deg, ${NAVY} 0%, ${BLUE} 100%)`,
-          fontSize: size * 0.35,
-          border: `3px solid ${TEAL}`,
-          boxShadow: `0 0 0 2px ${NAVY}, 0 8px 32px rgba(0,191,166,0.3)`,
-        }}
-      >
-        X
-      </div>
-      <div
-        className="absolute bottom-0.5 right-0.5 w-3.5 h-3.5 rounded-full border-2"
-        style={{ background: TEAL, borderColor: "#080810" }}
-      />
-    </div>
-  );
-}
-
 // ── Kanban card ───────────────────────────────────────────────────────────────
 function KanbanCard({
   card, index, visible, onNavigate,
@@ -145,12 +124,7 @@ function KanbanCard({
       onClick={() => onNavigate(card.link)}
     >
       <div className="flex items-start justify-between gap-2">
-        <div
-          className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
-          style={{ background: `${card.color}18`, border: `1px solid ${card.color}30` }}
-        >
-          {card.icon}
-        </div>
+        <XavierAvatar size={40} expression={card.expression} showStatus={false} />
         <div
           className="text-[10px] font-mono uppercase tracking-widest px-2 py-1 rounded-full opacity-0 group-hover:opacity-100 transition"
           style={{ color: card.color, background: `${card.color}15` }}
@@ -262,7 +236,7 @@ export default function XavierIntro({ userName }: { userName?: string }) {
               ? "translateY(0)" : "translateY(-20px)",
           }}
         >
-          <XavierAvatar size={72} pulse={phase === "avatar" || phase === "greeting"} />
+          <XavierAvatar size={72} expression="friendly" pulse={phase === "avatar" || phase === "greeting"} />
 
           <div className="flex-1 min-w-0">
             {/* Name badge */}
@@ -342,7 +316,7 @@ export default function XavierIntro({ userName }: { userName?: string }) {
             }}
           >
             <div className="flex items-center gap-3 min-w-0">
-              <XavierAvatar size={36} />
+              <XavierAvatar size={36} expression="celebrating" />
               <div>
                 <p className="text-white text-sm font-semibold">
                   &quot;I don&apos;t just give you data. I help you make better decisions, faster.&quot;

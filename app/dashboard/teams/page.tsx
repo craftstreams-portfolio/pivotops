@@ -18,6 +18,7 @@ import {
 import { useMentionInput }           from "@/lib/mentions/mention.hooks";
 import { MentionInput, MentionText } from "@/lib/mentions/MentionInput";
 import { NotificationBell }          from "@/lib/mentions/NotificationBell";
+import XavierAvatar                  from "@/app/dashboard/components/team/XavierAvatar";
 import {
   setUserPresence, getTenantPresence, subscribeToPresence,
   setOffline, type PresenceState,
@@ -416,10 +417,7 @@ function CandidateCard({
   return (
     <div className="flex gap-3 px-3 py-2.5 group">
       {/* Xavier AI avatar */}
-      <div className="flex-shrink-0 w-9 h-9 rounded-full bg-indigo-900/50 border
-                      border-indigo-500/30 flex items-center justify-center">
-        <Brain size={16} className="text-indigo-400" />
-      </div>
+      <XavierAvatar size={36} expression="friendly" showStatus={false} />
 
       <div className="flex-1 min-w-0 max-w-xl">
         {/* Sender + time */}
