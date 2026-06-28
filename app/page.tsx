@@ -235,19 +235,52 @@ Pricing:
 
 When helping choose a plan: ask how many recruiters, if they need compliance tracking, if multi-location.`;
 
-async function askXavier(messages: { role: string; content: string }[]): Promise<string> {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-6",
-      max_tokens: 1000,
-      system: XAVIER_SYSTEM,
-      messages: messages.map(m => ({ role: m.role, content: m.content })),
-    }),
-  });
-  const data = await res.json();
-  return data.content?.[0]?.text ?? "I could not process that. Please try again.";
+// Scripted landing-page advisor — no LLM, no API cost. Matches prospect intent
+// to canned answers drawn from the real FAQ/pricing copy on this page.
+function askXavier(messages: { role: string; content: string }[]): string {
+  const q = (messages[messages.length - 1]?.content || "").toLowerCase();
+  const has = (...w: string[]) => w.some((x) => q.includes(x));
+
+  // Plan recommendation (when they mention team size)
+  const num = q.match(/(\d+)\s*(recruiter|user|seat|people|staff|person)/);
+  if (num) {
+    const n = parseInt(num[1], 10);
+    if (n <= 5)  return "With a team that size, Starter ($1,500/mo) is the right fit — full recruitment automation, Xavier AI scoring, interview routing, and the candidate compliance portal. Want the full feature list?";
+    if (n <= 20) return "For 5–20 recruiters, Professional ($2,500/mo) fits best — everything in Starter plus advanced compliance tracking, analytics dashboards, clock in/out with geolocation, and onboarding auto-trigger on hire.";
+    return "At that scale, Enterprise ($6,000/mo) makes sense — multi-location support, custom integrations and API access, advanced access controls and audit trail, plus dedicated implementation. Want to talk to the team?";
+  }
+
+  if (has("price","pricing","cost","how much","plan","tier","pay"))
+    return "Three plans: Starter $1,500/mo (up to 5 recruiters), Professional $2,500/mo (5–20 recruiters), Enterprise $6,000/mo (multi-location or compliance-heavy). Annual billing is discounted. How many recruiters are on your team? I can recommend the right tier.";
+
+  if (has("compliance","credential","document","license","audit"))
+    return "Compliance is core, not an add-on: candidates upload credentials through a secure portal, your team reviews them, and the system auto-reminds candidates to re-upload anything rejected. Tenant-isolated data and audit logging are built in. Enterprise includes a compliance review before rollout.";
+
+  if (has("score","scoring","xavier","ai","candidate","applicant"))
+    return "Xavier AI scores every applicant 0–100 against your role criteria the moment they apply — so first-pass decisions don't wait on a human bottleneck. Strong candidates get routed to interview fast; weak ones get auto-declined with branded comms.";
+
+  if (has("ats","bullhorn","workday","replace","migrate","existing tool"))
+    return "PivotOps isn't an ATS replacement — it sits on top of what you already run. ATS and systems like Bullhorn or Workday store data; PivotOps runs the daily operating rhythm: who owns a role right now, what happens the moment an application lands, and how decisions get made without a WhatsApp thread.";
+
+  if (has("who","fit","right for","for me","industry","staffing","healthcare"))
+    return "PivotOps is for staffing agencies and workforce-heavy teams — healthcare staffing to retail and merchant operations — from a handful of employees to multi-location teams that feel the daily cost of slow hiring. Want help sizing a plan?";
+
+  if (has("setup","implement","onboard","how long","time to","get started","start"))
+    return "A first pilot is scoped around your active pipeline — not a six-month implementation. Expect a live workflow within weeks, mapped to your real process from day one. Want to start?";
+
+  if (has("result","roi","outcome","time to hire","faster","speed","72"))
+    return "The target is compressing your hiring loop from 14–30 days to a 72-hour window for intake through interview scheduling — measured against your own pipeline during a pilot.";
+
+  if (has("secure","security","data","privacy","gdpr"))
+    return "Yes — tenant-isolated data access, compliance document tracking, and audit logging are core features. Enterprise plans include a compliance review before rollout.";
+
+  if (has("what","do","does","about","platform","pivotops"))
+    return "PivotOps runs the whole path from job opening to working employee — intake, AI candidate scoring 0–100, interview routing, onboarding, task routing, compliance tracking, and attendance — as one system instead of five disconnected tools.";
+
+  if (has("hi","hello","hey","start","help"))
+    return "Happy to help. I can explain what PivotOps does, walk you through pricing, or recommend a plan based on your team size. What would you like to know?";
+
+  return "Good question. The best way to get a precise answer is to start your trial or talk to the team — want me to point you to signup?";
 }
 
 function XavierChat({ onJoinWaitlist }: { onJoinWaitlist: () => void }) {
