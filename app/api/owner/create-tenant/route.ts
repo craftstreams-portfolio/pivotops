@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 5) Default channels
-    for (const ch of ["candidates", "recruitment-review", "general", "teams-media"]) {
+    for (const ch of ["candidates", "recruitment-review", "rejected-candidates", "general", "teams-media"]) {
       const { data: ec } = await admin.from("channels")
         .select("id").eq("name", ch).eq("tenant_id", tid).maybeSingle();
       if (!ec) {

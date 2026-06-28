@@ -74,12 +74,13 @@ async function resolveChannel(stage: NotificationStage, tenantId: string): Promi
       // failure-prone announcement of the same event.
       return null;
     case "manual_review":
-    case "auto_reject":
       return getOrCreateChannel(tenantId, "recruitment-review");
+    case "auto_reject":
+    case "interview_rejected":
+      return getOrCreateChannel(tenantId, "rejected-candidates");
     case "auto_interview":
     case "interview_scheduled":
     case "interview_approved":
-    case "interview_rejected":
     case "offer_sent":
     case "offer_accepted":
     case "offer_declined":
