@@ -106,10 +106,40 @@ const ROLE_KEYWORD_MAP: Record<string, string[]> = {
     "appointment management","electronic health record","front desk","revenue cycle",
     "accounts receivable","healthcare administration","compliance",
   ],
+  software: [
+    "software development","software engineering","full stack","frontend","backend",
+    "javascript","typescript","react","node.js","python","java","api","rest api",
+    "microservices","cloud","aws","azure","docker","kubernetes","ci/cd","git",
+    "agile","scrum","unit testing","code review","system design","database","sql",
+    "distributed systems","scalability","debugging","version control","devops",
+  ],
+  engineering: [
+    "engineering","design","cad","project management","quality assurance","testing",
+    "specifications","prototyping","manufacturing","maintenance","troubleshooting",
+    "technical documentation","compliance","safety standards","optimization",
+    "root cause analysis","continuous improvement","cross-functional",
+  ],
+  sales: [
+    "sales","business development","lead generation","crm","pipeline","quota",
+    "negotiation","account management","client relationships","prospecting",
+    "revenue growth","closing","b2b","b2c","upselling","customer acquisition",
+  ],
+  finance: [
+    "financial analysis","accounting","budgeting","forecasting","reconciliation",
+    "financial reporting","gaap","audit","accounts payable","accounts receivable",
+    "excel","financial modeling","variance analysis","compliance","cash flow",
+  ],
+  general: [
+    "communication","teamwork","leadership","problem solving","time management",
+    "project management","collaboration","analytical","detail-oriented","organized",
+    "stakeholder management","process improvement","reporting","documentation",
+    "customer service","adaptable","results-driven","cross-functional",
+  ],
   default: [
-    "healthcare","patient","clinical","medical","treatment","care","diagnosis",
-    "documentation","compliance","assessment","professional","experienced",
-    "certified","licensed","trained","skilled","multidisciplinary","protocol",
+    "professional","experienced","skilled","trained","communication","teamwork",
+    "leadership","problem solving","project management","collaboration","analytical",
+    "results-driven","detail-oriented","organized","documentation","compliance",
+    "stakeholder","process improvement","time management","adaptable",
   ],
 };
 
@@ -172,8 +202,12 @@ function detectRoleCategory(role: string): string {
   if (/pharmacist|pharmacy/.test(r))                   return "pharmacist";
   if (/therapist|counsell?or|psychologist/.test(r))    return "therapist";
   if (/radiograph|imaging|radiolog/.test(r))            return "radiographer";
-  if (/admin|coordinator|manager|director|clerk/.test(r)) return "admin";
-  return "default";
+  if (/software|developer|engineer|programmer|full.?stack|frontend|backend|devops|data scientist/.test(r)) return "software";
+  if (/mechanical|electrical|civil|industrial|manufacturing|qa engineer|quality engineer/.test(r)) return "engineering";
+  if (/sales|business development|account executive|account manager/.test(r)) return "sales";
+  if (/finance|accountant|accounting|financial|bookkeeper|auditor/.test(r)) return "finance";
+  if (/admin|coordinator|manager|director|clerk|assistant|operations/.test(r)) return "admin";
+  return "general";
 }
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
