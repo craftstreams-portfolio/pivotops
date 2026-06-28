@@ -109,51 +109,27 @@ function RegisterForm({ candidateId, tenantId }: { candidateId: string; tenantId
       const userId = authData.user?.id;
       if (!userId) throw new Error("Account creation failed — no user ID returned.");
 
-      await withRetry(async () => {
-        // Try INSERT first; if duplicate auth_user_id, update instead
-        const { error: accErr } = await supabase
-          .from("candidate_accounts")
-          .insert({
-            candidate_id: candidateId || null,
-            tenant_id:    tenantId,
-            auth_user_id: userId,
-            full_name:    fullName.trim(),
-            email:        email.trim().toLowerCase(),
-            ssn_last4:    ssn4.trim()    || null,
-            city:         city.trim()    || null,
-            state:        state.trim()   || null,
-            country:      country.trim() || "United States",
-            role:         "candidate",
-          });
-        // If duplicate, update the existing record
-        if (accErr && (accErr.code === "23505" || accErr.message.includes("duplicate"))) {
-          const { error: updErr } = await supabase
-            .from("candidate_accounts")
-            .update({
-              full_name:  fullName.trim(),
-              email:      email.trim().toLowerCase(),
-              ssn_last4:  ssn4.trim()    || null,
-              city:       city.trim()    || null,
-              state:      state.trim()   || null,
-              country:    country.trim() || "United States",
-              updated_at: new Date().toISOString(),
-            })
-            .eq("auth_user_id", userId);
-          if (updErr) throw new Error(updErr.message);
-        } else if (accErr) {
-          throw new Error(accErr.message);
-        }
+      // Create the candidate account + link the candidate row via service-role.
+      // The registering candidate has no active session yet, so a client insert
+      // can't satisfy the ca_self_insert RLS check; do it server-side.
+      const regRes = await fetch("/api/candidate/register", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          authUserId:  userId,
+          candidateId: candidateId || null,
+          tenantId,
+          fullName:    fullName.trim(),
+          email:       email.trim().toLowerCase(),
+          ssn4:        ssn4.trim()    || null,
+          city:        city.trim()    || null,
+          state:       state.trim()   || null,
+          country:     country.trim() || "United States",
+        }),
       });
-
-      if (candidateId) {
-        await withRetry(async () => {
-          await supabase.from("candidates").update({
-            name:          fullName.trim(),
-            auth_user_id:  userId,
-            status:        "registered",
-            registered_at: new Date().toISOString(),
-          }).eq("id", candidateId).eq("tenant_id", tenantId);
-        });
+      if (!regRes.ok) {
+        const regErr = await regRes.json().catch(() => ({}));
+        throw new Error(regErr?.error || "Account setup failed.");
       }
 
       // Send our own verification email via Resend (bypasses flaky Supabase SMTP)
