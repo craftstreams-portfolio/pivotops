@@ -131,30 +131,6 @@ function RegisterForm({ candidateId, tenantId }: { candidateId: string; tenantId
         const regErr = await regRes.json().catch(() => ({}));
         throw new Error(regErr?.error || "Account setup failed.");
       }
-
-      // Send our own verification email via Resend (bypasses flaky Supabase SMTP)
-      const verifResult = await fetch("/api/candidate/send-verification", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          authUserId:  userId,
-          candidateId: candidateId || null,
-          tenantId,
-          email:       email.trim().toLowerCase(),
-          fullName:    fullName.trim(),
-        }),
-      });
-      const verifData = await verifResult.json();
-      if (!verifResult.ok) {
-        console.error("Verification email failed:", verifData?.error);
-        showToast("error", "Account created but verification email failed. Contact support@pivotops.app.");
-      }
-
-      // Sign out so the candidate must verify before accessing the portal
-      if (authData.session) {
-        await supabase.auth.signOut();
-      }
-      setEmailVerifying(true);
       return;
 
       // Fallback — should not reach here
