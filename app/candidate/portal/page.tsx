@@ -65,6 +65,7 @@ interface CandidateAccount {
   role: string | null;
   candidate_id: string | null;
   tenant_id: string;
+  role_category?: string | null;
 }
 
 type CredentialType = { key: string; label: string; required: boolean };
@@ -425,14 +426,10 @@ function CandidatePortalPage({ candidateId: urlCandidateId, tenantId: urlTenantI
         setResolvedCandidateId(ownCandidateId ?? "");
         setResolvedTenantId(ownTenantId);
 
-        if (ownCandidateId) {
-          const { data: candidateRow } = await supabase
-            .from("candidates")
-            .select("role_category")
-            .eq("id", ownCandidateId)
-            .maybeSingle();
-          if (candidateRow?.role_category === "general") setRoleCategory("general");
-        }
+        // Read role_category from the account row (candidate can read their own
+        // account via ca_self_select; the candidates table is tenant-RLS and not
+        // readable by a candidate session).
+        if ((acc as any).role_category === "general") setRoleCategory("general");
 
         const { data: creds, error: credsErr } = await supabase
           .from("candidate_credentials")

@@ -25,6 +25,18 @@ export async function POST(req: Request) {
     const admin = getAdmin();
     const emailNorm = String(email).trim().toLowerCase();
 
+    // Resolve role_category from the candidate row so the portal can read it
+    // off candidate_accounts (candidates table is tenant-RLS, unreadable by the candidate).
+    let roleCategory = "healthcare";
+    if (candidateId) {
+      const { data: candRow } = await admin
+        .from("candidates")
+        .select("role_category")
+        .eq("id", candidateId)
+        .maybeSingle();
+      if (candRow?.role_category === "general") roleCategory = "general";
+    }
+
     // Upsert the candidate account by auth_user_id
     const { data: existing } = await admin
       .from("candidate_accounts")
@@ -43,6 +55,7 @@ export async function POST(req: Request) {
       state:        state ? String(state).trim() : null,
       country:      country ? String(country).trim() : "United States",
       role:         "candidate",
+      role_category: roleCategory,
     };
 
     if (existing) {
