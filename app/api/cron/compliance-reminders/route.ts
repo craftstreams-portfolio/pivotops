@@ -3,7 +3,7 @@ import { getAdmin } from "@/lib/supabase-admin";
 import { sendEmail } from "@/lib/email";
 
 const MAX_REMINDERS = 3;
-const REMIND_AFTER_HOURS = 6;
+const REMIND_AFTER_HOURS = 20;
 const PORTAL_URL = (process.env.NEXT_PUBLIC_APP_URL ?? "https://www.pivotops.app") + "/candidate/portal";
 
 export async function POST(req: Request) {
