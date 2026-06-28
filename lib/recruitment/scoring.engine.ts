@@ -1,4 +1,4 @@
-﻿import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@supabase/supabase-js";
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false } });
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -33,7 +33,8 @@ export interface ApplicationPayload {
   role:             string;
   years_experience: number;
   current_employer: string;
-  cover_letter:     string;  // contains Professional Summary + Core Skills + Work Experience
+  cover_letter:     string;  // candidate-pasted text (summary/skills/experience)
+  resume_text?:     string;  // extracted from uploaded resume file (weighted higher)
   linkedin_url:     string;
   resume_url:       string | null;
   resume_name:      string | null;
@@ -180,6 +181,33 @@ function detectRoleCategory(role: string): string {
 // Scans only the three scored sections
 // Returns matched keywords and a 0-100 score
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function coverageForText(text: string, role: string): { matched: string[]; coverage: number } {
+  if (!text || !text.trim()) return { matched: [], coverage: 0 };
+  const sections = parseResumeSections(text);
+  const category = detectRoleCategory(role);
+  const keywords = [...new Set([...(ROLE_KEYWORD_MAP[category] ?? []), ...ROLE_KEYWORD_MAP.default])];
+  const summaryText    = sections.professionalSummary || sections.fullText.slice(0, 500);
+  const skillsText     = sections.coreSkills          || sections.fullText.slice(500, 1500);
+  const experienceText = sections.workExperience       || sections.fullText.slice(1500);
+  const matched = new Set<string>();
+  for (const kw of keywords) {
+    const k = kw.toLowerCase();
+    if (summaryText.toLowerCase().includes(k) || skillsText.toLowerCase().includes(k) || experienceText.toLowerCase().includes(k)) matched.add(kw);
+  }
+  const arr = Array.from(matched);
+  return { matched: arr, coverage: keywords.length ? arr.length / keywords.length : 0 };
+}
+
+function coverageToScore(coverage: number): number {
+  let score: number;
+  if      (coverage >= 0.90) score = 90 + Math.round(coverage * 10);
+  else if (coverage >= 0.60) score = 75 + Math.round((coverage - 0.6) / 0.3 * 20);
+  else if (coverage >= 0.30) score = 45 + Math.round((coverage - 0.3) / 0.3 * 30);
+  else if (coverage >= 0.10) score = 20 + Math.round((coverage - 0.1) / 0.2 * 25);
+  else                       score = Math.round(coverage * 200);
+  return Math.min(97, Math.max(0, score));
+}
+
 function scoreResumeKeywords(
   sections: ParsedResumeSections,
   role:     string
@@ -391,14 +419,12 @@ export async function scoreCandidate(
   payload:    ApplicationPayload,
   thresholds: ScoreThreshold
 ): Promise<ScoringResult> {
-  // Parse the three scored sections from resume text
-  const resumeText = [
-    payload.cover_letter ?? "",
-    payload.resume_name  ?? "",
-  ].join("\n").trim();
+  // Resume file text is weighted higher than the pasted cover letter.
+  const resumeText = (payload.resume_text ?? "").trim();
+  const coverText  = (payload.cover_letter ?? "").trim();
+  const extraFlags: string[] = [];
 
-  if (!resumeText) {
-    // No text content at all â€” hard reject
+  if (!resumeText && !coverText) {
     return {
       score:      0,
       decision:   "auto_reject",
@@ -409,8 +435,23 @@ export async function scoreCandidate(
     };
   }
 
-  const sections = parseResumeSections(resumeText);
-  const { score, matched } = scoreResumeKeywords(sections, payload.role);
+  const resumeCov = coverageForText(resumeText, payload.role);
+  const coverCov  = coverageForText(coverText, payload.role);
+
+  // Resume 70% / cover letter 30%. If the resume file is missing or unreadable,
+  // score the cover letter alone and flag for manual review.
+  let blendedCoverage: number;
+  let resumeReadable = true;
+  if (resumeText) {
+    blendedCoverage = 0.7 * resumeCov.coverage + 0.3 * coverCov.coverage;
+  } else {
+    blendedCoverage = coverCov.coverage;
+    resumeReadable = false;
+    extraFlags.push("Resume file could not be read - scored on cover letter only; manual review advised");
+  }
+
+  const score   = coverageToScore(blendedCoverage);
+  const matched = Array.from(new Set([...resumeCov.matched, ...coverCov.matched]));
 
   // Decision routing
   let decision: ScoringDecision;
@@ -418,9 +459,14 @@ export async function scoreCandidate(
   else if (score >= thresholds.manual_review)  decision = "manual_review";
   else                                          decision = "auto_reject";
 
+  // An unreadable resume must never auto-pass on cover letter alone.
+  if (!resumeReadable && decision === "auto_interview") {
+    decision = "manual_review";
+  }
+
   const { summary, flags } = buildSummaryMessage(score, decision, payload.role, matched, thresholds);
 
-  return { score, decision, summary, flags, keywords: matched, thresholds };
+  return { score, decision, summary, flags: [...flags, ...extraFlags], keywords: matched, thresholds };
 }
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -458,6 +504,15 @@ export async function processApplication(
 
   // Get scoring thresholds
   const thresholds = await getScoreThresholds(payload.tenant_id);
+
+  // Extract text from the uploaded resume file (weighted higher than cover letter)
+  try {
+    const { extractResumeText } = await import("./resume-extract");
+    const extracted = await extractResumeText(payload.resume_url);
+    if (extracted.ok) payload.resume_text = extracted.text;
+  } catch (e) {
+    console.error("Resume extraction error:", e instanceof Error ? e.message : e);
+  }
 
   // Score the candidate
   const result = await scoreCandidate(payload, thresholds);
