@@ -42,7 +42,7 @@ function PivotLogo({ size = 32 }: { size?: number }) {
 
 function AppLoadingScreen() {
   const [tick, setTick]     = useState(0);
-  const steps = ["Connecting to Supabase...","Loading tenant profile...","Syncing workforce data...","Initialising Xavier AI...","Ready"];
+  const steps = ["Establishing secure connection...","Loading your workspace...","Syncing workforce data...","Initialising Xavier AI...","Ready"];
 
   return (
     <div style={{ position:"fixed", inset:0, background:"#04060e", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", zIndex:9999, fontFamily:"system-ui,sans-serif" }}>
