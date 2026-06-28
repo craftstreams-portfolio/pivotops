@@ -37,7 +37,7 @@ Payments are processed securely by Paddle, our Merchant of Record, who handles a
             },
             {
               n: "2", title: "Free Trial",
-              body: `New accounts receive a 14-day free trial with no payment required. You will not be charged until your trial period ends. You may cancel at any time during the trial period without incurring any charges.`
+              body: `New accounts receive a 7-day free trial with no payment required. You will not be charged until your trial period ends. You may cancel at any time during the trial period without incurring any charges.`
             },
             {
               n: "3", title: "Cancellation",
