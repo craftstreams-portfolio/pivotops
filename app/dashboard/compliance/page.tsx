@@ -282,22 +282,16 @@ function CredRow({ doc, onApprove, onReject, updating }: {
 // CANDIDATE CARD — never collapses on doc update
 // Uses useRef for expanded state to survive re-renders
 // ─────────────────────────────────────────
-function CandidateCard({ group, recruiterName, recruiterId, onUpdate }: {
+function CandidateCard({ group, tenantId, recruiterName, recruiterId, onUpdate, expanded, onToggle }: {
   group:         CandidateGroup;
+  tenantId:      string;
   recruiterName: string;
   recruiterId:   string;
   onUpdate:      (cId: string, dId: string, u: Partial<CredentialDoc>) => void;
+  expanded:      boolean;
+  onToggle:      () => void;
 }) {
-  // useRef keeps expanded state stable across re-renders triggered by onUpdate
-  const expandedRef            = useRef(false);
-  const [, forceRender]        = useState(0);
   const [updating, setUpdating] = useState<string | null>(null);
-
-  const setExpanded = (val: boolean) => {
-    expandedRef.current = val;
-    forceRender(n => n + 1);
-  };
-  const expanded = expandedRef.current;
 
   const approved = group.docs.filter(d => d.status === "approved").length;
   const total    = group.docs.length;
@@ -386,7 +380,7 @@ function CandidateCard({ group, recruiterName, recruiterId, onUpdate }: {
 
         // Xavier notification
         await supabase.from("xavier_notifications").insert({
-          tenant_id:    group.candidateId,
+          tenant_id:    tenantId,
           candidate_id: group.candidateId,
           stage:        "manual_review",
           message:      `⚠ Xavier AI · Document rejected for ${group.candidateName}: "${doc.name}". Reason: ${reason}.`,
@@ -420,7 +414,7 @@ function CandidateCard({ group, recruiterName, recruiterId, onUpdate }: {
       {/* Header row — click to toggle */}
       <div
         className="flex items-center gap-4 px-5 py-4 cursor-pointer hover:bg-white/[0.02] transition rounded-2xl"
-        onClick={() => setExpanded(!expanded)}
+        onClick={onToggle}
       >
         <div className="w-10 h-10 rounded-full bg-indigo-500/20 text-indigo-300
                         flex items-center justify-center font-bold text-sm flex-shrink-0">
@@ -694,9 +688,13 @@ function IncomingTab({ tenantId, recruiterName, recruiterId }: { tenantId:string
   const [loading, setLoading] = useState(true);
   const [search,  setSearch]  = useState("");
   const [filter,  setFilter]  = useState<string>("all");
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const toggleExpanded = useCallback((id: string) => {
+    setExpandedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  }, []);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const [{ data:creds }, { data:accs }] = await Promise.all([
         supabase.from("candidate_credentials").select("*").eq("tenant_id",tenantId).order("updated_at",{ascending:false}),
@@ -726,7 +724,7 @@ function IncomingTab({ tenantId, recruiterName, recruiterId }: { tenantId:string
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
-    const ch = supabase.channel("incoming-live").on("postgres_changes",{event:"*",schema:"public",table:"candidate_credentials"},()=>load()).subscribe();
+    const ch = supabase.channel("incoming-live").on("postgres_changes",{event:"*",schema:"public",table:"candidate_credentials"},()=>load(true)).subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [load]);
 
@@ -777,11 +775,11 @@ function IncomingTab({ tenantId, recruiterName, recruiterId }: { tenantId:string
       </div>
       <div className="flex items-center justify-between">
         <span className="text-xs text-zinc-600">{visible.length} candidate{visible.length!==1?"s":""} shown</span>
-        <button onClick={load} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-800 text-xs text-zinc-400 hover:text-white hover:border-zinc-700 transition"><RefreshCw size={11}/> Refresh</button>
+        <button onClick={()=>load()} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-800 text-xs text-zinc-400 hover:text-white hover:border-zinc-700 transition"><RefreshCw size={11}/> Refresh</button>
       </div>
       {visible.length===0
         ? <div className="border border-dashed border-zinc-800 rounded-xl p-10 text-center text-sm text-zinc-600">{search?`No candidates match "${search}"`:"No candidate credentials submitted yet."}</div>
-        : <div className="space-y-3">{visible.map(g=><CandidateCard key={g.candidateId} group={g} recruiterName={recruiterName} recruiterId={recruiterId} onUpdate={onUpdate}/>)}</div>
+        : <div className="space-y-3">{visible.map(g=><CandidateCard key={g.candidateId} group={g} tenantId={tenantId} recruiterName={recruiterName} recruiterId={recruiterId} onUpdate={onUpdate} expanded={expandedIds.has(g.candidateId)} onToggle={()=>toggleExpanded(g.candidateId)}/>)}</div>
       }
     </div>
   );
@@ -801,8 +799,8 @@ function OutgoingTab({ tenantId }: { tenantId:string }) {
 
   const showToast = (msg:string) => { setToast(msg); setTimeout(()=>setToast(null),3000); };
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const [{ data:fd },{ data:fd2 }] = await Promise.all([
         supabase.from("admin_doc_folders").select("*").eq("tenant_id",tenantId).order("sort_order"),

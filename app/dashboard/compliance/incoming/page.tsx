@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, memo } from "react";
 import { createClient } from "@supabase/supabase-js";
 import {
   CheckCircle2, XCircle, Eye, FileText, AlertCircle,
@@ -253,7 +253,7 @@ function CredentialCard({ cred, reviewer, onUpdate }: {
 }
 
 // ── Candidate row ─────────────────────────────────────────────────────────────
-function CandidateRow({ group, reviewer, onUpdate, expanded, onToggle }: {
+const CandidateRow = memo(function CandidateRow({ group, reviewer, onUpdate, expanded, onToggle }: {
   group:    CandidateGroup;
   reviewer: string;
   onUpdate: (cid: string, updated: Credential) => void;
@@ -302,7 +302,7 @@ function CandidateRow({ group, reviewer, onUpdate, expanded, onToggle }: {
       )}
     </div>
   );
-}
+});
 
 // ── Main incoming page ────────────────────────────────────────────────────────
 export default function ComplianceIncomingPage() {
@@ -311,7 +311,7 @@ export default function ComplianceIncomingPage() {
   const [search,   setSearch]   = useState("");
   const [filter,   setFilter]   = useState<"all"|"pending"|"partial"|"complete"|"rejected">("all");
   const [reviewer, setReviewer] = useState("admin");
-  const [lastRefresh, setLastRefresh] = useState(Date.now());
+  const [lastRefresh, setLastRefresh] = useState(0);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
   const toggleRow = useCallback((cid: string) => {
@@ -392,7 +392,7 @@ export default function ComplianceIncomingPage() {
   // Initial load only. Manual refresh and realtime use silent load(true) so the
   // list never unmounts (which would collapse expanded folders).
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
-  useEffect(() => { if (lastRefresh) load(true); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [lastRefresh]);
+  useEffect(() => { if (lastRefresh > 0) load(true); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [lastRefresh]);
 
   // ── Realtime updates ─────────────────────────────────────────────────────
   useEffect(() => {
