@@ -37,7 +37,8 @@ const HEALTHCARE_CREDENTIAL_TYPES = [
 // the candidate add more upload slots with their own labels on the fly.
 const GENERAL_CREDENTIAL_TYPES = [
   { key: "resume", label: "Resume / CV", required: true },
-  { key: "license_certification", label: "License / Certification", required: true },
+  { key: "government_id", label: "Government ID", required: true },
+  { key: "proof_address", label: "Proof of Address", required: true },
 ];
 
 interface Credential {
@@ -525,15 +526,22 @@ function CandidatePortalPage({ candidateId: urlCandidateId, tenantId: urlTenantI
     if (!account) return;
     setSubmitError("");
 
-    // Only the base, role-appropriate types block submission — a custom
-    // slot the candidate added and abandoned shouldn't trap them.
-    const missing = baseTypes.filter(t => {
+    // Every slot (presets + candidate-added) must have an uploaded file.
+    // Added slots are always labeled at creation, so a missing file is the gate.
+    const missing = effectiveTypes.filter(t => {
       const cred = credentials.find(c => c.doc_type === t.key);
-      return t.required && (!cred || cred.status === "pending");
+      return !cred || !cred.file_url || cred.status === "pending";
     });
 
     if (missing.length > 0) {
-      setSubmitError(`Please upload the following required documents: ${missing.map(m => m.label).join(", ")}`);
+      setSubmitError(`Please upload a file for: ${missing.map(m => m.label).join(", ")}`);
+      return;
+    }
+
+    // Every credential must be labeled (presets have labels; added ones must too).
+    const unlabeled = credentials.filter(c => !baseKeys.has(c.doc_type) && !(c.name && c.name.trim()));
+    if (unlabeled.length > 0) {
+      setSubmitError("Please label every credential you added before submitting.");
       return;
     }
 
@@ -657,11 +665,14 @@ function CandidatePortalPage({ candidateId: urlCandidateId, tenantId: urlTenantI
     </div>
   );
 
-  const uploadedCount = baseTypes.filter(t => credentials.find(c => c.doc_type === t.key && c.status !== "pending")).length;
+  const uploadedCount = effectiveTypes.filter(t => credentials.find(c => c.doc_type === t.key && c.file_url && c.status !== "pending")).length;
+  const totalSlots   = effectiveTypes.length;
+  const resumeReady  = credentials.some(c => c.doc_type === "resume" && c.file_url);
+  const canSubmit    = resumeReady && uploadedCount === totalSlots && totalSlots > 0;
   const approvedCount = credentials.filter(c => c.status === "approved").length;
   const rejectedCount = credentials.filter(c => c.status === "rejected").length;
-  const allUploaded = uploadedCount === baseTypes.length;
-  const pct = Math.round((uploadedCount / baseTypes.length) * 100);
+  const allUploaded = uploadedCount === totalSlots;
+  const pct = totalSlots > 0 ? Math.round((uploadedCount / totalSlots) * 100) : 0;
 
   return (
     <div className="min-h-screen bg-[#080810]">
@@ -709,7 +720,7 @@ function CandidatePortalPage({ candidateId: urlCandidateId, tenantId: urlTenantI
         <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
           <div className="flex justify-between text-xs mb-2">
             <span className="text-zinc-500">Upload progress</span>
-            <span className="text-white font-medium">{uploadedCount} / {baseTypes.length} · {pct}%</span>
+            <span className="text-white font-medium">{uploadedCount} / {totalSlots} · {pct}%</span>
           </div>
           <div className="h-2 bg-zinc-800 rounded-full overflow-hidden">
             <div className={`h-full rounded-full transition-all duration-700 ${allUploaded ? "bg-emerald-500" : "bg-indigo-500"}`}
@@ -794,7 +805,7 @@ function CandidatePortalPage({ candidateId: urlCandidateId, tenantId: urlTenantI
           )}
         </div>
 
-        <button onClick={handleSubmit} disabled={submitting || uploadedCount === 0}
+        <button onClick={handleSubmit} disabled={submitting || !canSubmit}
           className="w-full flex items-center justify-center gap-2 py-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold disabled:opacity-40 transition shadow-lg shadow-emerald-900/20">
           {submitting ? <Loader2 size={16} className="animate-spin" /> : <Shield size={16} />}
           {submitting ? "Submitting..." : `Submit ${uploadedCount} Document${uploadedCount !== 1 ? "s" : ""} for Review`}
