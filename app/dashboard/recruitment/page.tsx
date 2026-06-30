@@ -54,7 +54,7 @@ interface XavierNotification {
 // ─────────────────────────────────────────
 const STATUSES = [
   "new", "screening", "assessment",
-  "interview", "recruitment_review", "rejected",
+  "interview", "recruitment_review", "hired", "rejected",
 ];
 
 const COLUMN_LABELS: Record<string, string> = {
@@ -63,8 +63,21 @@ const COLUMN_LABELS: Record<string, string> = {
   assessment:         "Assessment",
   interview:          "Interview",
   recruitment_review: "Review",
+  hired:              "Hired",
   rejected:           "Rejected",
 };
+
+// Map real DB statuses (some set by other flows) into a visible board column,
+// so no candidate ever falls outside the columns and disappears.
+function normalizeStatus(s: string | null | undefined): string {
+  const map: Record<string, string> = {
+    registered:  "interview",            // registered after scoring -> in process
+    shortlisted: "recruitment_review",   // legacy -> Review
+    onboarding:  "hired",
+  };
+  const v = map[s ?? ""] ?? s ?? "new";
+  return STATUSES.includes(v) ? v : "new"; // unknown -> New (never lost)
+}
 
 const SCORE_COLORS = (score: number | null) => {
   if (!score) return "text-zinc-500";
@@ -943,7 +956,7 @@ export default function RecruitmentBoard() {
               <Column
                 key={status}
                 status={status}
-                candidates={candidates.filter((c) => c?.status === status)}
+                candidates={candidates.filter((c) => normalizeStatus(c?.status) === status)}
                 onClick={(c) => setSelectedCandidate(c)}
               />
             ))}
