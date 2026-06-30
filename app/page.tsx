@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import CookieConsent from "@/app/components/CookieConsent";
 import WaitlistModal  from "@/app/components/WaitlistModal";
+import { trackEvent } from "@/app/components/Analytics";
 
 // ── Logo ─────────────────────────────────────────────────────────────────────
 function PivotOpsLogo({ size = 40 }: { size?: number }) {
@@ -461,6 +462,7 @@ function FAQAccordion() {
 export default function LandingPage() {
   const router = useRouter();
   const [waitlistOpen, setWaitlistOpen] = useState(false);
+  const goSignup = (where: string) => { trackEvent("trial_signup_click", { cta: where }); router.push("/login?mode=signup"); };
   return (
     <div className="bg-zinc-950 text-white min-h-screen">
 
@@ -479,7 +481,7 @@ export default function LandingPage() {
             <a href="#pricing" className="hover:text-white transition">Pricing</a>
             <a href="#faq" className="hover:text-white transition">FAQ</a>
           </nav>
-          <button onClick={() => router.push("/login?mode=signup")}
+          <button onClick={() => goSignup("nav")}
             className="bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold px-4 py-2 rounded-xl text-sm transition">
             Join waitlist
           </button>
@@ -509,7 +511,7 @@ export default function LandingPage() {
               PivotOps replaces the 7 disconnected tools your team is fighting with every day and compresses a 14-30 day hiring cycle into a 72-hour automated loop. One system. No more WhatsApp threads.
             </p>
             <div className="flex flex-wrap items-center gap-3">
-              <button onClick={() => router.push("/login?mode=signup")}
+              <button onClick={() => goSignup("hero")}
                 className="bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black px-8 py-4 rounded-xl text-base transition shadow-2xl shadow-emerald-500/20">
                 Get started today
               </button>
@@ -598,7 +600,7 @@ export default function LandingPage() {
 
       {/* Cost savings + Pricing */}
       <CostSavings />
-      <PricingSection onJoinWaitlist={() => router.push("/login?mode=signup")} />
+      <PricingSection onJoinWaitlist={() => goSignup("pricing")} />
 
       {/* Final CTA */}
       <section className="border-t border-zinc-900">
@@ -610,7 +612,7 @@ export default function LandingPage() {
           </h2>
           <p className="text-zinc-400 max-w-xl mx-auto text-lg mb-10">No migration required. No six-month implementation. Bring your current pipeline and we will show you the compression in weeks.</p>
           <div className="flex flex-wrap items-center justify-center gap-4">
-            <button onClick={() => router.push("/login?mode=signup")}
+            <button onClick={() => goSignup("final")}
               className="bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black px-10 py-4 rounded-xl text-lg transition shadow-2xl shadow-emerald-500/25">
               Get started now
             </button>
@@ -693,7 +695,7 @@ export default function LandingPage() {
       </footer>
 
       {/* Xavier chat widget */}
-      <XavierChat onJoinWaitlist={() => router.push("/login?mode=signup")} />
+      <XavierChat onJoinWaitlist={() => goSignup("xavier_chat")} />
 
       {/* Cookie consent banner */}
       <CookieConsent />
