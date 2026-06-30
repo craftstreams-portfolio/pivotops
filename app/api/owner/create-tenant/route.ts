@@ -60,6 +60,31 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Tenant creation failed: " + tenantErr.message }, { status: 500 });
     }
 
+    // Notify founder of new 7-day trial signup (non-blocking - never breaks signup)
+    try {
+      const { sendEmail } = await import("@/lib/email");
+      await sendEmail({
+        to: "craftstreams@gmail.com",
+        subject: `New PivotOps trial: ${orgName}`,
+        html: `<div style="font-family:system-ui,sans-serif;max-width:520px">
+          <h2 style="margin:0 0 4px">New 7-day trial started</h2>
+          <p style="color:#555;margin:0 0 16px">A new tenant just created a free trial account.</p>
+          <table style="border-collapse:collapse;font-size:14px">
+            <tr><td style="padding:4px 12px 4px 0;color:#888">Organization</td><td style="font-weight:600">${orgName}</td></tr>
+            <tr><td style="padding:4px 12px 4px 0;color:#888">Owner</td><td>${adminName || userEmail} (${userEmail})</td></tr>
+            <tr><td style="padding:4px 12px 4px 0;color:#888">Industry</td><td>${industry ?? "-"}</td></tr>
+            <tr><td style="padding:4px 12px 4px 0;color:#888">Team size</td><td>${teamSize ?? "-"}</td></tr>
+            <tr><td style="padding:4px 12px 4px 0;color:#888">Country</td><td>${country ?? "-"}</td></tr>
+            <tr><td style="padding:4px 12px 4px 0;color:#888">Plan</td><td>Free (trialing, 7 days)</td></tr>
+            <tr><td style="padding:4px 12px 4px 0;color:#888">Tenant ID</td><td>${tid}</td></tr>
+            <tr><td style="padding:4px 12px 4px 0;color:#888">Signed up</td><td>${now}</td></tr>
+          </table>
+        </div>`,
+      });
+    } catch (notifyErr) {
+      console.error("[create-tenant] trial notify email failed (non-blocking):", notifyErr);
+    }
+
     // 2) Owner profile
     const { error: profileErr } = await admin.from("profiles").upsert({
       id: userId, email: userEmail,

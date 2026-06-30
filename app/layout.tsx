@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import Analytics from "@/app/components/Analytics";
 
 export const metadata: Metadata = {
   title: "PivotOps — Autonomous Workforce OS",
@@ -11,6 +12,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body className="font-sans antialiased">
         {children}
+        <Analytics />
       </body>
     </html>
   );
