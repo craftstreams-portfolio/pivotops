@@ -229,7 +229,11 @@ function coverageForText(text: string, role: string): { matched: string[]; cover
     if (summaryText.toLowerCase().includes(k) || skillsText.toLowerCase().includes(k) || experienceText.toLowerCase().includes(k)) matched.add(kw);
   }
   const arr = Array.from(matched);
-  return { matched: arr, coverage: keywords.length ? arr.length / keywords.length : 0 };
+  // Coverage is matched against a realistic target, not the full keyword list:
+  // matching ~14 strong role keywords = full coverage. Dividing by the entire
+  // list (40+) made even excellent resumes underscore.
+  const TARGET_KEYWORDS = 14;
+  return { matched: arr, coverage: Math.min(1, arr.length / TARGET_KEYWORDS) };
 }
 
 function coverageToScore(coverage: number): number {
@@ -276,7 +280,8 @@ function scoreResumeKeywords(
   }
 
   const matchedArr = Array.from(matched);
-  const coverage   = keywords.length > 0 ? matchedArr.length / keywords.length : 0;
+  const TARGET_KEYWORDS = 14;
+  const coverage   = Math.min(1, matchedArr.length / TARGET_KEYWORDS);
 
   // Score curve: coverage maps to 0-100
   // 0% coverage â†’ 0, 30%+ coverage â†’ 60+, 60%+ â†’ 85+, 90%+ â†’ 95+
@@ -526,7 +531,6 @@ export async function processApplication(
     .select("id, status")
     .eq("email", payload.email.trim().toLowerCase())
     .eq("tenant_id", payload.tenant_id)
-    .not("status", "eq", "rejected")
     .limit(1);
 
   if (existing && existing.length > 0) {
