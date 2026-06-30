@@ -819,17 +819,17 @@ export default function HuddlesPage() {
                 <div
                   className="w-16 h-16 rounded-full flex items-center justify-center text-white font-semibold text-sm relative"
                   style={{
-                    background: "linear-gradient(135deg, #27272a, #18181b)",
-                    boxShadow: speaking ? "0 0 0 3px rgba(124,58,237,0.55)" : "0 0 0 1px #27272a",
+                    background: "linear-gradient(135deg, #7C3AED, #5B21B6)",
+                    boxShadow: speaking ? "0 0 0 3px rgba(124,58,237,0.65)" : "0 0 0 1px rgba(124,58,237,0.35)",
                   }}
                 >
                   {initials(name)}
                 </div>
-                <p className="text-zinc-200 text-sm mt-2 truncate max-w-full">{name}</p>
+                <p className="text-white text-sm font-medium mt-2 truncate max-w-full">{name}</p>
                 <div className="mt-1.5 flex items-center gap-1.5">
                   <Spectrum level={level} active={speaking} />
                   {(p.user_id === me?.id ? myMuted : p.is_muted) && (
-                    <span className="text-zinc-600 text-xs">🔇</span>
+                    <span className="inline-flex items-center gap-1 text-[10px] text-zinc-500 bg-zinc-800/70 px-1.5 py-0.5 rounded-md">Muted</span>
                   )}
                 </div>
 
