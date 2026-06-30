@@ -253,7 +253,7 @@ function formatDuration(seconds: number) {
   const m = Math.floor((seconds % 3600) / 60);
   const s = seconds % 60;
   if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-  return `${m}:${String(s).padStart(2, "0")}`;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
 const EMOJIS = ["👍", "🎉", "😂", "❤️", "👏", "🔥", "😮", "✅", "🙌", "💡", "👀", "🤝"];
@@ -331,7 +331,7 @@ export default function HuddlesPage() {
   /* ── Duration ticker while in a room ── */
   useEffect(() => {
     if (!activeRoom) return;
-    const start = new Date(activeRoom.created_at).getTime();
+    const start = Date.now();
     const tick = () => setElapsed(Math.floor((Date.now() - start) / 1000));
     tick();
     const iv = setInterval(tick, 1000);
