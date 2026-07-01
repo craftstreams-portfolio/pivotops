@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
     const {
       tid, orgName, industry, teamSize, country,
       adminName, departments, autoScore, autoOnboard, geoTag,
-      thresholdAI, thresholdMR, applyLinkUrl,
+      thresholdAI, thresholdMR, applyLinkUrl, shopline_claim,
     } = body;
 
     if (!tid || !orgName) {
@@ -58,6 +58,34 @@ export async function POST(req: NextRequest) {
     if (tenantErr) {
       console.error("[create-tenant] tenant insert", tenantErr);
       return NextResponse.json({ error: "Tenant creation failed: " + tenantErr.message }, { status: 500 });
+    }
+
+    // Attach a pending SHOPLINE store to this new tenant (Entry B: SHOPLINE-first install).
+    // Non-blocking - a failed claim never breaks signup.
+    if (shopline_claim) {
+      try {
+        const { data: pending } = await admin
+          .from("shopline_connections")
+          .select("id, handle, claim_expires_at")
+          .eq("claim_token", shopline_claim)
+          .is("tenant_id", null)
+          .maybeSingle();
+        if (pending && (!pending.claim_expires_at || new Date(pending.claim_expires_at) > new Date())) {
+          await admin
+            .from("shopline_connections")
+            .update({
+              tenant_id: tid,
+              status: "active",
+              claim_token: null,
+              claim_expires_at: null,
+              updated_at: now,
+            })
+            .eq("id", pending.id);
+          console.log("[create-tenant] claimed SHOPLINE store", pending.handle, "for tenant", tid);
+        }
+      } catch (claimErr) {
+        console.error("[create-tenant] SHOPLINE claim failed (non-blocking):", claimErr);
+      }
     }
 
     // Notify founder of new 7-day trial signup (non-blocking - never breaks signup)

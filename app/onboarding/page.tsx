@@ -309,6 +309,13 @@ export default function OnboardingPage() {
 
   const TOTAL_STEPS = 9;
 
+  // Capture a SHOPLINE claim token from the URL immediately (Entry B), so it
+  // survives any auth redirect to login and back.
+  useEffect(() => {
+    const claim = new URLSearchParams(window.location.search).get("shopline_claim");
+    if (claim) sessionStorage.setItem("shopline_claim", claim);
+  }, []);
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session) { router.replace("/login"); return; }
@@ -385,11 +392,17 @@ export default function OnboardingPage() {
           thresholdAI,
           thresholdMR,
           applyLinkUrl,
+          shopline_claim:
+            (typeof window !== "undefined" &&
+              (sessionStorage.getItem("shopline_claim") ||
+                new URLSearchParams(window.location.search).get("shopline_claim"))) ||
+            undefined,
         }),
       });
       const result = await res.json();
       if (!res.ok) throw new Error(result?.error ?? "Workspace creation failed.");
 
+      if (typeof window !== "undefined") sessionStorage.removeItem("shopline_claim");
       setApplyLink(applyLinkUrl);
       setAnimState("exit-left");
       setTimeout(() => {
