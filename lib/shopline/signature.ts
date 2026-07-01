@@ -2,7 +2,7 @@ import crypto from "crypto";
 
 const APP_SECRET = process.env.SHOPLINE_APP_SECRET ?? "";
 
-/** HMAC-SHA256, hex-encoded — the algorithm SHOPLINE uses for signatures. */
+/** HMAC-SHA256, hex-encoded - the algorithm SHOPLINE uses for signatures. */
 export function hmacSha256Hex(source: string, secret = APP_SECRET): string {
   return crypto.createHmac("sha256", secret).update(source, "utf8").digest("hex");
 }
@@ -18,9 +18,9 @@ function timingSafeEqual(a: string, b: string): boolean {
 }
 
 /**
- * Verify a WEBHOOK signature.
- * CONFIRMED by SHOPLINE docs: HMAC-SHA256 of the raw request body,
- * hex-encoded, delivered in the X-Shopline-Hmac-Sha256 header.
+ * Verify a WEBHOOK signature (SHOPLINE -> us).
+ * CONFIRMED: HMAC-SHA256 of the raw request body, hex-encoded,
+ * delivered in the X-Shopline-Hmac-Sha256 header.
  */
 export function verifyWebhookSignature(rawBody: string, headerSig: string): boolean {
   if (!headerSig) return false;
@@ -30,22 +30,45 @@ export function verifyWebhookSignature(rawBody: string, headerSig: string): bool
 
 /**
  * Verify a GET request signature (install + OAuth callback).
- * NOTE: the exact canonicalization (separator, hex vs base64) is pending
- * confirmation from SHOPLINE partner engineering. Current best-effort:
- * sort params (excluding sign), join key=value with "&", HMAC-SHA256 hex.
- * Swap this one function once the worked example is confirmed.
+ * CONFIRMED (SHOPLINE generate-and-verify-signatures doc):
+ * remove `sign`, sort remaining params alphabetically by key,
+ * join as key=value with "&", HMAC-SHA256 hex, constant-time compare.
  */
 export function verifyGetSignature(params: Record<string, string>): boolean {
   const { sign, ...rest } = params;
   if (!sign) return false;
-  const sorted = Object.keys(rest).sort().map((k) => `${k}=${rest[k]}`).join("&");
+  const sorted = Object.keys(rest)
+    .sort()
+    .map((k) => `${k}=${rest[k]}`)
+    .join("&");
   const expected = hmacSha256Hex(sorted);
   return timingSafeEqual(expected, sign);
 }
 
-/** Build signed headers for outbound token create/refresh (pending confirmation). */
-export function buildSignedHeaders(appKey: string): Record<string, string> {
-  const timestamp = Date.now().toString();
-  const sign = hmacSha256Hex(`appkey=${appKey}&timestamp=${timestamp}`);
-  return { "Content-Type": "application/json", appkey: appKey, timestamp, sign };
+/**
+ * Sign an OUTBOUND POST to SHOPLINE (token create / refresh, API calls).
+ * CONFIRMED: source = requestBody + timestamp(ms); HMAC-SHA256 hex.
+ * Returns the headers SHOPLINE expects.
+ */
+export function signPostRequest(
+  appKey: string,
+  body: string,
+  timestamp: string = Date.now().toString()
+): Record<string, string> {
+  const sign = hmacSha256Hex(body + timestamp);
+  return {
+    "Content-Type": "application/json",
+    appkey: appKey,
+    timestamp,
+    sign,
+  };
+}
+
+/**
+ * Replay guard for GET/POST signatures. SHOPLINE timestamps are ms since epoch.
+ * Rejects requests outside the allowed skew (default 10 minutes).
+ */
+export function timestampValid(ts: string | number, maxSkewMs = 10 * 60 * 1000): boolean {
+  const t = typeof ts === "string" ? parseInt(ts, 10) : ts;
+  return Number.isFinite(t) && Math.abs(Date.now() - t) <= maxSkewMs;
 }
