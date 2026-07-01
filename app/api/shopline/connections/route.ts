@@ -26,9 +26,15 @@ export async function GET(req: NextRequest) {
   if (authErr || !user) return NextResponse.json({ error: "Authentication required." }, { status: 401 });
 
   const admin = getAdmin();
+  let tenantId: string | null = null;
   const { data: profile } = await admin
     .from("profiles").select("tenant_id").eq("id", user.id).maybeSingle();
-  const tenantId = profile?.tenant_id;
+  tenantId = (profile?.tenant_id as string) ?? null;
+  if (!tenantId) {
+    const { data: owned } = await admin
+      .from("tenants").select("id").eq("owner_id", user.id).maybeSingle();
+    tenantId = (owned?.id as string) ?? null;
+  }
   if (!tenantId) return NextResponse.json({ error: "No tenant." }, { status: 403 });
 
   const { data, error } = await admin

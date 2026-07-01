@@ -38,12 +38,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Valid handle required." }, { status: 400 });
   }
 
-  // Resolve tenant for this user.
+  // Resolve tenant for this user: profiles.tenant_id, else tenants.owner_id.
   const admin = getAdmin();
-  const { data: profile } = await admin
+  let tenantId: string | null = null;
+  const { data: profile, error: pErr } = await admin
     .from("profiles").select("tenant_id").eq("id", user.id).maybeSingle();
-  const tenantId = profile?.tenant_id;
-  if (!tenantId) return NextResponse.json({ error: "No tenant for user." }, { status: 403 });
+  if (pErr) console.error("[shopline/connect] profiles lookup:", pErr);
+  tenantId = (profile?.tenant_id as string) ?? null;
+  if (!tenantId) {
+    const { data: owned, error: tErr } = await admin
+      .from("tenants").select("id").eq("owner_id", user.id).maybeSingle();
+    if (tErr) console.error("[shopline/connect] tenants lookup:", tErr);
+    tenantId = (owned?.id as string) ?? null;
+  }
+  if (!tenantId) {
+    console.error("[shopline/connect] no tenant for user", user.id);
+    return NextResponse.json({ error: "No tenant for user." }, { status: 403 });
+  }
 
   const state = createState(tenantId, handle);
   return NextResponse.json({ url: authorizeUrl(handle, state) });
