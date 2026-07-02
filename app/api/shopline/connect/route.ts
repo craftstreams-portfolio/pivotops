@@ -31,7 +31,6 @@ export async function POST(req: NextRequest) {
   );
   const { data: { user }, error: authErr } = await authClient.auth.getUser(token);
   if (authErr || !user) return NextResponse.json({ error: "Authentication required." }, { status: 401 });
-  console.log("[shopline/connect] user.id =", user.id, "email =", user.email);
 
   const body = await req.json().catch(() => ({}));
   const handle = String(body?.handle ?? "").trim().toLowerCase();
@@ -53,7 +52,6 @@ export async function POST(req: NextRequest) {
     tenantId = (owned?.id as string) ?? null;
   }
   if (!tenantId) {
-    console.error("[shopline/connect] no tenant for user", user.id, "profile=", JSON.stringify(profile), "owned=lookup ran");
     return NextResponse.json({ error: "No tenant for user." }, { status: 403 });
   }
 
