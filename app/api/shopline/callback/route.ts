@@ -34,23 +34,19 @@ export async function GET(req: NextRequest) {
   if (!code || !handle) {
     return NextResponse.json({ error: "Missing code or handle." }, { status: 400 });
   }
-  const tsOk = !timestamp || timestampValid(timestamp);
-  const sigOk = verifyGetSignature(params);
-  if (!tsOk || !sigOk) {
-    // TEMP DIAGNOSTIC
-    const { sign: _s, ...rest } = params;
-    const sorted = Object.keys(rest).sort().map((k) => `${k}=${rest[k]}`).join("&");
-    return NextResponse.json({
-      error: !tsOk ? "Stale callback." : "Invalid signature.",
-      _debug: {
-        tsOk, sigOk,
-        now: Date.now(),
-        timestamp,
-        skewMs: timestamp ? Date.now() - Number(timestamp) : null,
-        signedString: sorted,
-        receivedSign: params.sign,
-      },
-    }, { status: 401 });
+  // Signature is the real security guarantee; verify it strictly.
+  if (!verifyGetSignature(params)) {
+    console.error("[shopline/callback] invalid signature");
+    return NextResponse.json({ error: "Invalid signature." }, { status: 401 });
+  }
+  // Timestamp is replay-protection only. Log skew but don't hard-reject on
+  // normal OAuth latency (user approval + round-trip can exceed a tight window).
+  if (timestamp) {
+    const skew = Math.abs(Date.now() - Number(timestamp));
+    if (skew > 30 * 60 * 1000) {
+      console.error("[shopline/callback] timestamp skew too large:", skew, "ms");
+      return NextResponse.json({ error: "Stale callback." }, { status: 401 });
+    }
   }
 
   // Validate state (carries tenantId for Entry A, null for Entry B).
