@@ -59,12 +59,13 @@ export async function GET(req: NextRequest) {
   let tokenRes;
   try {
     tokenRes = await createToken(handle, code);
-  } catch (e) {
-    console.error("[shopline/callback] token create failed:", e);
-    return NextResponse.json({ error: "Token exchange failed." }, { status: 502 });
+  } catch (e: any) {
+    console.error("[shopline/callback] token create failed:", e?.message ?? e);
+    return NextResponse.json({ error: "Token exchange failed.", _debug: String(e?.message ?? e) }, { status: 502 });
   }
   if (!tokenRes?.accessToken) {
-    return NextResponse.json({ error: "No access token returned." }, { status: 502 });
+    console.error("[shopline/callback] no accessToken in response:", JSON.stringify(tokenRes));
+    return NextResponse.json({ error: "No access token returned.", _debug: tokenRes }, { status: 502 });
   }
 
   const admin = getAdmin();

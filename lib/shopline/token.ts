@@ -30,6 +30,7 @@ function toExpiry(expireTime: string | number | undefined): string | null {
 // Exchange an OAuth code for an access token (called from the callback route).
 export async function createToken(handle: string, code: string): Promise<TokenResponse> {
   const data = await postSigned(tokenCreateUrl(handle), { code });
+  console.log("[shopline] token/create raw response:", JSON.stringify(data));
   // SHOPLINE returns token fields possibly nested; normalize common shapes.
   const t = data?.data ?? data;
   return {
