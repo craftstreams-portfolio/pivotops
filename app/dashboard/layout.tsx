@@ -152,6 +152,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session) { router.replace("/login"); return; }
+      // Candidates belong in the candidate portal, not the owner dashboard.
+      if (session.user.user_metadata?.role === "candidate") {
+        router.replace("/candidate/portal");
+        return;
+      }
       const email = session.user.email ?? "";
       setUserEmail(email);
       setUserInitial((session.user.user_metadata?.full_name?.[0] ?? email[0] ?? "P").toUpperCase());

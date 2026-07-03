@@ -53,7 +53,7 @@ function applySecurityHeaders(res: NextResponse): NextResponse {
       "img-src 'self' data: blob: https:",
       "font-src 'self' https://fonts.gstatic.com",
       "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://nominatim.openstreetmap.org https://api.anthropic.com https://www.googletagmanager.com https://www.google-analytics.com https://*.google-analytics.com https://*.analytics.google.com",
-      "frame-ancestors 'none'",
+      "frame-ancestors 'self' https://*.myshopline.com https://*.shopline.com",
       "base-uri 'self'",
       "form-action 'self'",
       ...(!isDev ? ["upgrade-insecure-requests"] : []),
