@@ -241,47 +241,63 @@ When helping choose a plan: ask how many recruiters, if they need compliance tra
 function askXavier(messages: { role: string; content: string }[]): string {
   const q = (messages[messages.length - 1]?.content || "").toLowerCase();
   const has = (...w: string[]) => w.some((x) => q.includes(x));
+  const pick = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)];
 
-  // Plan recommendation (when they mention team size)
-  const num = q.match(/(\d+)\s*(recruiter|user|seat|people|staff|person)/);
+  // Plan recommendation (when they mention a team size)
+  const num = q.match(/(\d+)\s*(recruiter|user|seat|people|staff|person|employee)/);
   if (num) {
     const n = parseInt(num[1], 10);
-    if (n <= 5)  return "With a team that size, Starter ($1,500/mo) is the right fit — full recruitment automation, Xavier AI scoring, interview routing, and the candidate compliance portal. Want the full feature list?";
-    if (n <= 20) return "For 5–20 recruiters, Professional ($2,500/mo) fits best — everything in Starter plus advanced compliance tracking, analytics dashboards, clock in/out with geolocation, and onboarding auto-trigger on hire.";
-    return "At that scale, Enterprise ($6,000/mo) makes sense — multi-location support, custom integrations and API access, advanced access controls and audit trail, plus dedicated implementation. Want to talk to the team?";
+    if (n <= 5)  return `Got it — a team of ${n} is a perfect fit for Starter ($1,500/mo). You'd get the full recruitment engine, my candidate scoring, interview routing, and the compliance portal. Honestly it's plenty to run a lean, fast desk. Want me to run through everything that's included?`;
+    if (n <= 20) return `Nice — for around ${n} recruiters I'd point you at Professional ($2,500/mo). It's everything in Starter, plus deeper compliance tracking, analytics dashboards, clock in/out with geolocation, and onboarding that kicks off automatically the moment someone's hired. Want the full rundown?`;
+    return `At ${n} you're operating at real scale, so Enterprise ($6,000/mo) is the one — multi-location support, API access and custom integrations, granular access controls with a full audit trail, and a dedicated implementation. Happy to connect you with the team if you'd like to talk specifics.`;
   }
 
-  if (has("price","pricing","cost","how much","plan","tier","pay"))
-    return "Three plans: Starter $1,500/mo (up to 5 recruiters), Professional $2,500/mo (5–20 recruiters), Enterprise $6,000/mo (multi-location or compliance-heavy). Annual billing is discounted. How many recruiters are on your team? I can recommend the right tier.";
+  if (has("price","pricing","cost","how much","how many","plan","tier","pay","expensive","afford"))
+    return pick([
+      "Happy to break it down! Three tiers, kept simple: Starter's $1,500/mo for small teams (up to 5 recruiters), Professional's $2,500/mo as you scale to 20, and Enterprise runs $6,000/mo for multi-location or compliance-heavy operations. Annual billing knocks the price down too. How many recruiters are you working with? I'll point you to the right one.",
+      "Sure thing. We run three plans — Starter ($1,500/mo, up to 5 recruiters), Professional ($2,500/mo, 5–20), and Enterprise ($6,000/mo for the bigger, multi-location setups). Every plan includes me, the full scoring engine. Tell me your team size and I'll recommend the best fit.",
+    ]);
 
-  if (has("compliance","credential","document","license","audit"))
-    return "Compliance is core, not an add-on: candidates upload credentials through a secure portal, your team reviews them, and the system auto-reminds candidates to re-upload anything rejected. Tenant-isolated data and audit logging are built in. Enterprise includes a compliance review before rollout.";
+  if (has("compliance","credential","document","license","audit","certif"))
+    return "This is one of my favourite parts, honestly. Compliance isn't bolted on — it's built in. Candidates upload their credentials through a secure portal, your team reviews them, and if something's missing or rejected, the system nudges the candidate to re-upload automatically. Everything's tenant-isolated with full audit logging, and Enterprise even includes a compliance review before you go live. No more chasing documents over email.";
 
-  if (has("score","scoring","xavier","ai","candidate","applicant"))
-    return "Xavier AI scores every applicant 0–100 against your role criteria the moment they apply — so first-pass decisions don't wait on a human bottleneck. Strong candidates get routed to interview fast; weak ones get auto-declined with branded comms.";
+  if (has("score","scoring","xavier","ai ","candidate","applicant","rank","shortlist"))
+    return pick([
+      "That's me! The moment someone applies, I score them 0 to 100 against what you're actually hiring for — no waiting on a human to get to the pile. Strong candidates get routed straight to interview, and the ones who aren't a fit get a polite, branded decline automatically. You spend your time on the people worth talking to.",
+      "Ah, this is the core of it. Every applicant gets scored 0–100 against your role criteria the second they apply — so your first-pass decisions happen instantly instead of sitting in someone's inbox. Good fits get fast-tracked to interview; the rest get handled gracefully. Want to see how the scoring reads a real resume?",
+    ]);
 
-  if (has("ats","bullhorn","workday","replace","migrate","existing tool"))
-    return "PivotOps isn't an ATS replacement — it sits on top of what you already run. ATS and systems like Bullhorn or Workday store data; PivotOps runs the daily operating rhythm: who owns a role right now, what happens the moment an application lands, and how decisions get made without a WhatsApp thread.";
+  if (has("ats","bullhorn","workday","replace","migrate","existing tool","integrat"))
+    return "Good question — and the honest answer is I'm not here to replace your ATS. Tools like Bullhorn or Workday store your data; I run the daily rhythm on top of it. Who owns a role right now, what happens the instant an application lands, how decisions actually get made — that's the messy operational layer that usually lives in spreadsheets and WhatsApp threads. I turn that into one clean system.";
 
-  if (has("who","fit","right for","for me","industry","staffing","healthcare"))
-    return "PivotOps is for staffing agencies and workforce-heavy teams — healthcare staffing to retail and merchant operations — from a handful of employees to multi-location teams that feel the daily cost of slow hiring. Want help sizing a plan?";
+  if (has("who","fit","right for","for me","industry","staffing","healthcare","retail"))
+    return "I'm built for staffing agencies and workforce-heavy teams — everything from healthcare staffing to retail and merchant operations. Whether you're a handful of people or a multi-location operation feeling the daily sting of slow hiring, that's exactly who I help. Tell me a bit about your team and I'll help you size it up.";
 
-  if (has("setup","implement","onboard","how long","time to","get started","start"))
-    return "A first pilot is scoped around your active pipeline — not a six-month implementation. Expect a live workflow within weeks, mapped to your real process from day one. Want to start?";
+  if (has("setup","implement","onboard","how long","time to","get started","begin","launch"))
+    return "No six-month rollout, I promise. We scope a first pilot around your active pipeline and map it to how you actually work — so you're looking at a live workflow in weeks, not quarters. Want to get started? I can point you to signup.";
 
-  if (has("result","roi","outcome","time to hire","faster","speed","72"))
-    return "The target is compressing your hiring loop from 14–30 days to a 72-hour window for intake through interview scheduling — measured against your own pipeline during a pilot.";
+  if (has("result","roi","outcome","time to hire","faster","speed","72","hours","quick"))
+    return "Here's the number that matters: most teams take 14 to 30 days from application to interview. The goal with PivotOps is to compress that to a 72-hour window — intake through interview scheduling — and we measure it against your own pipeline during the pilot, so it's real, not a marketing line.";
 
-  if (has("secure","security","data","privacy","gdpr"))
-    return "Yes — tenant-isolated data access, compliance document tracking, and audit logging are core features. Enterprise plans include a compliance review before rollout.";
+  if (has("secure","security","private","privacy","gdpr","safe","data"))
+    return "Absolutely — I take this seriously. Your data is tenant-isolated (your info never touches another company's), with compliance document tracking and full audit logging baked in. Enterprise plans also get a compliance review before rollout. Anything specific on the security side you want me to dig into?";
 
-  if (has("what","do","does","about","platform","pivotops"))
-    return "PivotOps runs the whole path from job opening to working employee — intake, AI candidate scoring 0–100, interview routing, onboarding, task routing, compliance tracking, and attendance — as one system instead of five disconnected tools.";
+  if (has("what","do","does","about","platform","pivotops","explain","tell me"))
+    return "So in a sentence: I run the whole journey from job opening to working employee. Application intake, scoring every candidate 0–100, routing interviews, onboarding, task management, compliance, attendance — all in one place, instead of five disconnected tools duct-taped together. Anything in there you'd like me to zoom in on?";
 
-  if (has("hi","hello","hey","start","help"))
-    return "Happy to help. I can explain what PivotOps does, walk you through pricing, or recommend a plan based on your team size. What would you like to know?";
+  if (has("hi","hello","hey","yo","sup","good morning","good afternoon","greetings"))
+    return pick([
+      "Hey there! I'm Xavier — the AI that runs hiring inside PivotOps. Ask me anything: what we do, pricing, or I can recommend a plan based on your team size. What's on your mind?",
+      "Hi! Great to meet you. I'm Xavier — I handle candidate scoring and the day-to-day hiring rhythm here. Want to know how it works, what it costs, or which plan fits your team? Just ask.",
+    ]);
 
-  return "Good question. The best way to get a precise answer is to start your trial or talk to the team — want me to point you to signup?";
+  if (has("help","not sure","confused","options"))
+    return "Happy to help you find your footing! I'm best with questions about how the scoring works, pricing and plans, compliance, or getting set up. What are you trying to figure out?";
+
+  return pick([
+    "Hmm, I want to give you a straight answer on that — I'm sharpest on how PivotOps scores candidates, pricing, compliance, and getting set up. Which of those is closest to what you're after? Or if you'd rather just see it in action, I can point you to a free trial.",
+    "Good question — that one's probably best answered by actually seeing it work. Want me to point you to signup for a free trial, or I can tell you about pricing, scoring, or compliance right here?",
+  ]);
 }
 
 function XavierChat({ onJoinWaitlist }: { onJoinWaitlist: () => void }) {
