@@ -30,7 +30,7 @@ const HEALTHCARE_CREDENTIAL_TYPES = [
   { key: "chest_xray", label: "Chest X-Ray", required: true },
   { key: "bls_cpr", label: "BLS / CPR Certification", required: true },
   { key: "drug_screening", label: "Drug Screening Results", required: true },
-  { key: "background_check", label: "Background Check", required: true },
+  { key: "background_check", label: "Background Check", required: false, note: "Only upload if completed within the last 90 days. If older, your agency will arrange a new check." },
 ];
 
 // Lightweight default set for non-healthcare roles. The "+" control lets
@@ -68,7 +68,7 @@ interface CandidateAccount {
   role_category?: string | null;
 }
 
-type CredentialType = { key: string; label: string; required: boolean };
+type CredentialType = { key: string; label: string; required: boolean; note?: string };
 
 // ── Retry helper ──────────────────────────────────────────────────────────────
 async function withRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 400): Promise<T> {
@@ -297,6 +297,9 @@ function CredentialRow({ type, credential, accountId, candidateId, tenantId, onU
                 {type.label}{type.required && <span className="text-red-400 ml-1 text-xs">*</span>}
               </p>
               <div className="mt-0.5">{statusBadge[status]}</div>
+              {type.note && (
+                <p className="text-[10px] text-amber-400/70 mt-0.5 leading-snug whitespace-normal">{type.note}</p>
+              )}
               {status === "rejected" && credential?.rejection_reason && (
                 <p className="text-[10px] text-red-400/70 mt-0.5">Reason: {credential.rejection_reason}</p>
               )}
