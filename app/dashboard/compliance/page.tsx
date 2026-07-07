@@ -11,7 +11,7 @@ import {
   User, ChevronDown, ChevronUp, Loader2, RefreshCw,
   Folder, FolderOpen, ChevronRight, Plus, Upload,
   Download, Trash2, Edit2, Check, Save, File, Shield,
-  ArrowDownToLine, ArrowUpFromLine,
+  ArrowDownToLine, ArrowUpFromLine, Send,
 } from "lucide-react";
 
 // ═══════════════════════════════════════════
@@ -611,6 +611,88 @@ function CandidateCard({ group, tenantId, recruiterName, recruiterId, onUpdate, 
 // ═══════════════════════════════════════════
 // ADMIN FILE ROW
 // ═══════════════════════════════════════════
+function SignatureModal({ file, onClose }: { file: AdminFile; onClose: () => void }) {
+  const [parties, setParties] = useState<{ name: string; email: string }[]>([{ name: "", email: "" }]);
+  const [message, setMessage] = useState("");
+  const [sending, setSending] = useState(false);
+  const [done, setDone]       = useState<{ emailed: number; parties: number } | null>(null);
+  const [err, setErr]         = useState<string | null>(null);
+
+  const setParty = (i: number, key: "name" | "email", val: string) =>
+    setParties(prev => prev.map((p, idx) => idx === i ? { ...p, [key]: val } : p));
+  const addParty = () => setParties(prev => [...prev, { name: "", email: "" }]);
+  const removeParty = (i: number) => setParties(prev => prev.filter((_, idx) => idx !== i));
+
+  async function send() {
+    setErr(null);
+    const valid = parties.filter(p => /\S+@\S+\.\S+/.test(p.email));
+    if (valid.length === 0) { setErr("Add at least one valid email."); return; }
+    setSending(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) { setErr("Not authenticated."); setSending(false); return; }
+      const res = await fetch("/api/signature/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ adminDocFileId: file.id, docName: file.name, recipients: valid, message }),
+      });
+      const json = await res.json();
+      if (!res.ok) { setErr(json.error ?? "Failed to send."); setSending(false); return; }
+      setDone({ emailed: json.emailed, parties: json.parties });
+      setSending(false);
+    } catch (e: any) {
+      setErr(e?.message ?? "Failed to send."); setSending(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+      <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-6 w-full max-w-md" onClick={e => e.stopPropagation()}>
+        {done ? (
+          <div className="text-center py-4">
+            <CheckCircle2 size={40} className="text-emerald-400 mx-auto mb-3" />
+            <p className="text-white font-semibold mb-1">Sent for signature</p>
+            <p className="text-zinc-400 text-sm">{done.emailed} of {done.parties} {done.parties === 1 ? "party" : "parties"} emailed a signing link.</p>
+            <button onClick={onClose} className="mt-5 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm">Done</button>
+          </div>
+        ) : (
+          <>
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="text-white font-semibold">Send for signature</h3>
+              <button onClick={onClose} className="text-zinc-500 hover:text-white"><X size={16} /></button>
+            </div>
+            <p className="text-zinc-500 text-xs mb-4 truncate">{file.name}</p>
+            <div className="space-y-2 mb-3">
+              {parties.map((p, i) => (
+                <div key={i} className="flex gap-2 items-center">
+                  <input value={p.name} onChange={e => setParty(i, "name", e.target.value)} placeholder="Name (optional)"
+                    className="w-28 px-2.5 py-1.5 rounded-md bg-zinc-900 text-white border border-zinc-700 text-sm" />
+                  <input value={p.email} onChange={e => setParty(i, "email", e.target.value)} placeholder="email@example.com"
+                    className="flex-1 px-2.5 py-1.5 rounded-md bg-zinc-900 text-white border border-zinc-700 text-sm" />
+                  {parties.length > 1 && <button onClick={() => removeParty(i)} className="text-zinc-600 hover:text-red-400"><X size={14} /></button>}
+                </div>
+              ))}
+            </div>
+            <button onClick={addParty} className="text-indigo-400 text-xs mb-4 flex items-center gap-1"><Plus size={12} /> Add another party</button>
+            <textarea value={message} onChange={e => setMessage(e.target.value)} placeholder="Optional message to recipients..."
+              rows={2} className="w-full px-2.5 py-2 rounded-md bg-zinc-900 text-white border border-zinc-700 text-sm mb-2 resize-none" />
+            <p className="text-[10px] text-zinc-600 mb-4">Recipients receive a link to sign electronically. This is a simple e-signature, not a certified/notarized signature.</p>
+            {err && <p className="text-red-400 text-xs mb-3">{err}</p>}
+            <div className="flex gap-2">
+              <button onClick={send} disabled={sending}
+                className="flex-1 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium disabled:opacity-60 flex items-center justify-center gap-2">
+                {sending ? <><Loader2 size={13} className="animate-spin" /> Sending</> : "Send"}
+              </button>
+              <button onClick={onClose} className="px-4 py-2 rounded-lg border border-zinc-700 text-zinc-400 text-sm">Cancel</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function AdminFileRow({ file, folderId, tenantId, onUpdate, onDelete }: {
   file:AdminFile; folderId:string; tenantId:string;
   onUpdate:(f:AdminFile)=>void; onDelete:(id:string)=>void;
@@ -620,6 +702,7 @@ function AdminFileRow({ file, folderId, tenantId, onUpdate, onDelete }: {
   const [uploading, setUploading] = useState(false);
   const [saving,    setSaving]    = useState(false);
   const [viewing,   setViewing]   = useState(false);
+  const [signing,   setSigning]   = useState(false);
   const ref = useRef<HTMLInputElement>(null);
 
   const saveName = async () => {
@@ -655,6 +738,7 @@ function AdminFileRow({ file, folderId, tenantId, onUpdate, onDelete }: {
   return (
     <>
       {viewing && file.file_url && <DocViewer url={file.file_url} name={file.file_name??file.name} onClose={()=>setViewing(false)}/>}
+      {signing && <SignatureModal file={file} onClose={()=>setSigning(false)}/>}
       <div className="flex items-center gap-2 px-3 py-2.5 bg-zinc-900 rounded-lg border border-zinc-800 mb-1.5">
         <File size={13} className="text-zinc-600 flex-shrink-0"/>
         {editing ? (
@@ -673,6 +757,7 @@ function AdminFileRow({ file, folderId, tenantId, onUpdate, onDelete }: {
         <div className="flex gap-1 flex-shrink-0">
           {file.file_url && <button onClick={()=>setViewing(true)} className="p-1.5 rounded border border-zinc-700 text-zinc-500 hover:text-white transition"><Eye size={11}/></button>}
           {file.file_url && <a href={file.file_url} download target="_blank" rel="noreferrer" className="p-1.5 rounded border border-zinc-700 text-zinc-500 hover:text-white transition flex items-center"><Download size={11}/></a>}
+          {file.file_url && <button onClick={()=>setSigning(true)} title="Send for signature" className="flex items-center gap-1 px-2 py-1 rounded border border-teal-500/40 text-teal-400 hover:bg-teal-500/10 text-[11px] transition"><Send size={11}/>Send</button>}
           <button onClick={()=>ref.current?.click()} disabled={uploading} className="flex items-center gap-1 px-2 py-1 rounded border border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/10 text-[11px] transition">
             {uploading?<Loader2 size={11} className="animate-spin"/>:<Upload size={11}/>}{file.file_url?"Replace":"Upload"}
           </button>
