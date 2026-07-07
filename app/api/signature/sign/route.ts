@@ -6,6 +6,18 @@ function getAdmin() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false } });
 }
 
+// admin-documents is a PRIVATE bucket, so getPublicUrl 404s. Generate a signed URL instead.
+async function signedAdminUrl(admin: ReturnType<typeof getAdmin>, storedUrl: string | null): Promise<string | null> {
+  if (!storedUrl) return null;
+  // Extract the object path after "admin-documents/"
+  const marker = "/admin-documents/";
+  const idx = storedUrl.indexOf(marker);
+  const path = idx >= 0 ? storedUrl.substring(idx + marker.length) : storedUrl;
+  const { data, error } = await admin.storage.from("admin-documents").createSignedUrl(decodeURIComponent(path), 60 * 60 * 24 * 7); // 7-day link
+  if (error || !data) return null;
+  return data.signedUrl;
+}
+
 // GET: fetch the signing context by token (document + whether already signed)
 export async function GET(req: NextRequest) {
   const token = req.nextUrl.searchParams.get("token");
@@ -16,9 +28,10 @@ export async function GET(req: NextRequest) {
   const { data: reqRow } = await admin.from("signature_requests").select("*").eq("id", sig.request_id).single();
   if (!reqRow) return NextResponse.json({ error: "Request not found." }, { status: 404 });
   const { data: file } = await admin.from("admin_doc_files").select("name, file_url, file_name").eq("id", reqRow.admin_doc_file_id).single();
+  const viewUrl = await signedAdminUrl(admin, file?.file_url ?? null);
   return NextResponse.json({
     docName: reqRow.doc_name ?? file?.name ?? "Document",
-    fileUrl: file?.file_url ?? null,
+    fileUrl: viewUrl,
     message: reqRow.message ?? null,
     sentBy: reqRow.sent_by ?? "",
     signerName: sig.signer_name ?? "",
@@ -57,13 +70,14 @@ export async function POST(req: NextRequest) {
       await admin.from("signature_requests").update({ status: "completed", completed_at: now }).eq("id", sig.request_id);
       const { data: reqRow } = await admin.from("signature_requests").select("*").eq("id", sig.request_id).single();
       const { data: file } = await admin.from("admin_doc_files").select("name, file_url").eq("id", reqRow?.admin_doc_file_id).single();
+      const signedDocUrl = await signedAdminUrl(admin, file?.file_url ?? null);
       for (const party of (allSigs ?? [])) {
         const html = `
           <div style="font-family:sans-serif;max-width:520px;margin:0 auto">
             <h2 style="color:#06070D">All signatures collected: ${reqRow?.doc_name ?? "Document"}</h2>
             <p>Hello${party.signer_name ? " " + party.signer_name : ""},</p>
             <p>All parties have signed <strong>${reqRow?.doc_name ?? "the document"}</strong>. A copy is available below.</p>
-            ${file?.file_url ? `<p><a href="${file.file_url}" style="display:inline-block;background:#00BFA6;color:#06070D;font-weight:700;padding:12px 24px;border-radius:8px;text-decoration:none">View Document</a></p>` : ""}
+            ${signedDocUrl ? `<p><a href="${signedDocUrl}" style="display:inline-block;background:#00BFA6;color:#06070D;font-weight:700;padding:12px 24px;border-radius:8px;text-decoration:none">View Document</a></p>` : ""}
             <p style="font-size:11px;color:#aaa">This document was signed using PivotOps simple electronic signatures. Not a certified or notarized signature.</p>
           </div>`;
         await sendEmail({ to: party.signer_email, subject: `Completed: ${reqRow?.doc_name ?? "Document"}`, html, from: EMAIL_SENDERS.notifications });

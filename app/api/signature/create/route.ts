@@ -27,6 +27,9 @@ export async function POST(req: NextRequest) {
     const tenantId = profile?.tenant_id;
     if (!tenantId) return NextResponse.json({ error: "No tenant for user" }, { status: 403 });
 
+    const { data: tenantRow } = await admin.from("tenants").select("org_name").eq("id", tenantId).maybeSingle();
+    const orgName = tenantRow?.org_name || "Your organization";
+
     const body = await req.json();
     const { adminDocFileId, docName, recipients, message } = body as {
       adminDocFileId: string;
@@ -52,7 +55,7 @@ export async function POST(req: NextRequest) {
       tenant_id: tenantId,
       admin_doc_file_id: adminDocFileId,
       doc_name: docName ?? file.name ?? "Document",
-      sent_by: user.email ?? "",
+      sent_by: orgName,
       message: message ?? null,
       status: "pending",
       created_at: now,
@@ -81,7 +84,7 @@ export async function POST(req: NextRequest) {
         <div style="font-family:sans-serif;max-width:520px;margin:0 auto">
           <h2 style="color:#06070D">Signature requested: ${file.name ?? "Document"}</h2>
           <p>Hello${row.signer_name ? " " + row.signer_name : ""},</p>
-          <p>${(reqRow.sent_by || "A team member")} has requested your signature on <strong>${file.name ?? "a document"}</strong>.</p>
+          <p><strong>${orgName}</strong> has requested your signature on <strong>${file.name ?? "a document"}</strong>.</p>
           ${message ? `<p style="color:#555">"${message}"</p>` : ""}
           <p><a href="${signUrl}" style="display:inline-block;background:#00BFA6;color:#06070D;font-weight:700;padding:12px 24px;border-radius:8px;text-decoration:none">Review & Sign</a></p>
           <p style="font-size:12px;color:#888">Or paste this link: ${signUrl}</p>

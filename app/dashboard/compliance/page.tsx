@@ -702,7 +702,18 @@ function AdminFileRow({ file, folderId, tenantId, onUpdate, onDelete }: {
   const [uploading, setUploading] = useState(false);
   const [saving,    setSaving]    = useState(false);
   const [viewing,   setViewing]   = useState(false);
+  const [viewUrl,   setViewUrl]   = useState<string|null>(null);
   const [signing,   setSigning]   = useState(false);
+  async function openViewer() {
+    if (!file.file_url) return;
+    const marker = "/admin-documents/";
+    const idx = file.file_url.indexOf(marker);
+    const path = idx >= 0 ? decodeURIComponent(file.file_url.substring(idx + marker.length)) : null;
+    if (!path) { setViewUrl(file.file_url); setViewing(true); return; }
+    const { data } = await supabase.storage.from("admin-documents").createSignedUrl(path, 3600);
+    setViewUrl(data?.signedUrl ?? file.file_url);
+    setViewing(true);
+  }
   const ref = useRef<HTMLInputElement>(null);
 
   const saveName = async () => {
@@ -737,7 +748,7 @@ function AdminFileRow({ file, folderId, tenantId, onUpdate, onDelete }: {
   const sc = file.status==="active"?"text-emerald-400":file.status==="archived"?"text-zinc-500":"text-amber-400";
   return (
     <>
-      {viewing && file.file_url && <DocViewer url={file.file_url} name={file.file_name??file.name} onClose={()=>setViewing(false)}/>}
+      {viewing && viewUrl && <DocViewer url={viewUrl} name={file.file_name??file.name} onClose={()=>{setViewing(false);setViewUrl(null);}}/>}
       {signing && <SignatureModal file={file} onClose={()=>setSigning(false)}/>}
       <div className="flex items-center gap-2 px-3 py-2.5 bg-zinc-900 rounded-lg border border-zinc-800 mb-1.5">
         <File size={13} className="text-zinc-600 flex-shrink-0"/>
@@ -755,7 +766,7 @@ function AdminFileRow({ file, folderId, tenantId, onUpdate, onDelete }: {
           </div>
         )}
         <div className="flex gap-1 flex-shrink-0">
-          {file.file_url && <button onClick={()=>setViewing(true)} className="p-1.5 rounded border border-zinc-700 text-zinc-500 hover:text-white transition"><Eye size={11}/></button>}
+          {file.file_url && <button onClick={openViewer} className="p-1.5 rounded border border-zinc-700 text-zinc-500 hover:text-white transition"><Eye size={11}/></button>}
           {file.file_url && <a href={file.file_url} download target="_blank" rel="noreferrer" className="p-1.5 rounded border border-zinc-700 text-zinc-500 hover:text-white transition flex items-center"><Download size={11}/></a>}
           {file.file_url && <button onClick={()=>setSigning(true)} title="Send for signature" className="flex items-center gap-1 px-2 py-1 rounded border border-teal-500/40 text-teal-400 hover:bg-teal-500/10 text-[11px] transition"><Send size={11}/>Send</button>}
           <button onClick={()=>ref.current?.click()} disabled={uploading} className="flex items-center gap-1 px-2 py-1 rounded border border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/10 text-[11px] transition">
