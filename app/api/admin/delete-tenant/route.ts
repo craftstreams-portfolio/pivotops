@@ -7,7 +7,8 @@ const admin = createClient(
 );
 
 export async function DELETE(req: NextRequest) {
-  const token    = req.nextUrl.searchParams.get("token");
+  const token    = req.headers.get("x-admin-token") ?? req.nextUrl.searchParams.get("token");
+  if (req.nextUrl.searchParams.get("token")) console.warn("[admin] token via query param (deprecated)");
   const tenantId = req.nextUrl.searchParams.get("tenantId");
 
   if (token !== process.env.ADMIN_SECRET_TOKEN) {

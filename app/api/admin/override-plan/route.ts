@@ -7,7 +7,9 @@ const admin = createClient(
 );
 
 export async function POST(req: NextRequest) {
-  const token = req.nextUrl.searchParams.get("token");
+  // Prefer x-admin-token header (not logged); fall back to query param during transition.
+  const token = req.headers.get("x-admin-token") ?? req.nextUrl.searchParams.get("token");
+  if (req.nextUrl.searchParams.get("token")) console.warn("[admin] token via query param (deprecated, use x-admin-token header)");
   if (token !== process.env.ADMIN_SECRET_TOKEN) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
