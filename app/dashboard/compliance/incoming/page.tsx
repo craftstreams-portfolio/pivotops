@@ -252,6 +252,96 @@ function CredentialCard({ cred, reviewer, onUpdate }: {
   );
 }
 
+// ── Add credential (agency adds a doc slot for a candidate) ────────────────────
+const ADD_TYPES: { key: string; label: string }[] = [
+  { key: "background_check",    label: "Background Check" },
+  { key: "employee_evaluation", label: "Employee Evaluation" },
+  { key: "reference_check",     label: "Reference Check" },
+  { key: "i9_form",             label: "I-9 Form" },
+  { key: "w4_form",             label: "W-4 Form" },
+  { key: "offer_letter",        label: "Offer Letter" },
+  { key: "skills_assessment",   label: "Skills Assessment" },
+  { key: "__custom__",          label: "Custom\u2026" },
+];
+
+function AddCredential({ candidateId }: { candidateId: string }) {
+  const [open, setOpen]     = useState(false);
+  const [choice, setChoice] = useState("background_check");
+  const [custom, setCustom] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr]       = useState("");
+
+  async function submit() {
+    setErr("");
+    const isCustom = choice === "__custom__";
+    const label = isCustom ? custom.trim() : (ADD_TYPES.find(t => t.key === choice)?.label ?? choice);
+    if (!label) { setErr("Enter a name."); return; }
+    const docType = isCustom ? custom.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") : choice;
+    if (!docType) { setErr("Enter a valid name."); return; }
+    setSaving(true);
+    try {
+      // Derive tenant_id from an existing credential row for this candidate.
+      const { data: existing, error: exErr } = await supabase
+        .from("candidate_credentials")
+        .select("tenant_id")
+        .eq("candidate_id", candidateId)
+        .limit(1)
+        .maybeSingle();
+      if (exErr || !existing?.tenant_id) { setErr("Could not resolve tenant."); setSaving(false); return; }
+      const now = new Date().toISOString();
+      const { error: insErr } = await supabase.from("candidate_credentials").insert({
+        candidate_id: candidateId,
+        tenant_id:    existing.tenant_id,
+        doc_type:     docType,
+        name:         label,
+        status:       "pending",
+        created_at:   now,
+        updated_at:   now,
+      });
+      if (insErr) { setErr(insErr.message); setSaving(false); return; }
+      // Realtime subscription will render the new row; reset the form.
+      setOpen(false); setChoice("background_check"); setCustom(""); setSaving(false);
+    } catch (e: any) {
+      setErr(e?.message ?? "Failed to add."); setSaving(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)}
+        style={{ marginTop:4, padding:"8px 12px", borderRadius:8, border:"1px dashed rgba(129,140,248,0.4)", background:"transparent", color:"#818cf8", fontSize:12, cursor:"pointer", display:"flex", alignItems:"center", gap:6, width:"fit-content" }}>
+        + Add credential
+      </button>
+    );
+  }
+
+  return (
+    <div style={{ marginTop:6, padding:12, borderRadius:8, border:"1px solid rgba(129,140,248,0.3)", background:"rgba(99,102,241,0.06)", display:"flex", flexDirection:"column", gap:8 }}>
+      <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
+        <select value={choice} onChange={e => setChoice(e.target.value)}
+          style={{ padding:"7px 10px", borderRadius:6, background:"#0d1117", color:"#fff", border:"1px solid rgba(255,255,255,0.15)", fontSize:13 }}>
+          {ADD_TYPES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+        </select>
+        {choice === "__custom__" && (
+          <input value={custom} onChange={e => setCustom(e.target.value)} placeholder="Credential name"
+            style={{ padding:"7px 10px", borderRadius:6, background:"#0d1117", color:"#fff", border:"1px solid rgba(255,255,255,0.15)", fontSize:13, flex:1, minWidth:140 }} />
+        )}
+      </div>
+      {err && <p style={{ fontSize:11, color:"#f87171", margin:0 }}>{err}</p>}
+      <div style={{ display:"flex", gap:8 }}>
+        <button onClick={submit} disabled={saving}
+          style={{ padding:"7px 14px", borderRadius:6, border:"none", background:"#6366f1", color:"#fff", fontSize:13, fontWeight:500, cursor: saving ? "default" : "pointer", opacity: saving ? 0.6 : 1 }}>
+          {saving ? "Adding\u2026" : "Add"}
+        </button>
+        <button onClick={() => { setOpen(false); setErr(""); }}
+          style={{ padding:"7px 14px", borderRadius:6, border:"1px solid rgba(255,255,255,0.1)", background:"transparent", color:"rgba(255,255,255,0.5)", fontSize:13, cursor:"pointer" }}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Candidate row ─────────────────────────────────────────────────────────────
 const CandidateRow = memo(function CandidateRow({ group, reviewer, onUpdate, expanded, onToggle }: {
   group:    CandidateGroup;
@@ -297,6 +387,7 @@ const CandidateRow = memo(function CandidateRow({ group, reviewer, onUpdate, exp
                     onUpdate={updated => onUpdate(group.candidate_id, updated)} />
                 ))
             }
+            <AddCredential candidateId={group.candidate_id} />
           </div>
         </div>
       )}
