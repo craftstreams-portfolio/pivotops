@@ -387,6 +387,7 @@ const CandidateRow = memo(function CandidateRow({ group, reviewer, onUpdate, exp
                     onUpdate={updated => onUpdate(group.candidate_id, updated)} />
                 ))
             }
+            <div style={{ padding:8, background:"#ff00ff", color:"#000", fontSize:12, fontWeight:700, borderRadius:6, marginTop:8 }}>TEST MARKER - add credential area</div>
             <AddCredential candidateId={group.candidate_id} />
           </div>
         </div>
