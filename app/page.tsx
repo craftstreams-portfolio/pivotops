@@ -685,6 +685,7 @@ export default function LandingPage() {
               <div className="space-y-2 text-sm text-zinc-500">
                 <a href="/legal/terms" className="block hover:text-white transition">Terms of Use</a>
                 <a href="/legal/privacy" className="block hover:text-white transition">Privacy Policy</a>
+                <a href="/legal/security" className="block hover:text-white transition">Security</a>
                 <a href="/legal/refunds" className="block hover:text-white transition">Refund Policy</a>
                 <button onClick={() => { localStorage.removeItem("pivotops_cookie_consent"); window.location.reload(); }}
                   className="block text-left text-sm text-zinc-500 hover:text-white transition">Cookie Preferences</button>
@@ -699,6 +700,8 @@ export default function LandingPage() {
               <a href="/legal/terms" className="hover:text-zinc-400 transition">Terms of Use</a>
               <span>·</span>
               <a href="/legal/privacy" className="hover:text-zinc-400 transition">Privacy Policy</a>
+              <span>·</span>
+              <a href="/legal/security" className="hover:text-zinc-400 transition">Security</a>
               <a href="/contact" className="hover:text-zinc-400 transition">Contact</a>
               <span>·</span>
               <a href="/legal/refunds" className="hover:text-zinc-400 transition">Refund Policy</a>
