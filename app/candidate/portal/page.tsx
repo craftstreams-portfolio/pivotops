@@ -1,17 +1,14 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabase";
 import {
   Upload, Eye, CheckCircle2, XCircle,
   Brain, Loader2, AlertCircle, ZoomIn,
   ZoomOut, X, FileText, Shield, LogOut, Plus,
 } from "lucide-react";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const MAX_FILE_SIZE_MB = 10;

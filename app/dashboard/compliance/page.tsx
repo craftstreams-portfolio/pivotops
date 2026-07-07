@@ -153,15 +153,43 @@ function RejectModal({ docName, onConfirm, onCancel }: { docName:string; onConfi
 // ─────────────────────────────────────────
 // CREDENTIAL ROW — stays open after OK/Reject
 // ─────────────────────────────────────────
-function CredRow({ doc, onApprove, onReject, updating }: {
+function CredRow({ doc, candidateId, accountId, tenantId, onApprove, onReject, updating }: {
   doc: CredentialDoc;
+  candidateId: string;
+  accountId:   string;
+  tenantId:    string;
   onApprove: (id: string) => void;
   onReject:  (id: string, r: string) => void;
   updating:  string | null;
 }) {
   const [viewing, setViewing] = useState(false);
   const [modal,   setModal]   = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [upErr, setUpErr] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const busy = updating === doc.id;
+
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUpErr(null);
+    if (file.size > 15 * 1024 * 1024) { setUpErr("Max 15MB."); return; }
+    setUploading(true);
+    try {
+      const path = `${tenantId}/${candidateId}/${doc.doc_type}-${Date.now()}-${file.name}`;
+      const { error: upE } = await supabase.storage.from("credentials").upload(path, file, { upsert: true, contentType: file.type });
+      if (upE) { setUpErr(upE.message); setUploading(false); return; }
+      const { data: urlData } = supabase.storage.from("credentials").getPublicUrl(path);
+      const { error: updE } = await supabase.from("candidate_credentials").update({
+        file_url: urlData.publicUrl, file_name: file.name, file_size: file.size,
+        status: "uploaded", updated_at: new Date().toISOString(),
+      }).eq("id", doc.id);
+      if (updE) { setUpErr(updE.message); setUploading(false); return; }
+      setUploading(false);
+    } catch (err: any) {
+      setUpErr(err?.message ?? "Upload failed."); setUploading(false);
+    }
+  }
 
   return (
     <>
@@ -268,9 +296,17 @@ function CredRow({ doc, onApprove, onReject, updating }: {
                 <XCircle size={10} /> Rejected
               </span>
             )}
-            {doc.status === "pending" && (
-              <span className="text-[10px] text-zinc-600">Awaiting upload</span>
+            {!doc.file_url && (
+              <>
+                <input ref={fileRef} type="file" className="hidden" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" onChange={handleUpload} />
+                <button onClick={() => fileRef.current?.click()} disabled={uploading}
+                  className="flex items-center gap-1 px-2 py-1.5 rounded-lg border border-indigo-500/40 text-[11px] text-indigo-400 hover:bg-indigo-500/10 transition disabled:opacity-40">
+                  {uploading ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}
+                  {uploading ? "Uploading" : "Upload"}
+                </button>
+              </>
             )}
+            {upErr && <span className="text-[10px] text-red-400">{upErr}</span>}
           </div>
         </div>
       </div>
@@ -282,6 +318,87 @@ function CredRow({ doc, onApprove, onReject, updating }: {
 // CANDIDATE CARD — never collapses on doc update
 // Uses useRef for expanded state to survive re-renders
 // ─────────────────────────────────────────
+const ADD_CRED_TYPES: { key: string; label: string }[] = [
+  { key: "background_check",    label: "Background Check" },
+  { key: "employee_evaluation", label: "Employee Evaluation" },
+  { key: "reference_check",     label: "Reference Check" },
+  { key: "i9_form",             label: "I-9 Form" },
+  { key: "w4_form",             label: "W-4 Form" },
+  { key: "offer_letter",        label: "Offer Letter" },
+  { key: "skills_assessment",   label: "Skills Assessment" },
+  { key: "__custom__",          label: "Custom\u2026" },
+];
+
+function AddCredential({ candidateId, accountId, tenantId }: { candidateId: string; accountId: string; tenantId: string }) {
+  const [open, setOpen]     = useState(false);
+  const [choice, setChoice] = useState("background_check");
+  const [custom, setCustom] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr]       = useState("");
+
+  async function submit() {
+    setErr("");
+    const isCustom = choice === "__custom__";
+    const label = isCustom ? custom.trim() : (ADD_CRED_TYPES.find(t => t.key === choice)?.label ?? choice);
+    if (!label) { setErr("Enter a name."); return; }
+    const docType = isCustom ? custom.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") : choice;
+    if (!docType) { setErr("Enter a valid name."); return; }
+    setSaving(true);
+    try {
+      const now = new Date().toISOString();
+      const { error: insErr } = await supabase.from("candidate_credentials").insert({
+        candidate_id:         candidateId,
+        candidate_account_id: accountId,
+        tenant_id:            tenantId,
+        doc_type:             docType,
+        name:         label,
+        status:       "pending",
+        created_at:   now,
+        updated_at:   now,
+      });
+      if (insErr) { setErr(insErr.message.includes("duplicate") || insErr.message.includes("unique") ? "This credential already exists for this candidate." : insErr.message); setSaving(false); return; }
+      setOpen(false); setChoice("background_check"); setCustom(""); setSaving(false);
+    } catch (e: any) {
+      setErr(e?.message ?? "Failed to add."); setSaving(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)}
+        className="mt-2 flex items-center gap-1.5 px-3 py-2 rounded-lg border border-dashed border-indigo-400/40 text-indigo-400 text-xs hover:bg-indigo-500/5 transition w-fit">
+        + Add credential
+      </button>
+    );
+  }
+
+  return (
+    <div className="mt-2 p-3 rounded-lg border border-indigo-400/30 bg-indigo-500/5 flex flex-col gap-2">
+      <div className="flex gap-2 items-center flex-wrap">
+        <select value={choice} onChange={e => setChoice(e.target.value)}
+          className="px-2.5 py-1.5 rounded-md bg-zinc-900 text-white border border-zinc-700 text-sm">
+          {ADD_CRED_TYPES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+        </select>
+        {choice === "__custom__" && (
+          <input value={custom} onChange={e => setCustom(e.target.value)} placeholder="Credential name"
+            className="px-2.5 py-1.5 rounded-md bg-zinc-900 text-white border border-zinc-700 text-sm flex-1 min-w-[140px]" />
+        )}
+      </div>
+      {err && <p className="text-[11px] text-red-400 m-0">{err}</p>}
+      <div className="flex gap-2">
+        <button onClick={submit} disabled={saving}
+          className="px-3.5 py-1.5 rounded-md bg-indigo-600 text-white text-sm font-medium disabled:opacity-60">
+          {saving ? "Adding\u2026" : "Add"}
+        </button>
+        <button onClick={() => { setOpen(false); setErr(""); }}
+          className="px-3.5 py-1.5 rounded-md border border-zinc-700 text-zinc-400 text-sm">
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function CandidateCard({ group, tenantId, recruiterName, recruiterId, onUpdate, expanded, onToggle }: {
   group:         CandidateGroup;
   tenantId:      string;
@@ -461,12 +578,16 @@ function CandidateCard({ group, tenantId, recruiterName, recruiterId, onUpdate, 
               <CredRow
                 key={doc.id}
                 doc={doc}
+                candidateId={group.candidateId}
+                accountId={group.accountId}
+                tenantId={tenantId}
                 onApprove={approve}
                 onReject={reject}
                 updating={updating}
               />
             ))
           )}
+          <AddCredential candidateId={group.candidateId} accountId={group.accountId} tenantId={tenantId} />
           {group.overallStatus === "complete" && (
             <div className="flex items-center gap-2 px-4 py-3 rounded-xl
                             bg-emerald-500/10 border border-emerald-500/20 mt-3">

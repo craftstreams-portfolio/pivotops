@@ -1,17 +1,14 @@
 "use client";
 
 import { useEffect, useState, useCallback, memo } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabase";
 import {
   CheckCircle2, XCircle, Eye, FileText, AlertCircle,
   Loader2, RefreshCw, Search, ChevronDown, Shield,
   Clock, User, Download, Filter
 } from "lucide-react";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+
 
 const CREDENTIAL_LABELS: Record<string, string> = {
   resume:           "Resume / CV",
@@ -387,8 +384,6 @@ const CandidateRow = memo(function CandidateRow({ group, reviewer, onUpdate, exp
                     onUpdate={updated => onUpdate(group.candidate_id, updated)} />
                 ))
             }
-            <div style={{ padding:8, background:"#ff00ff", color:"#000", fontSize:12, fontWeight:700, borderRadius:6, marginTop:8 }}>TEST MARKER - add credential area</div>
-            <AddCredential candidateId={group.candidate_id} />
           </div>
         </div>
       )}

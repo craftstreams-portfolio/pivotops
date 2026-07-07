@@ -1,17 +1,14 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabase";
 import {
   Folder, FolderOpen, FileText, Plus, Upload, Download,
   Trash2, Edit2, Check, X, Loader2, Shield, ChevronRight,
   File, Save, AlertCircle, Eye, MoreHorizontal
 } from "lucide-react";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+
 
 const BUCKET = "admin-documents";
 const TENANT = "default";
