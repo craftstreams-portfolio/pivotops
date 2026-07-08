@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { isValidEmail } from "@/lib/validation";
 import { supabase } from "@/lib/supabase";
 import { X, Mail, Send, Copy, Check, Loader2, AlertCircle, Users } from "lucide-react";
 
@@ -64,6 +65,7 @@ export default function TeamInvitePanel({
 
   async function handleInvite() {
     if (!email.trim()) return;
+    if (!isValidEmail(email)) { setError("Please enter a valid email address."); return; }
     setSending(true);
     setError("");
     setLastLink("");

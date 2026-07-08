@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { isValidEmail } from "@/lib/validation";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { Mail, Lock, Eye, EyeOff, Brain, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
@@ -49,6 +50,7 @@ function LoginForm({ candidateId, tenantId }: { candidateId: string; tenantId: s
   const handleLogin = async () => {
     if (locked) return;
     if (!email.trim() || !password) { showToast("error", "Email and password are required."); return; }
+    if (!isValidEmail(email)) { showToast("error", "Please enter a valid email address."); return; }
     setLoading(true);
 
     try {

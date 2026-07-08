@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, Suspense } from "react";
+import { isValidEmail } from "@/lib/validation";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -194,6 +195,7 @@ function LoginPage() {
 
   async function handleSubmit() {
     if (!email || !password) return;
+    if (!isValidEmail(email)) { setError("Please enter a valid email address."); return; }
     setLoading(true);
     setError("");
     setSuccess("");
@@ -293,6 +295,7 @@ function LoginPage() {
 
   async function handleForgotPassword() {
     if (!email.trim()) { setError("Please enter your email address."); return; }
+    if (!isValidEmail(email)) { setError("Please enter a valid email address."); return; }
     setLoading(true); setError(""); setSuccess("");
     try {
       const { error: resetErr } = await supabase.auth.resetPasswordForEmail(

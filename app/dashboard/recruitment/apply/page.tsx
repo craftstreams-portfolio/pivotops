@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
+import { isValidEmail } from "@/lib/validation";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useTenant } from "@/lib/hooks/useTenant";
@@ -199,6 +200,7 @@ export default function ApplicationPage() {
 
   const handleSubmit = async () => {
     if (!canSubmit || loading) return;
+    if (!isValidEmail(email)) { showToast("error", "Please enter a valid email address."); return; }
     setLoading(true);
     try {
       showToast("info", "Xavier AI is scoring your application...");

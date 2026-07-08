@@ -1,6 +1,7 @@
 "use client";
 
 import { supabase }    from "../../../lib/supabase";
+import { isValidEmail } from "@/lib/validation";
 import { useEffect, useState, useCallback } from "react";
 import {
   CalendarDays, Clock3, Users, Plus, X, Video,
@@ -446,6 +447,10 @@ export default function CalendarPage() {
     if (!dateVal)        { setFormError("Please pick a date.");           return; }
     if (isInterview && !candidateEmail.trim()) {
       setFormError("Candidate email is required for interview scheduling.");
+      return;
+    }
+    if (isInterview && !isValidEmail(candidateEmail)) {
+      setFormError("Please enter a valid candidate email address.");
       return;
     }
 

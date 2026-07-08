@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
+import { isValidEmail } from "@/lib/validation";
 import { supabase } from "@/lib/supabase";
 import { useTenant } from "@/lib/hooks/useTenant";
 import {
@@ -139,6 +140,7 @@ export default function ApplicationPage() {
   // ── Submit ─────────────────────────────────────────────────
   const handleSubmit = async () => {
     if (!canSubmit || loading) return;
+    if (!isValidEmail(email)) { showToast("error", "Please enter a valid email address."); return; }
     setLoading(true);
 
     try {

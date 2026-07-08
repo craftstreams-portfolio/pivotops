@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { supabase }          from "@/lib/supabase";
 import { useTenant }         from "@/lib/hooks/useTenant";
+import { isValidEmail }      from "@/lib/validation";
 import { FeatureGate }       from "@/app/components/FeatureGate";
 import { getCurrentProfile } from "@/lib/profile/profile.service";
 import {
@@ -625,7 +626,7 @@ function SignatureModal({ file, onClose }: { file: AdminFile; onClose: () => voi
 
   async function send() {
     setErr(null);
-    const valid = parties.filter(p => /\S+@\S+\.\S+/.test(p.email));
+    const valid = parties.filter(p => isValidEmail(p.email));
     if (valid.length === 0) { setErr("Add at least one valid email."); return; }
     setSending(true);
     try {

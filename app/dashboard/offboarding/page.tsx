@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { isValidEmail } from "@/lib/validation";
 import { useTenant } from "@/lib/hooks/useTenant";
 import {
   UserMinus, CheckCircle2, AlertCircle,
@@ -132,6 +133,7 @@ export default function OffboardingPage() {
   const handleCreate = async () => {
     if (!name.trim())    { showToast("error", "Employee name is required"); return; }
     if (!email.trim())   { showToast("error", "Email is required");         return; }
+    if (!isValidEmail(email)) { showToast("error", "Please enter a valid email address."); return; }
     if (!lastDay)        { showToast("error", "Last day is required");      return; }
 
     setSaving(true);

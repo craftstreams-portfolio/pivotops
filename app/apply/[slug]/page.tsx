@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { isValidEmail } from "@/lib/validation";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -100,6 +101,7 @@ export default function ApplyPortalPage() {
 
   const handleSubmit = async () => {
     if (!canSubmit || loading) return;
+    if (!isValidEmail(email)) { showToast("error", "Please enter a valid email address."); return; }
     setLoading(true);
     try {
       const tempId = crypto.randomUUID();

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { isValidEmail } from "@/lib/validation";
 import { Mail, Send, CheckCircle2, Loader2 } from "lucide-react";
 
 export default function ContactPage() {
@@ -17,6 +18,10 @@ export default function ContactPage() {
     setError("");
     if (!name.trim() || !email.trim() || !message.trim()) {
       setError("Please fill in your name, email, and message.");
+      return;
+    }
+    if (!isValidEmail(email)) {
+      setError("Please enter a valid email address.");
       return;
     }
     setSending(true);
