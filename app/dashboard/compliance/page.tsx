@@ -704,15 +704,24 @@ function AdminFileRow({ file, folderId, tenantId, onUpdate, onDelete }: {
   const [viewing,   setViewing]   = useState(false);
   const [viewUrl,   setViewUrl]   = useState<string|null>(null);
   const [signing,   setSigning]   = useState(false);
+  const [viewLoading, setViewLoading] = useState(false);
   async function openViewer() {
     if (!file.file_url) return;
-    const marker = "/admin-documents/";
-    const idx = file.file_url.indexOf(marker);
-    const path = idx >= 0 ? decodeURIComponent(file.file_url.substring(idx + marker.length)) : null;
-    if (!path) { setViewUrl(file.file_url); setViewing(true); return; }
-    const { data } = await supabase.storage.from("admin-documents").createSignedUrl(path, 3600);
-    setViewUrl(data?.signedUrl ?? file.file_url);
-    setViewing(true);
+    setViewLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) { alert("Not authenticated."); setViewLoading(false); return; }
+      const res = await fetch(`/api/admin-doc/view?fileId=${encodeURIComponent(file.id)}`, {
+        headers: { "Authorization": `Bearer ${token}` },
+      });
+      const json = await res.json();
+      if (!res.ok || !json.url) { alert(json.error ?? "Could not open document."); setViewLoading(false); return; }
+      window.open(json.url, "_blank", "noopener,noreferrer");
+      setViewLoading(false);
+    } catch (e: any) {
+      alert(e?.message ?? "Could not open document."); setViewLoading(false);
+    }
   }
   const ref = useRef<HTMLInputElement>(null);
 
@@ -748,7 +757,6 @@ function AdminFileRow({ file, folderId, tenantId, onUpdate, onDelete }: {
   const sc = file.status==="active"?"text-emerald-400":file.status==="archived"?"text-zinc-500":"text-amber-400";
   return (
     <>
-      {viewing && viewUrl && <DocViewer url={viewUrl} name={file.file_name??file.name} onClose={()=>{setViewing(false);setViewUrl(null);}}/>}
       {signing && <SignatureModal file={file} onClose={()=>setSigning(false)}/>}
       <div className="flex items-center gap-2 px-3 py-2.5 bg-zinc-900 rounded-lg border border-zinc-800 mb-1.5">
         <File size={13} className="text-zinc-600 flex-shrink-0"/>
