@@ -425,6 +425,39 @@ function SpotlightCard({
           </div>
         )}
 
+        {/* Xavier Performance Breakdown */}
+        {post.metadata?.performance && (
+          <div className="mt-3 px-3 py-3 rounded-xl bg-teal-500/5 border border-teal-500/15">
+            <p className="text-[10px] text-teal-400 font-semibold mb-2 flex items-center gap-1">
+              <Brain size={10} /> Xavier Performance Breakdown
+              <span className="text-zinc-600 font-normal ml-1">· {post.metadata.performance.month}</span>
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { label: "Attendance", m: post.metadata.performance.attendance?.days_present, unit: " days" },
+                { label: "Hours worked", m: post.metadata.performance.attendance?.hours_worked, unit: "h" },
+                { label: "On-time rate", m: post.metadata.performance.punctuality?.on_time_rate, unit: "%" },
+                { label: "Late arrivals", m: post.metadata.performance.punctuality?.late_count, unit: "" },
+                { label: "Closing rate", m: post.metadata.performance.recruitment?.closing_rate, unit: "%" },
+                { label: "Hires", m: post.metadata.performance.recruitment?.hires, unit: "" },
+                { label: "Tasks completed", m: post.metadata.performance.productivity?.tasks_completed, unit: "" },
+                { label: "Avg response time", m: post.metadata.performance.response_time?.avg_minutes, unit: "m" },
+              ].map(({ label, m, unit }) => (
+                <div key={label} className="px-2.5 py-2 rounded-lg bg-zinc-900/60 border border-zinc-800">
+                  <p className="text-[9px] text-zinc-500 uppercase tracking-wide">{label}</p>
+                  {m?.available ? (
+                    <p className="text-sm text-white font-semibold">{m.value}{unit}</p>
+                  ) : (
+                    <p className="text-[11px] text-zinc-600 italic mt-0.5">Not tracked</p>
+                  )}
+                  {m?.available && m.detail && <p className="text-[9px] text-zinc-600 mt-0.5">{m.detail}</p>}
+                </div>
+              ))}
+            </div>
+            <p className="text-[9px] text-zinc-600 mt-2 italic">Auto-generated from clocking, recruitment, and task data. Metrics marked "not tracked" lack sufficient data.</p>
+          </div>
+        )}
+
         {/* Rejection reason */}
         {post.approval_status === "rejected" && post.rejection_reason && (
           <div className="mt-3 px-3 py-2 rounded-xl bg-red-500/5 border border-red-500/15">
