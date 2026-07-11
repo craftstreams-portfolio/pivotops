@@ -84,8 +84,10 @@ export async function POST(req: Request) {
         `Their avatar is now displayed on every employee's dashboard for ${monthLabel}.`,
       ].filter(Boolean).join("\n");
 
+      const { data: tmCh } = await getAdmin().from("channels").select("id").eq("tenant_id", tenantId).eq("name", "teams-media").maybeSingle();
+      if (!tmCh?.id) { console.error("[spotlight reveal] no teams-media channel for tenant", tenantId); }
       await getAdmin().from("messages").insert({
-        channel_id:  TEAMS_MEDIA_CHANNEL,
+        channel_id:  tmCh?.id ?? TEAMS_MEDIA_CHANNEL,
         content,
         user_id:     "00000000-0000-0000-0000-000000000000",
         user_name:   "PivotOps · Spotlight",

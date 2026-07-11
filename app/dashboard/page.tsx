@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase }   from "@/lib/supabase";
 import { useTenant }  from "@/lib/hooks/useTenant";
+import SpotlightOfMonthBanner from "@/app/dashboard/components/SpotlightOfMonthBanner";
 import {
   PieChart, Pie, Cell, ResponsiveContainer,
   AreaChart, Area, XAxis, YAxis, Tooltip,
@@ -346,6 +347,7 @@ export default function DashboardPage() {
 
   return (
     <div className="p-4 md:p-6 space-y-6">
+      <SpotlightOfMonthBanner />
 
       {/* ── PAGE HEADER ── */}
       <div className="flex items-center justify-between gap-4 flex-wrap">

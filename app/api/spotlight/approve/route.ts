@@ -7,7 +7,11 @@ import { z } from "zod";
 const SpotlightActionSchema = z.object({ spotlightId: z.string().uuid(), action: z.enum(["approve","reject"]), managerName: z.string().max(255).optional(), analysis: z.string().max(2000).optional(), rejectionReason: z.string().max(1000).optional() });
 type SpotlightActionInput = z.infer<typeof SpotlightActionSchema>;
 async function postToTeamsMedia(content: string, tenantId: string, meta?: Record<string, unknown>) {
-  await getAdmin().from("messages").insert({ channel_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890", content, user_id: "00000000-0000-0000-0000-000000000000", user_name: "PivotOps Spotlight", tenant_id: tenantId, type: "system", retracted: false, reactions: {}, meta: meta ?? null, created_at: new Date().toISOString() });
+  const admin = getAdmin();
+  // Resolve this tenant's own teams-media channel (do NOT hardcode - each tenant has its own).
+  const { data: ch } = await admin.from("channels").select("id").eq("tenant_id", tenantId).eq("name", "teams-media").maybeSingle();
+  if (!ch?.id) { console.error("[spotlight] no teams-media channel for tenant", tenantId); return; }
+  await admin.from("messages").insert({ channel_id: ch.id, content, user_id: "00000000-0000-0000-0000-000000000000", user_name: "PivotOps Spotlight", tenant_id: tenantId, type: "system", retracted: false, reactions: {}, meta: meta ?? null, created_at: new Date().toISOString() });
 }
 export const POST = withSecurity<SpotlightActionInput>(
   async (_req, { auth, body }) => {

@@ -10,7 +10,7 @@ import {
   CheckCircle2, AlertCircle, Search,
   Sparkles, Loader2, Brain, Trophy,
   ChevronDown, ThumbsUp, ThumbsDown,
-  Clock, ShieldCheck,
+  Clock, ShieldCheck, Share2, Download,
 } from "lucide-react";
 
 // ─────────────────────────────────────────
@@ -326,6 +326,112 @@ function ApprovalModal({
 // ─────────────────────────────────────────
 // SPOTLIGHT CARD
 // ─────────────────────────────────────────
+async function downloadSpotlightCard(post: SpotlightPost, tenantId: string | null) {
+  let companyName = "PivotOps";
+  if (tenantId) {
+    const { data: t } = await supabase.from("tenants").select("org_name").eq("id", tenantId).single();
+    if (t?.org_name) companyName = t.org_name;
+  }
+  const W = 1200, H = 630;
+  const canvas = document.createElement("canvas");
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  // Background
+  ctx.fillStyle = "#06070D";
+  ctx.fillRect(0, 0, W, H);
+  // Subtle teal glow top-right
+  const grad = ctx.createRadialGradient(W - 100, 80, 40, W - 100, 80, 500);
+  grad.addColorStop(0, "rgba(0,191,166,0.12)");
+  grad.addColorStop(1, "rgba(0,191,166,0)");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Left accent bar
+  ctx.fillStyle = "#00BFA6";
+  ctx.fillRect(0, 0, 8, H);
+
+  // Header label
+  ctx.fillStyle = "#00BFA6";
+  ctx.font = "600 24px Arial, sans-serif";
+  ctx.fillText("EMPLOYEE OF THE MONTH", 80, 90);
+
+  // Month
+  const monthLabel = post.spotlight_month
+    ? new Date(post.spotlight_month).toLocaleString("en-US", { month: "long", year: "numeric" })
+    : "";
+  ctx.fillStyle = "#7a7f8c";
+  ctx.font = "400 20px Arial, sans-serif";
+  ctx.fillText(monthLabel, 80, 122);
+
+  // Photo (circular) — draw if available
+  const drawText = () => {
+    // Name
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "700 64px Arial, sans-serif";
+    ctx.fillText(post.created_by ?? "", 80, 300);
+    // Highlight (reason) — wrapped, text only, no metrics
+    ctx.fillStyle = "#c9ccd4";
+    ctx.font = "400 30px Arial, sans-serif";
+    const words = (post.reason ?? "").split(" ");
+    let line = "", y = 360;
+    const maxW = post.image_url ? 700 : 1040;
+    for (const w of words) {
+      const test = line + w + " ";
+      if (ctx.measureText(test).width > maxW && line) {
+        ctx.fillText(line.trim(), 80, y); line = w + " "; y += 42;
+        if (y > 500) break;
+      } else line = test;
+    }
+    if (line.trim() && y <= 500) ctx.fillText(line.trim(), 80, y);
+    // Footer brand
+    ctx.fillStyle = "#00BFA6";
+    ctx.font = "700 26px Arial, sans-serif";
+    const brandW = ctx.measureText(companyName).width;
+    ctx.fillText(companyName, 80, H - 50);
+    ctx.fillStyle = "#5a5f6c";
+    ctx.font = "400 18px Arial, sans-serif";
+    ctx.fillText("Powered by PivotOps", 80 + brandW + 28, H - 50);
+    // Trophy accent
+    ctx.font = "80px Arial";
+    ctx.fillText("🏆", W - 150, 140);
+  };
+
+  if (post.image_url) {
+    await new Promise<void>((resolve) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        const size = 300, cx = W - 260, cy = H / 2;
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(cx, cy, size / 2, 0, Math.PI * 2);
+        ctx.closePath();
+        ctx.clip();
+        ctx.drawImage(img, cx - size / 2, cy - size / 2, size, size);
+        ctx.restore();
+        // Ring
+        ctx.strokeStyle = "#00BFA6";
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.arc(cx, cy, size / 2, 0, Math.PI * 2);
+        ctx.stroke();
+        resolve();
+      };
+      img.onerror = () => resolve();
+      img.src = post.image_url as string;
+    });
+  }
+  drawText();
+
+  // Download
+  const url = canvas.toDataURL("image/png");
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `spotlight-${(post.created_by ?? "employee").replace(/\s+/g, "-").toLowerCase()}.png`;
+  a.click();
+}
 function SpotlightCard({
   post, currentUser, reactions, onReact, onPin, onReview, tenantId,
 }: {
@@ -398,6 +504,13 @@ function SpotlightCard({
               {post.approval_status === "pending"  ? "⏳ Pending Review" :
                post.approval_status === "approved" ? "✅ Approved"       : "❌ Rejected"}
             </span>
+            {currentUser && post.approval_status === "approved" && (
+              <button onClick={() => downloadSpotlightCard(post, tenantId)}
+                title="Download shareable card"
+                className="w-7 h-7 rounded-lg flex items-center justify-center transition bg-zinc-800 text-zinc-600 hover:text-teal-400">
+                <Share2 size={13} />
+              </button>
+            )}
             {currentUser && (
               <button onClick={() => onPin(post.id, !post.pinned)}
                 className={`w-7 h-7 rounded-lg flex items-center justify-center transition
