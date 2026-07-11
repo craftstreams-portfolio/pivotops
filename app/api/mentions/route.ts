@@ -1,6 +1,6 @@
 import { NextResponse, NextRequest } from "next/server";
 import { z } from "zod";
-import { supabase } from "@/lib/supabase";
+import { getAdmin } from "@/lib/supabase-admin";
 import { withSecurity } from "@/lib/security/withSecurity";
 import { RATE_LIMITS } from "@/lib/security/rateLimit";
 import { processMentions, resolveMention, getMentionAnalytics, xavierAutoEscalate } from "@/lib/mentions/mention.engine";
@@ -33,7 +33,7 @@ export const POST = withSecurity(
       if (!content || !context || !createdBy) {
         return NextResponse.json({ message: "content, context and createdBy are required" }, { status: 400 });
       }
-      const { data: profiles } = await supabase.from("profiles").select("id, full_name, email").eq("tenant_id", tenantId);
+      const { data: profiles } = await getAdmin().from("profiles").select("id, full_name, email").eq("tenant_id", tenantId);
       const mentions = await processMentions({ content, context: context as any, taskId, createdBy, tenantId, profiles: profiles ?? [] });
       return NextResponse.json({ success: true, mentions: mentions.length, parsed: mentions.map((m) => ({ id: m.id, mentionType: m.mention_type, refName: m.ref_name, escalated: m.escalated })) });
     }
@@ -65,7 +65,7 @@ export const GET = withSecurity(
     const tenantId = auth!.tenantId;
     const taskId = req.nextUrl.searchParams.get("taskId");
     const resolved = req.nextUrl.searchParams.get("resolved");
-    let query = supabase.from("mentions").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: false });
+    let query = getAdmin().from("mentions").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: false });
     if (taskId) query = query.eq("task_id", taskId);
     if (resolved === "0") query = query.eq("resolved", false);
     if (resolved === "1") query = query.eq("resolved", true);

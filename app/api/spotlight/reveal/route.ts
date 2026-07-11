@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { supabase }     from "@/lib/supabase";
 import { getAdmin } from "@/lib/supabase-admin";
 
 const TEAMS_MEDIA_CHANNEL = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
@@ -29,7 +28,7 @@ export async function POST(req: Request) {
     const now = new Date();
 
     // Find all spotlights ready to reveal (reveal_at <= now, approved, not yet visible)
-    const { data: due, error } = await supabase
+    const { data: due, error } = await getAdmin()
       .from("spotlights")
       .select("*")
       .eq("approval_status", "approved")
@@ -51,13 +50,13 @@ export async function POST(req: Request) {
       });
 
       // Mark as revealed in metadata
-      await supabase.from("spotlights").update({
+      await getAdmin().from("spotlights").update({
         metadata:   { ...(spotlight.metadata ?? {}), revealed: true, revealed_at: now.toISOString() },
         updated_at: now.toISOString(),
       }).eq("id", spotlight.id);
 
       // Get avatar from profiles
-      const { data: profile } = await supabase
+      const { data: profile } = await getAdmin()
         .from("profiles")
         .select("avatar_url")
         .eq("id", spotlight.user_id ?? "")
@@ -66,7 +65,7 @@ export async function POST(req: Request) {
       const avatarUrl = spotlight.image_url ?? profile?.avatar_url ?? null;
 
       // Update spotlight_of_month with avatar
-      await supabase.from("spotlight_of_month").update({
+      await getAdmin().from("spotlight_of_month").update({
         avatar_url: avatarUrl,
       }).eq("spotlight_id", spotlight.id);
 
@@ -105,7 +104,7 @@ export async function POST(req: Request) {
       });
 
       // Xavier notification to all users
-      await supabase.from("xavier_notifications").insert({
+      await getAdmin().from("xavier_notifications").insert({
         tenant_id:    tenantId,
         candidate_id: null,
         stage:        "onboarding_complete",
