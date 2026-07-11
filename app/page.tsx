@@ -488,19 +488,14 @@ export default function LandingPage() {
           <div className="flex items-center gap-2.5">
             <PivotOpsLogo size={28} />
             <span className="font-bold tracking-tight text-white">PivotOps</span>
-            <span className="hidden md:inline-flex items-center rounded-full border border-zinc-700 px-3 py-1 text-xs text-zinc-300">
-              Now booking 2026 pilots
-            </span>
+
           </div>
           <nav className="hidden md:flex items-center gap-6 text-sm text-zinc-400">
             <a href="#how-it-works" className="hover:text-white transition">How it works</a>
             <a href="#pricing" className="hover:text-white transition">Pricing</a>
             <a href="#faq" className="hover:text-white transition">FAQ</a>
           </nav>
-          <button onClick={() => goSignup("nav")}
-            className="bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold px-4 py-2 rounded-xl text-sm transition">
-            Join waitlist
-          </button>
+
         </div>
       </header>
 
