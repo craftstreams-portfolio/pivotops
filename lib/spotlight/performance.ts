@@ -101,7 +101,18 @@ export async function buildPerformanceBreakdown(db: SupabaseClient, userId: stri
     tasks_completed: tRows.length > 0 ? { available: true, value: completed, detail: `${completed} completed` } : NA,
   };
 
-  const response_time = { avg_minutes: NA };
+  const { data: respEvents } = await db.from("response_events")
+    .select("response_minutes").eq("tenant_id", tenantId).eq("user_id", userId)
+    .gte("responded_at", startIso).lt("responded_at", endIso);
+  const rEvents = (respEvents ?? []) as { response_minutes: number }[];
+  const avgResp = rEvents.length > 0
+    ? Math.round((rEvents.reduce((s, e) => s + Number(e.response_minutes), 0) / rEvents.length) * 10) / 10
+    : null;
+  const response_time = {
+    avg_minutes: rEvents.length > 0
+      ? { available: true, value: avgResp, detail: `across ${rEvents.length} response${rEvents.length === 1 ? "" : "s"}` }
+      : NA,
+  };
 
   return { user_id: userId, month, generated_at: new Date().toISOString(), attendance, punctuality, recruitment, productivity, response_time };
 }

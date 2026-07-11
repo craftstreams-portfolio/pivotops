@@ -431,6 +431,18 @@ function TaskCenterPageInner() {
       .eq("id", task.id);
     if (error) {
       setTasks((prev) => prev.map((t) => t.id === task.id ? { ...t, done: task.done } : t));
+    } else if (newDone && task.assigned_to && task.created_at) {
+      // Response-time tracking: log task turnaround (created -> completed).
+      const mins = Math.max(0, Math.round((Date.now() - new Date(task.created_at).getTime()) / 60000));
+      supabase.from("response_events").insert({
+        tenant_id:        task.tenant_id ?? tenantId,
+        user_id:          task.assigned_to,
+        kind:             "task",
+        opened_at:        task.created_at,
+        responded_at:     new Date().toISOString(),
+        response_minutes: mins,
+        ref_id:           task.id,
+      }).then(() => {}, () => {}); // fire-and-forget; never blocks the toggle
     }
   };
 

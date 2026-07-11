@@ -393,10 +393,34 @@ export async function resolveMention(
   mentionId:  string,
   resolvedBy: string
 ) {
+  const resolvedAt = new Date().toISOString();
+
+  // Fetch the mention so we can compute response time + tenant.
+  const { data: mention } = await getAdmin()
+    .from("mentions")
+    .select("created_at, tenant_id")
+    .eq("id", mentionId)
+    .single();
+
   await supabase
     .from("mentions")
-    .update({ resolved: true, resolved_at: new Date().toISOString() })
+    .update({ resolved: true, resolved_at: resolvedAt })
     .eq("id", mentionId);
+
+  // Response-time tracking: log how long from mention -> resolution.
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resolvedBy ?? "");
+  if (mention?.created_at && mention?.tenant_id && isUuid) {
+    const mins = Math.max(0, Math.round((new Date(resolvedAt).getTime() - new Date(mention.created_at).getTime()) / 60000));
+    await getAdmin().from("response_events").insert({
+      tenant_id:        mention.tenant_id,
+      user_id:          resolvedBy,
+      kind:             "message",
+      opened_at:        mention.created_at,
+      responded_at:     resolvedAt,
+      response_minutes: mins,
+      ref_id:           mentionId,
+    });
+  }
 
   await emitEvent({
     type: "MENTION_RESOLVED",
