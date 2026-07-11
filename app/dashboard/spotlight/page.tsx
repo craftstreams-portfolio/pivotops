@@ -187,8 +187,8 @@ function ApprovalModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="w-full max-w-lg mx-4 rounded-2xl border border-zinc-800 bg-[#0f0f1a] p-6 space-y-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
+      <div className="w-full max-w-lg mx-4 my-8 rounded-2xl border border-zinc-800 bg-[#0f0f1a] p-6 space-y-5 max-h-[90vh] overflow-y-auto">
 
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -585,7 +585,7 @@ function ComposerModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="w-full max-w-lg mx-4 rounded-2xl border border-zinc-800 bg-[#0f0f1a] p-6 space-y-4">
+      <div className="w-full max-w-lg mx-4 my-8 rounded-2xl border border-zinc-800 bg-[#0f0f1a] p-6 space-y-4 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Sparkles size={16} className="text-amber-400" />
