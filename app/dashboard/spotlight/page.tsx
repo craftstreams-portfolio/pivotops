@@ -326,7 +326,15 @@ function ApprovalModal({
 // ─────────────────────────────────────────
 // SPOTLIGHT CARD
 // ─────────────────────────────────────────
-async function downloadSpotlightCard(post: SpotlightPost, tenantId: string | null) {
+type CardTheme = { id: string; label: string; bg: string; accent: string; text: string; muted: string; glow: string };
+const CARD_THEMES: CardTheme[] = [
+  { id: "midnight", label: "Midnight Teal", bg: "#06070D", accent: "#00BFA6", text: "#ffffff", muted: "#c9ccd4", glow: "0,191,166" },
+  { id: "royal",    label: "Royal Indigo",  bg: "#0A0A1F", accent: "#6366F1", text: "#ffffff", muted: "#c7c9dd", glow: "99,102,241" },
+  { id: "gold",     label: "Executive Gold",bg: "#0D0B06", accent: "#F5B301", text: "#ffffff", muted: "#ded7c4", glow: "245,179,1" },
+  { id: "crimson",  label: "Bold Crimson",  bg: "#12060A", accent: "#F43F5E", text: "#ffffff", muted: "#e2c8ce", glow: "244,63,94" },
+  { id: "light",    label: "Clean Light",   bg: "#F7F8FA", accent: "#0F766E", text: "#0B1220", muted: "#475569", glow: "15,118,110" },
+];
+async function downloadSpotlightCard(post: SpotlightPost, tenantId: string | null, theme: CardTheme = CARD_THEMES[0]) {
   let companyName = "PivotOps";
   if (tenantId) {
     const { data: t } = await supabase.from("tenants").select("org_name").eq("id", tenantId).single();
@@ -339,21 +347,21 @@ async function downloadSpotlightCard(post: SpotlightPost, tenantId: string | nul
   if (!ctx) return;
 
   // Background
-  ctx.fillStyle = "#06070D";
+  ctx.fillStyle = theme.bg;
   ctx.fillRect(0, 0, W, H);
   // Subtle teal glow top-right
   const grad = ctx.createRadialGradient(W - 100, 80, 40, W - 100, 80, 500);
-  grad.addColorStop(0, "rgba(0,191,166,0.12)");
-  grad.addColorStop(1, "rgba(0,191,166,0)");
+  grad.addColorStop(0, `rgba(${theme.glow},0.14)`);
+  grad.addColorStop(1, `rgba(${theme.glow},0)`);
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, H);
 
   // Left accent bar
-  ctx.fillStyle = "#00BFA6";
+  ctx.fillStyle = theme.accent;
   ctx.fillRect(0, 0, 8, H);
 
   // Header label
-  ctx.fillStyle = "#00BFA6";
+  ctx.fillStyle = theme.accent;
   ctx.font = "600 24px Arial, sans-serif";
   ctx.fillText("EMPLOYEE OF THE MONTH", 80, 90);
 
@@ -361,18 +369,18 @@ async function downloadSpotlightCard(post: SpotlightPost, tenantId: string | nul
   const monthLabel = post.spotlight_month
     ? new Date(post.spotlight_month).toLocaleString("en-US", { month: "long", year: "numeric" })
     : "";
-  ctx.fillStyle = "#7a7f8c";
+  ctx.fillStyle = theme.muted;
   ctx.font = "400 20px Arial, sans-serif";
   ctx.fillText(monthLabel, 80, 122);
 
   // Photo (circular) — draw if available
   const drawText = () => {
     // Name
-    ctx.fillStyle = "#ffffff";
+    ctx.fillStyle = theme.text;
     ctx.font = "700 64px Arial, sans-serif";
     ctx.fillText(post.created_by ?? "", 80, 300);
     // Highlight (reason) — wrapped, text only, no metrics
-    ctx.fillStyle = "#c9ccd4";
+    ctx.fillStyle = theme.muted;
     ctx.font = "400 30px Arial, sans-serif";
     const words = (post.reason ?? "").split(" ");
     let line = "", y = 360;
@@ -386,11 +394,11 @@ async function downloadSpotlightCard(post: SpotlightPost, tenantId: string | nul
     }
     if (line.trim() && y <= 500) ctx.fillText(line.trim(), 80, y);
     // Footer brand
-    ctx.fillStyle = "#00BFA6";
+    ctx.fillStyle = theme.accent;
     ctx.font = "700 26px Arial, sans-serif";
     const brandW = ctx.measureText(companyName).width;
     ctx.fillText(companyName, 80, H - 50);
-    ctx.fillStyle = "#5a5f6c";
+    ctx.fillStyle = theme.muted;
     ctx.font = "400 18px Arial, sans-serif";
     ctx.fillText("Powered by PivotOps", 80 + brandW + 28, H - 50);
     // Trophy accent
@@ -412,7 +420,7 @@ async function downloadSpotlightCard(post: SpotlightPost, tenantId: string | nul
         ctx.drawImage(img, cx - size / 2, cy - size / 2, size, size);
         ctx.restore();
         // Ring
-        ctx.strokeStyle = "#00BFA6";
+        ctx.strokeStyle = theme.accent;
         ctx.lineWidth = 5;
         ctx.beginPath();
         ctx.arc(cx, cy, size / 2, 0, Math.PI * 2);
@@ -444,6 +452,7 @@ function SpotlightCard({
   tenantId:    string;
 }) {
   const [showReactions, setShowReactions] = useState(false);
+  const [showThemes, setShowThemes] = useState(false);
   const postReactions  = reactions.filter((r) => r.post_id === post.id);
   const reactionGroups: Record<string, number> = {};
   postReactions.forEach((r) => { reactionGroups[r.reaction] = (reactionGroups[r.reaction] ?? 0) + 1; });
@@ -505,11 +514,27 @@ function SpotlightCard({
                post.approval_status === "approved" ? "✅ Approved"       : "❌ Rejected"}
             </span>
             {currentUser && post.approval_status === "approved" && (
-              <button onClick={() => downloadSpotlightCard(post, tenantId)}
-                title="Download shareable card"
-                className="w-7 h-7 rounded-lg flex items-center justify-center transition bg-zinc-800 text-zinc-600 hover:text-teal-400">
-                <Share2 size={13} />
-              </button>
+              <div className="relative">
+                <button onClick={() => setShowThemes(v => !v)}
+                  title="Download shareable card"
+                  className="w-7 h-7 rounded-lg flex items-center justify-center transition bg-zinc-800 text-zinc-600 hover:text-teal-400">
+                  <Share2 size={13} />
+                </button>
+                {showThemes && (
+                  <div className="absolute right-0 top-9 z-20 w-44 rounded-xl border border-zinc-800 bg-[#0f0f1a] p-2 shadow-2xl">
+                    <p className="text-[10px] text-zinc-500 px-1 pb-1.5">Card theme</p>
+                    {CARD_THEMES.map(th => (
+                      <button key={th.id}
+                        onClick={() => { setShowThemes(false); downloadSpotlightCard(post, tenantId, th); }}
+                        className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-zinc-800 transition">
+                        <span className="w-4 h-4 rounded-full border border-zinc-700 flex-shrink-0"
+                          style={{ background: th.bg, boxShadow: `inset 0 0 0 2px ${th.accent}` }} />
+                        <span className="text-[11px] text-zinc-300">{th.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
             {currentUser && (
               <button onClick={() => onPin(post.id, !post.pinned)}

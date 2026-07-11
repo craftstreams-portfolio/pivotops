@@ -9,7 +9,7 @@ import {
   Award, Plus, X, Upload, Search,
   Briefcase, Star, ChevronDown,
   Loader2, CheckCircle2, Users,
-  BadgeCheck, Edit3, Save,
+  BadgeCheck, Edit3, Save, Share2,
 } from "lucide-react";
 
 // ─────────────────────────────────────────
@@ -69,6 +69,128 @@ function extractMessage(err: unknown): string {
 // ─────────────────────────────────────────
 // SHOWCASE CARD
 // ─────────────────────────────────────────
+type CardTheme = { id: string; label: string; bg: string; accent: string; text: string; muted: string; glow: string };
+const CARD_THEMES: CardTheme[] = [
+  { id: "midnight", label: "Midnight Teal",  bg: "#06070D", accent: "#00BFA6", text: "#ffffff", muted: "#c9ccd4", glow: "0,191,166" },
+  { id: "royal",    label: "Royal Indigo",   bg: "#0A0A1F", accent: "#6366F1", text: "#ffffff", muted: "#c7c9dd", glow: "99,102,241" },
+  { id: "gold",     label: "Executive Gold", bg: "#0D0B06", accent: "#F5B301", text: "#ffffff", muted: "#ded7c4", glow: "245,179,1" },
+  { id: "crimson",  label: "Bold Crimson",   bg: "#12060A", accent: "#F43F5E", text: "#ffffff", muted: "#e2c8ce", glow: "244,63,94" },
+  { id: "light",    label: "Clean Light",    bg: "#F7F8FA", accent: "#0F766E", text: "#0B1220", muted: "#475569", glow: "15,118,110" },
+];
+async function downloadShowcaseCard(profile: ShowcaseProfile, theme: CardTheme = CARD_THEMES[0]) {
+  const W = 1200, H = 630;
+  const canvas = document.createElement("canvas");
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  let companyName = "PivotOps";
+  if (profile.tenant_id) {
+    const { data: tn } = await supabase.from("tenants").select("org_name").eq("id", profile.tenant_id).single();
+    if (tn?.org_name) companyName = tn.org_name;
+  }
+
+  // Background
+  ctx.fillStyle = theme.bg;
+  ctx.fillRect(0, 0, W, H);
+  const grad = ctx.createRadialGradient(W - 120, 100, 40, W - 120, 100, 520);
+  grad.addColorStop(0, `rgba(${theme.glow},0.14)`);
+  grad.addColorStop(1, `rgba(${theme.glow},0)`);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = theme.accent;
+  ctx.fillRect(0, 0, 8, H);
+
+  const name = profile.title ?? profile.created_by ?? "Team Member";
+  const img_url = profile.profile_image ?? profile.media_url ?? null;
+
+  const drawText = () => {
+    ctx.fillStyle = theme.accent;
+    ctx.font = "600 22px Arial, sans-serif";
+    ctx.fillText("NEW TEAM SHOWCASE", 80, 88);
+
+    ctx.fillStyle = theme.text;
+    ctx.font = "700 56px Arial, sans-serif";
+    ctx.fillText(name, 80, 175);
+
+    if (profile.headline) {
+      ctx.fillStyle = theme.accent;
+      ctx.font = "400 26px Arial, sans-serif";
+      ctx.fillText(profile.headline.slice(0, 60), 80, 218);
+    }
+
+    // Bio (wrapped)
+    if (profile.bio) {
+      ctx.fillStyle = theme.muted;
+      ctx.font = "400 22px Arial, sans-serif";
+      const maxW = img_url ? 660 : 1020;
+      const words = profile.bio.split(" ");
+      let line = "", y = 275;
+      for (const w of words) {
+        const test = line + w + " ";
+        if (ctx.measureText(test).width > maxW && line) {
+          ctx.fillText(line.trim(), 80, y); line = w + " "; y += 32;
+          if (y > 360) break;
+        } else line = test;
+      }
+      if (line.trim() && y <= 360) ctx.fillText(line.trim(), 80, y);
+    }
+
+    // Achievements / certifications (top 3)
+    const items = [...(profile.achievements ?? []), ...(profile.certifications ?? [])].slice(0, 3);
+    let ay = 430;
+    for (const it of items) {
+      ctx.fillStyle = theme.accent;
+      ctx.font = "400 20px Arial, sans-serif";
+      ctx.fillText("\u2713", 80, ay);
+      ctx.fillStyle = theme.muted;
+      ctx.font = "400 20px Arial, sans-serif";
+      ctx.fillText(it.slice(0, 52), 108, ay);
+      ay += 34;
+    }
+
+    // Footer
+    ctx.fillStyle = theme.accent;
+    ctx.font = "700 26px Arial, sans-serif";
+    const brandW = ctx.measureText(companyName).width;
+    ctx.fillText(companyName, 80, H - 45);
+    ctx.fillStyle = theme.muted;
+    ctx.font = "400 18px Arial, sans-serif";
+    ctx.fillText("Powered by PivotOps", 80 + brandW + 28, H - 45);
+  };
+
+  if (img_url) {
+    await new Promise<void>((resolve) => {
+      const im = new Image();
+      im.crossOrigin = "anonymous";
+      im.onload = () => {
+        const size = 280, cx = W - 240, cy = H / 2 - 20;
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(cx, cy, size / 2, 0, Math.PI * 2);
+        ctx.closePath();
+        ctx.clip();
+        ctx.drawImage(im, cx - size / 2, cy - size / 2, size, size);
+        ctx.restore();
+        ctx.strokeStyle = theme.accent;
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.arc(cx, cy, size / 2, 0, Math.PI * 2);
+        ctx.stroke();
+        resolve();
+      };
+      im.onerror = () => resolve();
+      im.src = img_url;
+    });
+  }
+  drawText();
+
+  const url = canvas.toDataURL("image/png");
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `showcase-${name.replace(/\s+/g, "-").toLowerCase()}.png`;
+  a.click();
+}
 function ShowcaseCard({
   profile, onEdit, isOwn,
 }: {
@@ -77,6 +199,7 @@ function ShowcaseCard({
   isOwn:   boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [showThemes, setShowThemes] = useState(false);
   const certs    = profile.certifications ?? [];
   const achieves = profile.achievements   ?? [];
   const name     = profile.title ?? profile.created_by ?? "Unknown";
@@ -100,6 +223,30 @@ function ShowcaseCard({
                           justify-center text-xl font-bold shadow-lg">
             {getInitials(name)}
           </div>
+        </div>
+        <div className={`absolute top-3 ${isOwn ? "right-12" : "right-3"} z-10`}>
+          <button
+            onClick={() => setShowThemes(v => !v)}
+            title="Download shareable card"
+            className="w-7 h-7 rounded-lg bg-black/50 hover:bg-black/70 flex items-center justify-center
+                       opacity-0 group-hover:opacity-100 transition"
+          >
+            <Share2 size={13} className="text-teal-400" />
+          </button>
+          {showThemes && (
+            <div className="absolute right-0 top-9 z-30 w-44 rounded-xl border border-zinc-800 bg-[#0f0f1a] p-2 shadow-2xl">
+              <p className="text-[10px] text-zinc-500 px-1 pb-1.5">Card theme</p>
+              {CARD_THEMES.map(th => (
+                <button key={th.id}
+                  onClick={() => { setShowThemes(false); downloadShowcaseCard(profile, th); }}
+                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-zinc-800 transition">
+                  <span className="w-4 h-4 rounded-full border border-zinc-700 flex-shrink-0"
+                    style={{ background: th.bg, boxShadow: `inset 0 0 0 2px ${th.accent}` }} />
+                  <span className="text-[11px] text-zinc-300">{th.label}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         {isOwn && (
           <button
