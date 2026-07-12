@@ -13,7 +13,7 @@ function getAdmin() {
 
 export async function POST(req: NextRequest) {
   try {
-    const { authUserId, email, fullName } = await req.json();
+    const { authUserId, email, fullName, shopline_claim } = await req.json();
     if (!authUserId || !email) {
       return NextResponse.json({ error: "Missing required fields." }, { status: 400 });
     }
@@ -42,7 +42,8 @@ export async function POST(req: NextRequest) {
     }
 
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://www.pivotops.app";
-    const verifyUrl = `${baseUrl}/onboarding/verify?token=${verif.token}`;
+    const verifyUrl = `${baseUrl}/onboarding/verify?token=${verif.token}`
+      + (shopline_claim ? `&shopline_claim=${encodeURIComponent(shopline_claim)}` : "");
 
     const html = baseLayout({
       title:   "Verify your email — PivotOps",

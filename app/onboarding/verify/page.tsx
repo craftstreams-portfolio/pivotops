@@ -13,6 +13,7 @@ export default function OnboardingVerifyPage() {
       try {
         const params = new URLSearchParams(window.location.search);
         const token  = params.get("token");
+        const claim  = params.get("shopline_claim");
 
         if (!token) {
           throw new Error("This verification link is missing its token. Please use the link from your email.");
@@ -35,7 +36,7 @@ export default function OnboardingVerifyPage() {
         setStatus("success");
         // Send them to login to sign in, then they land on onboarding
         setTimeout(() => {
-          window.location.href = "/login?verified=1";
+          window.location.href = "/login?verified=1" + (claim ? `&shopline_claim=${encodeURIComponent(claim)}` : "");
         }, 2500);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Verification failed.");

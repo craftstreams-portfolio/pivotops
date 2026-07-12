@@ -150,7 +150,17 @@ function LoginPage() {
   // ── Helper: route after auth, respecting ?redirect= when it points to dashboard ──
   function routeAfterAuth(result: RoutingResult) {
     if (result.destination === "dashboard") {
-      const redirectTo = searchParams.get("redirect");
+      // A SHOPLINE claim can arrive here from the verification link. Persist it so
+  // /onboarding (same tab, after sign-in) can pick it up.
+  useEffect(() => {
+    const c = new URLSearchParams(window.location.search).get("shopline_claim");
+    if (c) {
+      localStorage.setItem("shopline_claim", c);
+      localStorage.setItem("shopline_claim_exp", String(Date.now() + 30 * 60 * 1000));
+    }
+  }, []);
+
+  const redirectTo = searchParams.get("redirect");
       // Only honor redirect param if it's a safe internal dashboard path
       if (redirectTo && redirectTo.startsWith("/dashboard")) {
         router.replace(redirectTo);
@@ -268,7 +278,7 @@ function LoginPage() {
         const verifRes = await fetch("/api/owner/send-verification", {
           method:  "POST",
           headers: { "Content-Type": "application/json" },
-          body:    JSON.stringify({ authUserId: newUserId, email: normalizedEmail, fullName: "" }),
+          body:    JSON.stringify({ authUserId: newUserId, email: normalizedEmail, fullName: "", shopline_claim: claim ?? undefined }),
         });
         const verifData = await verifRes.json();
         if (!verifRes.ok) {
