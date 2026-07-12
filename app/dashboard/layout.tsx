@@ -8,7 +8,7 @@ import {
   LayoutDashboard, ShieldAlert, RefreshCcw, Workflow,
   Users, BarChart3, Settings, Activity, Bell, Search,
   Menu, X, Siren, Clock3, Trophy, Sparkles, Briefcase, Lock,
-  ClipboardList, UserPlus, UserMinus, BadgeCheck,
+  ClipboardList, UserPlus, UserMinus, BadgeCheck, Flag,
   ChevronDown, ChevronRight, CalendarDays, Phone,
   Video, MessageSquare, LogOut, Plus,
 } from "lucide-react";
@@ -110,6 +110,7 @@ const navItems: NavItem[] = [
     { label:"System Health",     href:"/dashboard/system"             },
     { label:"Audit Logs",        href:"/dashboard/audit"              },
     { label:"Compliance Status", href:"/dashboard/compliance-status", icon:BadgeCheck },
+    { label:"AI Content Reports", href:"/dashboard/ai-reports", icon:Flag },
   ]},
   { label:"Settings", href:"/dashboard/settings", icon:Settings },
 ];
