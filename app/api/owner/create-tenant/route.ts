@@ -62,6 +62,7 @@ export async function POST(req: NextRequest) {
 
     // Attach a pending SHOPLINE store to this new tenant (Entry B: SHOPLINE-first install).
     // Non-blocking - a failed claim never breaks signup.
+    console.log("[create-tenant] shopline_claim received:", shopline_claim ?? "(none)");
     if (shopline_claim) {
       try {
         const { data: pending } = await admin
@@ -70,6 +71,7 @@ export async function POST(req: NextRequest) {
           .eq("claim_token", shopline_claim)
           .is("tenant_id", null)
           .maybeSingle();
+        console.log("[create-tenant] pending row lookup:", pending ? `found id=${pending.id}` : "NOT FOUND");
         if (pending && (!pending.claim_expires_at || new Date(pending.claim_expires_at) > new Date())) {
           await admin
             .from("shopline_connections")
