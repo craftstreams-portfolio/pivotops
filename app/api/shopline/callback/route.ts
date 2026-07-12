@@ -96,7 +96,7 @@ export async function GET(req: NextRequest) {
   // Entry B: no tenant yet. Store a pending row with a one-time claim token,
   // then send the merchant to sign up. create-tenant will consume the token.
   const claimToken = crypto.randomBytes(24).toString("hex");
-  const claimExpires = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+  const claimExpires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // match the 24h verification-email lifetime
 
   // NOTE: the only unique index on `handle` alone is PARTIAL
   // (idx_shopline_pending_handle ... WHERE tenant_id IS NULL), which Postgres
