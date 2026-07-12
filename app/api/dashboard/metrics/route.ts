@@ -25,7 +25,7 @@ export const GET = withSecurity(
       { data: tasks },
       { data: spotlights },
     ] = await Promise.all([
-      admin.from("candidates").select("id,decision,role,score,created_at").eq("tenant_id", tenantId),
+      admin.from("candidates").select("id,status,decision,role,ai_score,created_at,hired_at").eq("tenant_id", tenantId),
       admin.from("onboarding").select("id,status").eq("tenant_id", tenantId),
       admin.from("compliance_docs").select("id,status").eq("tenant_id", tenantId),
       admin.from("incidents").select("id,status,severity").eq("tenant_id", tenantId),
@@ -41,12 +41,16 @@ export const GET = withSecurity(
     const spotRows     = spotlights        ?? [];
 
     // Pipeline counts
+    // Pipeline is keyed off `status` — the same field the recruitment board uses.
+    // (`decision` is Xavier''s recommendation, not the actual stage, and the old
+    // code counted decision === "HIRED", a value that never exists.)
+    const st = (c: any) => String(c.status ?? "").toLowerCase();
     const applied    = cands.length;
-    const screening  = cands.filter(c => c.decision === "REVIEW").length;
-    const interview  = cands.filter(c => c.decision === "STRONG_HIRE" && c.score >= 70).length;
-    const offer      = cands.filter(c => c.decision === "STRONG_HIRE" && c.score >= 85).length;
-    const hired      = cands.filter(c => c.decision === "HIRED").length;
-    const rejected   = cands.filter(c => c.decision === "REJECT").length;
+    const screening  = cands.filter(c => ["screening", "assessment", "recruitment_review"].includes(st(c))).length;
+    const interview  = cands.filter(c => ["interview", "shortlisted"].includes(st(c))).length;
+    const offer      = cands.filter(c => st(c) === "offer").length;
+    const hired      = cands.filter(c => st(c) === "hired").length;
+    const rejected   = cands.filter(c => st(c) === "rejected").length;
 
     // Onboarding
     const onboardingActive = onboards.filter(o => o.status === "pending" || o.status === "in_progress").length;
@@ -68,9 +72,9 @@ export const GET = withSecurity(
     const spotlightsThisMonth = spotRows.filter(s => s.created_at >= monthStart).length;
 
     // Avg Xavier score
-    const scored = cands.filter(c => typeof c.score === "number" && c.score > 0);
+    const scored = cands.filter(c => typeof c.ai_score === "number" && c.ai_score > 0);
     const avgScore = scored.length > 0
-      ? Math.round(scored.reduce((s, c) => s + c.score, 0) / scored.length)
+      ? Math.round(scored.reduce((s, c) => s + (c.ai_score as number), 0) / scored.length)
       : 0;
 
     // Conversion + dropoff
@@ -127,13 +131,13 @@ export const GET = withSecurity(
       );
       const idx = 5 - Math.min(weeksAgo, 5);
       weekBuckets[idx]++;
-      if (c.decision === "HIRED") hireBuckets[idx]++;
+      if (String(c.status ?? "").toLowerCase() === "hired") hireBuckets[idx]++;
     }
+    // Only series we can actually derive from rows. The old timeToHire/dropoff
+    // arrays were hardcoded curves, not measurements.
     const trends = {
       applications: weekBuckets,
       hires:        hireBuckets,
-      timeToHire:   [14, 12, 10, 8, 5, 3],
-      dropoff:      [85, 80, 75, 72, 68, dropoffRate],
     };
 
     // Xavier insights

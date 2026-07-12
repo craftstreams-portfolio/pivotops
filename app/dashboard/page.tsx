@@ -36,14 +36,14 @@ interface Metrics {
   conversionRate:       number;
   dropoffRate:          number;
   hiringEfficiency:     number;
-  automationCoverage:   number;
-  costSaved:            number;
+  automationCoverage:   number | null;
+  costSaved:            number | null;
   systemHealth:         string;
-  timeToHire:           { current: number; baseline: number; improvement: number };
+  timeToHire:           { current: number | null; sampleSize: number };
   funnel:               { applied: number; screening: number; interview: number; offer: number; hired: number };
   deptDistribution:     { name: string; value: number }[];
   topRoles:             { name: string; value: number }[];
-  trends:               { applications: number[]; hires: number[]; timeToHire: number[]; dropoff: number[] };
+  trends:               { applications: number[]; hires: number[] };
   insights:             { type: string; severity: string; message: string }[];
   generatedAt:          string;
 }
@@ -171,16 +171,6 @@ function XavierStrip({ m }: { m: Metrics }) {
         </div>
       </div>
 
-      {/* Automation Coverage */}
-      <div>
-        <div className="flex items-center justify-between mb-1.5">
-          <span className="text-[11px] text-zinc-500">Automation Coverage</span>
-          <span className="text-xs font-bold text-indigo-400">{m.automationCoverage}%</span>
-        </div>
-        <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-          <div className="h-full rounded-full bg-indigo-500 transition-all duration-1000" style={{ width: `${m.automationCoverage}%` }} />
-        </div>
-      </div>
 
       {/* Compliance Rate */}
       <div>
@@ -344,7 +334,6 @@ export default function DashboardPage() {
 
   const weekLabels   = ["W-5","W-4","W-3","W-2","W-1","Now"];
   const appTrendData = m.trends.applications.map((v, i) => ({ name: weekLabels[i], Applications: v, Hires: m.trends.hires[i] }));
-  const tthTrendData = m.trends.timeToHire.map((v, i) => ({ name: weekLabels[i], Days: v }));
 
   return (
     <div className="p-4 md:p-6 space-y-6">
@@ -398,8 +387,8 @@ export default function DashboardPage() {
         <KPICard label="In Pipeline"      value={m.screening + m.interview}  sub="Active candidates"                                    icon={Activity}      color="bg-blue-600"                                                      trend="flat"                                  />
         <KPICard label="Interview Stage"  value={m.interview}                sub="Awaiting decision"                                    icon={Target}        color="bg-purple-600"                                                    trend="up"                                    />
         <KPICard label="Hired"            value={m.hired}                    sub="Placements closed"                                    icon={Award}         color="bg-emerald-600"                                                   trend="up"                                    />
-        <KPICard label="Time to Hire"     value={m.timeToHire.current}       sub={`↓ ${m.timeToHire.improvement}d vs baseline`}        icon={Clock}         color="bg-teal-600"     trend="down"  decimals={1}  suffix="d"            />
-        <KPICard label="Cost Saved"       value={m.costSaved}                sub="Automation ROI"                                       icon={TrendingUp}    color="bg-amber-600"    trend="up"    prefix="$"                        />
+        <KPICard label="Time to Hire"     value={m.timeToHire.current ?? 0}  sub={m.timeToHire.current == null ? "Not tracked yet" : `Avg over ${m.timeToHire.sampleSize} hire${m.timeToHire.sampleSize === 1 ? "" : "s"}`} icon={Clock} color="bg-teal-600" trend="flat" decimals={1} suffix="d" />
+        <KPICard label="Avg Xavier Score" value={m.avgScore}                 sub="Across all applications"                              icon={TrendingUp}    color="bg-amber-600"    trend="flat"  suffix="/100"                     />
         <KPICard label="Open Tasks"       value={m.openTasks ?? 0}           sub="Pending action"                                       icon={Briefcase}     color="bg-orange-600"   trend={m.openTasks > 10 ? "up" : "flat"}      />
         <KPICard label="Active Incidents" value={m.activeIncidents}          sub="PivotSOS"                                             icon={AlertTriangle} color={m.activeIncidents > 0 ? "bg-red-600" : "bg-zinc-700"} trend={m.activeIncidents > 0 ? "up" : "flat"} />
       </div>
@@ -542,37 +531,11 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Time-to-Hire Trend */}
-        <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5">
-          <h2 className="text-sm font-semibold text-white mb-1">Time-to-Hire Trend</h2>
-          <p className="text-xs text-zinc-600 mb-4">Days to close · 6-week trajectory</p>
-          <ChartReady height={144}>
-            <div className="h-36" style={{ minWidth: 0 }}>
-              <ResponsiveContainer width="100%" height={144}>
-                <AreaChart data={tthTrendData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="tthGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%"  stopColor="#14b8a6" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#14b8a6" stopOpacity={0}   />
-                    </linearGradient>
-                  </defs>
-                  <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#52525b" }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 10, fill: "#52525b" }} axisLine={false} tickLine={false} />
-                  <Tooltip content={<ChartTooltip />} />
-                  <Area type="monotone" dataKey="Days" stroke="#14b8a6" strokeWidth={2} fill="url(#tthGrad)" dot={false} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </ChartReady>
-          <div className="mt-3 pt-3 border-t border-zinc-800 flex justify-between text-xs">
-            <span className="text-zinc-600">Current avg</span>
-            <span className="font-semibold text-teal-400">{m.timeToHire.current}d</span>
-          </div>
-        </div>
+
       </div>
 
-      {/* ── TOP ROLES + COMPLIANCE + DROP-OFF ── */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      {/* ── TOP ROLES + COMPLIANCE ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
         {/* Top Roles */}
         <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5">
@@ -652,26 +615,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Drop-off Velocity */}
-        <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5">
-          <h2 className="text-sm font-semibold text-white mb-1">Drop-off Velocity</h2>
-          <p className="text-xs text-zinc-600 mb-4">Candidate loss rate trend (lower is better)</p>
-          <Sparkline data={m.trends.dropoff} color="#f97316" />
-          <div className="mt-3 pt-3 border-t border-zinc-800 grid grid-cols-2 gap-3 text-xs">
-            <div>
-              <p className="text-zinc-600">Current rate</p>
-              <p className={`font-semibold mt-0.5 ${m.dropoffRate > 70 ? "text-red-400" : m.dropoffRate > 50 ? "text-amber-400" : "text-emerald-400"}`}>
-                {m.dropoffRate}%
-              </p>
-            </div>
-            <div>
-              <p className="text-zinc-600">Trend</p>
-              <p className="font-semibold mt-0.5 text-emerald-400 flex items-center gap-1">
-                <TrendingDown size={12} /> Improving
-              </p>
-            </div>
-          </div>
-        </div>
+
       </div>
 
       {/* ── FOOTER ── */}
