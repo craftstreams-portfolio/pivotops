@@ -12,6 +12,7 @@ import { handleRecruitmentToOnboarding }                            from "../../
 import { xavierNotify, getXavierNotifications }                     from "../../../lib/recruitment/xavier.notifications";
 import { getScoreThresholds, upsertScoreThresholds }                from "../../../lib/recruitment/scoring.engine";
 import { sendOfferLetterEmail }                                     from "../../../lib/recruitment/email.service";
+import ReportAIContent                                             from "@/app/dashboard/components/ai/ReportAIContent";
 
 import {
   Brain, Bell, Settings2, Plus, CheckCircle2,
@@ -229,6 +230,12 @@ function CandidatePanel({
               <div className="flex items-center gap-2 mb-3">
                 <Brain size={14} className="text-indigo-400" />
                 <span className="text-xs font-semibold text-indigo-400">Xavier AI Assessment</span>
+                <ReportAIContent
+                  surface="candidate_score"
+                  refId={candidate.id}
+                  content={`Score ${candidate.ai_score}/100. ${candidate.ai_summary ?? ""}`}
+                  className="ml-auto"
+                />
               </div>
               <div className="flex items-center gap-3 mb-3">
                 <span className={`text-3xl font-bold ${SCORE_COLORS(candidate.ai_score)}`}>

@@ -12,6 +12,7 @@ import {
   ChevronDown, ThumbsUp, ThumbsDown,
   Clock, ShieldCheck, Share2, Download,
 } from "lucide-react";
+import ReportAIContent from "@/app/dashboard/components/ai/ReportAIContent";
 
 // ─────────────────────────────────────────
 // TYPES
@@ -569,6 +570,12 @@ function SpotlightCard({
             <p className="text-[10px] text-teal-400 font-semibold mb-2 flex items-center gap-1">
               <Brain size={10} /> Xavier Performance Breakdown
               <span className="text-zinc-600 font-normal ml-1">· {post.metadata.performance.month}</span>
+              <ReportAIContent
+                surface="spotlight_breakdown"
+                refId={post.id}
+                content={JSON.stringify(post.metadata.performance).slice(0, 2000)}
+                className="ml-auto"
+              />
             </p>
             <div className="grid grid-cols-2 gap-2">
               {[

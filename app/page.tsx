@@ -300,6 +300,35 @@ function askXavier(messages: { role: string; content: string }[]): string {
   ]);
 }
 
+function ReportChatReply({ content }: { content: string }) {
+  const [sent, setSent] = useState(false);
+  const [busy, setBusy] = useState(false);
+  async function report(reason: string) {
+    setBusy(true);
+    try {
+      await fetch("/api/ai-report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ surface: "xavier_chat", reason, content }),
+      });
+      setSent(true);
+    } catch { /* non-blocking */ }
+    setBusy(false);
+  }
+  if (sent) return <span className="text-[9px] text-emerald-400 mt-1 block">Reported - thank you.</span>;
+  return (
+    <div className="flex items-center gap-1.5 mt-1.5">
+      <span className="text-[9px] text-zinc-600">Report:</span>
+      {["inaccurate", "offensive", "misleading"].map((r) => (
+        <button key={r} disabled={busy} onClick={() => report(r)}
+          className="text-[9px] text-zinc-600 hover:text-amber-400 transition disabled:opacity-50 capitalize">
+          {r}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function XavierChat({ onJoinWaitlist }: { onJoinWaitlist: () => void }) {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<{ role: string; content: string; id: number }[]>([
@@ -381,6 +410,9 @@ function XavierChat({ onJoinWaitlist }: { onJoinWaitlist: () => void }) {
                 ? { background: "rgba(30,86,224,0.25)", border: "1px solid rgba(30,86,224,0.2)" }
                 : { background: "rgba(11,29,58,0.8)", border: "1px solid rgba(0,191,166,0.1)" }}>
               {m.content}
+              {m.role === "assistant" && m.id !== 0 && (
+                <ReportChatReply content={m.content} />
+              )}
             </div>
           </div>
         ))}

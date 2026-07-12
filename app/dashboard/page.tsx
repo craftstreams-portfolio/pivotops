@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase }   from "@/lib/supabase";
 import { useTenant }  from "@/lib/hooks/useTenant";
 import SpotlightOfMonthBanner from "@/app/dashboard/components/SpotlightOfMonthBanner";
+import ReportAIContent from "@/app/dashboard/components/ai/ReportAIContent";
 import {
   PieChart, Pie, Cell, ResponsiveContainer,
   AreaChart, Area, XAxis, YAxis, Tooltip,
@@ -457,6 +458,12 @@ export default function DashboardPage() {
             <Brain size={15} className="text-indigo-400" />
             <h2 className="text-sm font-semibold text-white">Xavier Intelligence</h2>
             <span className="text-[10px] text-zinc-600 ml-auto">Live insights</span>
+            {m.insights.length > 0 && (
+              <ReportAIContent
+                surface="xavier_insight"
+                content={m.insights.map((i) => i.message).join(" | ")}
+              />
+            )}
           </div>
           <div className="space-y-3">
             {m.insights.map((ins, i) => {
