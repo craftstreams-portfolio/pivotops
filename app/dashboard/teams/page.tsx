@@ -19,6 +19,7 @@ import { useMentionInput }           from "@/lib/mentions/mention.hooks";
 import { MentionInput, MentionText } from "@/lib/mentions/MentionInput";
 import { NotificationBell }          from "@/lib/mentions/NotificationBell";
 import XavierAvatar                  from "@/app/dashboard/components/team/XavierAvatar";
+import ReportAIContent               from "@/app/dashboard/components/ai/ReportAIContent";
 import {
   setUserPresence, getTenantPresence, subscribeToPresence,
   setOffline, type PresenceState,
@@ -424,6 +425,12 @@ function CandidateCard({
         <div className="flex items-center gap-2 mb-2">
           <span className="text-[11px] font-semibold text-indigo-400">Xavier AI</span>
           <span className="text-[10px] text-zinc-600">{formatTime(message.created_at)}</span>
+          <ReportAIContent
+            surface="xavier_message"
+            refId={message.id}
+            content={typeof message.content === "string" ? message.content : JSON.stringify(message.content)}
+            className="ml-auto opacity-0 group-hover:opacity-100 transition"
+          />
         </div>
 
         {/* Card */}

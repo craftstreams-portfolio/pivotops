@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { useTenant } from "@/lib/hooks/useTenant";
-import { Settings, Bell, Shield, Workflow, Brain, MapPin, Save, Loader2, CheckCircle2, Building2 } from "lucide-react";
+import { Settings, Bell, Shield, Workflow, Brain, MapPin, Save, Loader2, CheckCircle2, Building2, Plug } from "lucide-react";
 
 interface WorkspaceSettings {
   id:string; tenant_id:string;
@@ -144,6 +144,18 @@ export default function SettingsPage(){
         <ToggleRow label="Auto-Routing" sub="Automatically route candidates based on AI score" value={settings.xavier_auto_routing} onChange={v=>set("xavier_auto_routing",v)} disabled={!settings.ai_enabled}/>
         <ToggleRow label="Suggestions" sub="Surface Xavier insights across the dashboard" value={settings.xavier_suggestions} onChange={v=>set("xavier_suggestions",v)} disabled={!settings.ai_enabled}/>
         <ToggleRow label="Memory Mode" sub="Xavier learns from your hiring decisions over time" value={settings.xavier_memory} onChange={v=>set("xavier_memory",v)} disabled={!settings.ai_enabled}/>
+      </Section>
+
+      <Section icon={Plug} title="Integrations">
+        <a href="/dashboard/settings/integrations"
+           className="flex items-center justify-between px-4 py-3 rounded-xl border border-zinc-800
+                      hover:border-zinc-700 transition group">
+          <div>
+            <p className="text-sm text-white font-medium">SHOPLINE</p>
+            <p className="text-xs text-zinc-500 mt-0.5">Connect a SHOPLINE store to PivotOps</p>
+          </div>
+          <span className="text-xs text-indigo-400 group-hover:text-indigo-300">Manage &rarr;</span>
+        </a>
       </Section>
 
       <Section icon={Workflow} title="Automation">

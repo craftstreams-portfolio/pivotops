@@ -21,6 +21,7 @@ const SURFACE_LABEL: Record<string, string> = {
   xavier_insight:      "Xavier Intelligence",
   spotlight_breakdown: "Spotlight Breakdown",
   xavier_chat:         "Xavier Chat (public)",
+  xavier_message:      "Xavier Message (Teams)",
 };
 
 const REASON_STYLE: Record<string, string> = {
