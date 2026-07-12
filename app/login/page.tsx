@@ -148,19 +148,14 @@ function LoginPage() {
   const [success,  setSuccess]  = useState("");
 
   // ── Helper: route after auth, respecting ?redirect= when it points to dashboard ──
+  // A SHOPLINE claim (Entry B) arrives here in the URL from the verification link.
+  // Carry it forward to /onboarding as a query param — the URL is the only carrier
+  // that survives new tabs and devices.
   function routeAfterAuth(result: RoutingResult) {
-    if (result.destination === "dashboard") {
-      // A SHOPLINE claim can arrive here from the verification link. Persist it so
-  // /onboarding (same tab, after sign-in) can pick it up.
-  useEffect(() => {
-    const c = new URLSearchParams(window.location.search).get("shopline_claim");
-    if (c) {
-      localStorage.setItem("shopline_claim", c);
-      localStorage.setItem("shopline_claim_exp", String(Date.now() + 30 * 60 * 1000));
-    }
-  }, []);
+    const claim = searchParams.get("shopline_claim");
+    const redirectTo = searchParams.get("redirect");
 
-  const redirectTo = searchParams.get("redirect");
+    if (result.destination === "dashboard") {
       // Only honor redirect param if it's a safe internal dashboard path
       if (redirectTo && redirectTo.startsWith("/dashboard")) {
         router.replace(redirectTo);
@@ -168,7 +163,7 @@ function LoginPage() {
         router.replace("/dashboard");
       }
     } else if (result.destination === "onboarding") {
-      router.replace("/onboarding");
+      router.replace(claim ? `/onboarding?shopline_claim=${encodeURIComponent(claim)}` : "/onboarding");
     } else {
       setError("Something went wrong loading your account. Please try again or contact support.");
     }
