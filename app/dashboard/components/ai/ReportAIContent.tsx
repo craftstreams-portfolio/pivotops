@@ -64,7 +64,10 @@ export default function ReportAIContent({
       <button
         onClick={() => setOpen(true)}
         title="Report this AI-generated content"
-        className={`inline-flex items-center gap-1 text-[10px] text-zinc-600 hover:text-amber-400 transition ${className}`}
+        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border
+                    border-amber-500/30 bg-amber-500/10 text-amber-400
+                    text-[10px] font-medium hover:bg-amber-500/20 hover:border-amber-500/50
+                    transition ${className}`}
       >
         <Flag size={10} /> Report
       </button>
