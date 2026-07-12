@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useRef }                              from "react";
 import { useRouter }                                                from "next/navigation";
-import { DndContext, useDraggable, useDroppable }                   from "@dnd-kit/core";
+import { DndContext, useDraggable, useDroppable,
+         PointerSensor, useSensor, useSensors }                     from "@dnd-kit/core";
 
 import { supabase }                                                 from "../../../lib/supabase";
 import { useUser }                                                  from "../../../lib/useUser";
@@ -101,12 +102,26 @@ function DraggableCard({
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({ id: candidate.id });
 
+  // dnd-kit's pointer listeners swallow clicks. Track where the pointer went
+  // down and only treat it as a click if it barely moved (i.e. not a drag).
+  const downAt = useRef<{ x: number; y: number } | null>(null);
+
   return (
     <div
       ref={setNodeRef}
       {...listeners}
       {...attributes}
-      onClick={() => onClick(candidate)}
+      onPointerDown={(e) => {
+        downAt.current = { x: e.clientX, y: e.clientY };
+        (listeners as any)?.onPointerDown?.(e);
+      }}
+      onPointerUp={(e) => {
+        const d = downAt.current;
+        downAt.current = null;
+        if (!d) return;
+        const moved = Math.hypot(e.clientX - d.x, e.clientY - d.y);
+        if (moved < 5) onClick(candidate);
+      }}
       style={{
         transform:          transform ? `translate3d(${transform.x}px,${transform.y}px,0)` : undefined,
         opacity:            isDragging ? 0.6 : 1,
@@ -554,6 +569,10 @@ export default function RecruitmentBoard() {
   const [candidates,      setCandidates]      = useState<Candidate[]>([]);
   const [notifications,   setNotifications]   = useState<XavierNotification[]>([]);
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
+
+  // A drag only starts after the pointer moves 5px, so a plain click on a card
+  // opens the candidate panel instead of being swallowed by the drag listeners.
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const [applyLink,          setApplyLink]          = useState("");
   const [copied,             setCopied]             = useState(false);
   const [showThresholds,  setShowThresholds]  = useState(false);
@@ -888,6 +907,7 @@ export default function RecruitmentBoard() {
 
         {/* Board */}
         <DndContext
+          sensors={sensors}
           onDragEnd={async ({ active, over }) => {
             if (!over || !user) return;
             const candidateId = String(active.id);

@@ -429,7 +429,7 @@ function CandidateCard({
             surface="xavier_message"
             refId={message.id}
             content={typeof message.content === "string" ? message.content : JSON.stringify(message.content)}
-            className="ml-auto opacity-0 group-hover:opacity-100 transition"
+            className="ml-auto"
           />
         </div>
 
