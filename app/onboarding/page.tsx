@@ -339,7 +339,11 @@ export default function OnboardingPage() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) { router.replace("/login"); return; }
+      if (!session) {
+        const c = readShoplineClaim();
+        router.replace(c ? `/login?mode=signup&shopline_claim=${encodeURIComponent(c)}` : "/login");
+        return;
+      }
       setUserId(session.user.id);
       setUserEmail(session.user.email ?? "");
       setAdminName(session.user.user_metadata?.full_name ?? "");

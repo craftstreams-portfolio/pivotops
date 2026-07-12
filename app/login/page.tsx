@@ -218,9 +218,21 @@ function LoginPage() {
           return;
         }
 
+        // Carry a SHOPLINE claim token (Entry B) INSIDE the verification link.
+        // The merchant opens that link in a new tab / another device, where neither
+        // sessionStorage nor localStorage is available, so the URL is the only
+        // reliable carrier.
+        const claim =
+          new URLSearchParams(window.location.search).get("shopline_claim") ||
+          localStorage.getItem("shopline_claim");
+        const emailRedirectTo =
+          `${window.location.origin}/onboarding` +
+          (claim ? `?shopline_claim=${encodeURIComponent(claim)}` : "");
+
         const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
           email: normalizedEmail,
           password,
+          options: { emailRedirectTo },
         });
 
         if (signUpErr) {
