@@ -277,6 +277,21 @@ function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
 }
 
 // MAIN PAGE
+function readShoplineClaim(): string | null {
+  if (typeof window === "undefined") return null;
+  const fromUrl = new URLSearchParams(window.location.search).get("shopline_claim");
+  if (fromUrl) return fromUrl;
+  const stored = localStorage.getItem("shopline_claim");
+  if (!stored) return null;
+  const exp = Number(localStorage.getItem("shopline_claim_exp") ?? 0);
+  if (exp && Date.now() > exp) {
+    localStorage.removeItem("shopline_claim");
+    localStorage.removeItem("shopline_claim_exp");
+    return null;
+  }
+  return stored;
+}
+
 export default function OnboardingPage() {
   const router = useRouter();
 
@@ -313,7 +328,13 @@ export default function OnboardingPage() {
   // survives any auth redirect to login and back.
   useEffect(() => {
     const claim = new URLSearchParams(window.location.search).get("shopline_claim");
-    if (claim) sessionStorage.setItem("shopline_claim", claim);
+    if (claim) {
+      // localStorage (not sessionStorage): the merchant verifies their email in a
+      // NEW TAB, which has no sessionStorage, so the claim would be lost. Stored
+      // with its own 30-min expiry so a stale token can't attach to a later signup.
+      localStorage.setItem("shopline_claim", claim);
+      localStorage.setItem("shopline_claim_exp", String(Date.now() + 30 * 60 * 1000));
+    }
   }, []);
 
   useEffect(() => {
@@ -392,17 +413,13 @@ export default function OnboardingPage() {
           thresholdAI,
           thresholdMR,
           applyLinkUrl,
-          shopline_claim:
-            (typeof window !== "undefined" &&
-              (sessionStorage.getItem("shopline_claim") ||
-                new URLSearchParams(window.location.search).get("shopline_claim"))) ||
-            undefined,
+          shopline_claim: readShoplineClaim() ?? undefined,
         }),
       });
       const result = await res.json();
       if (!res.ok) throw new Error(result?.error ?? "Workspace creation failed.");
 
-      if (typeof window !== "undefined") sessionStorage.removeItem("shopline_claim");
+      if (typeof window !== "undefined") { localStorage.removeItem("shopline_claim"); localStorage.removeItem("shopline_claim_exp"); }
       setApplyLink(applyLinkUrl);
       setAnimState("exit-left");
       setTimeout(() => {
