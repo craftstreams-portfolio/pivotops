@@ -49,11 +49,16 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Validate state (carries tenantId for Entry A, null for Entry B).
+  // State carries tenantId for Entry A (app-initiated). SHOPLINE-initiated installs
+  // (Test App / App Store) do NOT round-trip a state param — the GET signature above
+  // is the authenticity guarantee there. So: enforce state strictly when present,
+  // and treat its absence as Entry B (no tenant yet).
   const st = state ? verifyState(state) : null;
-  if (!st || st.handle !== handle) {
+  if (state && (!st || st.handle !== handle)) {
+    console.error("[shopline/callback] state present but invalid/mismatched");
     return NextResponse.json({ error: "Invalid or expired state." }, { status: 401 });
   }
+  const stateTenantId: string | null = st?.tenantId ?? null;
 
   // Exchange the code for an access token.
   let tokenRes;
@@ -72,10 +77,10 @@ export async function GET(req: NextRequest) {
   const nowIso = new Date().toISOString();
   const expiry = toExpiry(tokenRes.expireTime);
 
-  if (st.tenantId) {
+  if (stateTenantId) {
     // Entry A: link directly to the known tenant (upsert on tenant_id+handle).
     await admin.from("shopline_connections").upsert({
-      tenant_id: st.tenantId,
+      tenant_id: stateTenantId,
       handle,
       access_token: tokenRes.accessToken,
       scope: tokenRes.scope ?? null,
