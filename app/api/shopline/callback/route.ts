@@ -98,8 +98,12 @@ export async function GET(req: NextRequest) {
   const claimToken = crypto.randomBytes(24).toString("hex");
   const claimExpires = new Date(Date.now() + 30 * 60 * 1000).toISOString();
 
-  await admin.from("shopline_connections").upsert({
-    tenant_id: null,
+  // NOTE: the only unique index on `handle` alone is PARTIAL
+  // (idx_shopline_pending_handle ... WHERE tenant_id IS NULL), which Postgres
+  // cannot infer from a bare ON CONFLICT (handle) -> 42P10. So we do an explicit
+  // lookup + update/insert against the pending row instead of an upsert.
+  const conn = {
+    tenant_id: null as string | null,
     handle,
     access_token: tokenRes.accessToken,
     scope: tokenRes.scope ?? null,
@@ -109,7 +113,23 @@ export async function GET(req: NextRequest) {
     updated_at: nowIso,
     claim_token: claimToken,
     claim_expires_at: claimExpires,
-  }, { onConflict: "handle" });
+  };
+
+  const { data: existing } = await admin
+    .from("shopline_connections")
+    .select("id")
+    .eq("handle", handle)
+    .is("tenant_id", null)
+    .maybeSingle();
+
+  const { error: upsertErr } = existing
+    ? await admin.from("shopline_connections").update(conn).eq("id", existing.id)
+    : await admin.from("shopline_connections").insert(conn);
+
+  if (upsertErr) {
+    console.error("[shopline/callback] Entry-B upsert failed:", upsertErr.code, upsertErr.message, upsertErr.details);
+    return NextResponse.json({ error: "Could not save connection.", _debug: upsertErr }, { status: 500 });
+  }
 
   return NextResponse.redirect(`${APP_URL}/onboarding?shopline_claim=${claimToken}`);
 }
