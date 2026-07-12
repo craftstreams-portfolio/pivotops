@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
 import XavierAvatar, { type XavierExpression } from "@/app/dashboard/components/team/XavierAvatar";
 
 // ── Xavier brand colours ──────────────────────────────────────────────────────
@@ -146,6 +147,7 @@ function KanbanCard({
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function XavierIntro({ userName }: { userName?: string }) {
+  const [userId, setUserId] = useState<string | null>(null);
   const router = useRouter();
   const [phase, setPhase] = useState<"hidden" | "backdrop" | "avatar" | "greeting" | "cards" | "cta">("hidden");
 
@@ -167,13 +169,32 @@ export default function XavierIntro({ userName }: { userName?: string }) {
     subline, 22, greetingDone
   );
 
+  // Gate on a PER-USER flag in the DB, not localStorage: localStorage is
+  // per-browser, so a second user on the same machine would silently never see
+  // the intro, and the same user on a new device would see it again.
+  // Fails OPEN: if the check errors, show the intro rather than skip onboarding.
   useEffect(() => {
-    const seen = localStorage.getItem("pivotops_xavier_intro_seen");
-    if (seen) return;
-
-    // Staggered entrance
-    timerRef.current = setTimeout(() => setPhase("backdrop"), 600);
-    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const uid = session?.user?.id;
+        if (uid) {
+          setUserId(uid);
+          const { data } = await supabase
+            .from("profiles")
+            .select("xavier_intro_seen")
+            .eq("id", uid)
+            .maybeSingle();
+          if (data?.xavier_intro_seen) return; // already seen -> stay hidden
+        }
+      } catch {
+        // fall through and show it
+      }
+      if (cancelled) return;
+      timerRef.current = setTimeout(() => setPhase("backdrop"), 600);
+    })();
+    return () => { cancelled = true; if (timerRef.current) clearTimeout(timerRef.current); };
   }, []);
 
   useEffect(() => {
@@ -193,7 +214,10 @@ export default function XavierIntro({ userName }: { userName?: string }) {
 
   const handleDismiss = () => {
     setDismissed(true);
-    localStorage.setItem("pivotops_xavier_intro_seen", "1");
+    if (userId) {
+      supabase.from("profiles").update({ xavier_intro_seen: true }).eq("id", userId)
+        .then(({ error }) => { if (error) console.error("[XavierIntro] could not persist seen flag:", error.message); });
+    }
   };
 
   const handleNavigate = (link: string) => {

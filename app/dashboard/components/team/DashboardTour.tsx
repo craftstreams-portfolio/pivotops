@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
 
 type TourStep = { key: string; title: string; body: string };
 
@@ -15,10 +16,28 @@ export default function DashboardTour({ targets }: { targets: Record<string, HTM
   const [stepIndex, setStepIndex] = useState(0);
   const [active, setActive] = useState(false);
   const [rect, setRect] = useState<DOMRect | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
 
+  // Per-user DB flag, not localStorage (see XavierIntro). Fails OPEN.
   useEffect(() => {
-    const seen = localStorage.getItem("pivotops_tour_seen");
-    if (!seen) setActive(true);
+    (async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const uid = session?.user?.id;
+        if (uid) {
+          setUserId(uid);
+          const { data } = await supabase
+            .from("profiles")
+            .select("tour_seen")
+            .eq("id", uid)
+            .maybeSingle();
+          if (data?.tour_seen) return;
+        }
+      } catch {
+        // fall through and show it
+      }
+      setActive(true);
+    })();
   }, []);
 
   useEffect(() => {
@@ -29,8 +48,11 @@ export default function DashboardTour({ targets }: { targets: Record<string, HTM
   }, [active, stepIndex, targets]);
 
   function finish() {
-    localStorage.setItem("pivotops_tour_seen", "1");
     setActive(false);
+    if (userId) {
+      supabase.from("profiles").update({ tour_seen: true }).eq("id", userId)
+        .then(({ error }) => { if (error) console.error("[DashboardTour] could not persist seen flag:", error.message); });
+    }
   }
 
   function next() {
