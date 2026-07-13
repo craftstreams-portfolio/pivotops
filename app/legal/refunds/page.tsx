@@ -6,7 +6,7 @@ export const metadata: Metadata = {
 };
 
 export default function RefundPolicyPage() {
-  const updated = "23 June 2026";
+  const updated = "12 July 2026";
   return (
     <div className="bg-zinc-950 text-white min-h-screen">
       <div className="max-w-4xl mx-auto px-6 py-16">
