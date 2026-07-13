@@ -45,7 +45,7 @@ export const PLAN_FEATURES: Record<PlanTier, {
   },
   starter: {
     name: "Starter", maxRecruiters: 5,
-    compliance: false, analytics: false, conference: false, clocking: false, tasks: false,
+    compliance: true, analytics: false, conference: false, clocking: false, tasks: false,
     showcase: false, spotlight: false, pivotsos: false, workflows: false,
     customIntegrations: false, prioritySupport: false,
   },
