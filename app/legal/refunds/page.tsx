@@ -33,7 +33,7 @@ export default function RefundPolicyPage() {
               n: "1", title: "Subscription Billing",
               body: `PivotOps operates on a recurring subscription model billed monthly or annually depending on the plan selected at checkout. All subscription fees are charged in advance at the start of each billing period.
 
-Payments are processed securely by Paddle, our Merchant of Record, who handles all billing, tax collection, and payment processing on our behalf.`
+Payments are processed securely by Dodo Payments, our Merchant of Record, who handles all billing, tax collection, and payment processing on our behalf.`
             },
             {
               n: "2", title: "Free Trial",
@@ -77,7 +77,7 @@ Subject: Refund Request — [Your Organisation Name]
 
 Include your registered email address, the reason for your refund request, and the transaction reference number if available. We will respond within 3 business days.
 
-Approved refunds are processed through Paddle and typically appear on your statement within 5-10 business days depending on your payment provider.`
+Approved refunds are processed through Dodo Payments and typically appear on your statement within 5-10 business days depending on your payment provider.`
             },
             {
               n: "6", title: "Chargebacks",
