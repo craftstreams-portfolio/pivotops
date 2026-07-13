@@ -25,7 +25,8 @@ export type BillingCycle = "monthly" | "annual";
 export const PLAN_FEATURES: Record<PlanTier, {
   name:           string;
   maxRecruiters:  number;
-  compliance:     boolean;
+  compliance:         boolean;   // document tracking / candidate portal
+  complianceAdvanced: boolean;   // Compliance Status (advanced) — Professional+
   analytics:      boolean;
   conference:     boolean;
   clocking:       boolean;
@@ -39,25 +40,25 @@ export const PLAN_FEATURES: Record<PlanTier, {
 }> = {
   free: {
     name: "Free Trial", maxRecruiters: 2,
-    compliance: false, analytics: false, conference: false, clocking: false, tasks: false,
+    compliance: false, complianceAdvanced: false, analytics: false, conference: false, clocking: false, tasks: false,
     showcase: false, spotlight: false, pivotsos: false, workflows: false,
     customIntegrations: false, prioritySupport: false,
   },
   starter: {
     name: "Starter", maxRecruiters: 5,
-    compliance: true, analytics: false, conference: false, clocking: false, tasks: false,
+    compliance: true, complianceAdvanced: false, analytics: false, conference: false, clocking: false, tasks: false,
     showcase: false, spotlight: false, pivotsos: false, workflows: false,
     customIntegrations: false, prioritySupport: false,
   },
   professional: {
     name: "Professional", maxRecruiters: 20,
-    compliance: true, analytics: true, conference: true, clocking: true, tasks: true,
+    compliance: true, complianceAdvanced: true, analytics: true, conference: true, clocking: true, tasks: true,
     showcase: true, spotlight: true, pivotsos: false, workflows: false,
     customIntegrations: false, prioritySupport: false,
   },
   enterprise: {
     name: "Enterprise", maxRecruiters: 999,
-    compliance: true, analytics: true, conference: true, clocking: true, tasks: true,
+    compliance: true, complianceAdvanced: true, analytics: true, conference: true, clocking: true, tasks: true,
     showcase: true, spotlight: true, pivotsos: true, workflows: true,
     customIntegrations: true, prioritySupport: true,
   },

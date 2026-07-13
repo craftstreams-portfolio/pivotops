@@ -159,7 +159,7 @@ function ComplianceStatusPageInner(){
 export default function ComplianceStatusPage() {
   const { tenantId } = useTenant();
   return (
-    <FeatureGate tenantId={tenantId} feature="compliance" title="Compliance Status">
+    <FeatureGate tenantId={tenantId} feature="complianceAdvanced" title="Compliance Status">
       <ComplianceStatusPageInner />
     </FeatureGate>
   );
