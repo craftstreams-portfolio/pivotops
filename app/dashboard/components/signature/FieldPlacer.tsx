@@ -82,8 +82,7 @@ export default function FieldPlacer({
         // @ts-expect-error - the /build/ subpath ships no type declarations
         const pdfjs: any = await import("pdfjs-dist/build/pdf.mjs");
         // Worker version MUST match the library version, or it fails to load.
-        pdfjs.GlobalWorkerOptions.workerSrc =
-          `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+        pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 
         const doc = await pdfjs.getDocument(link.signedUrl).promise;
         if (cancelled) return;
