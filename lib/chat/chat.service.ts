@@ -31,6 +31,9 @@ export interface Message {
   reactions:      Record<string, string[]>; // emoji → user_ids[]
   created_at:     string;
   meta:           Record<string, any> | null;
+  pinned:         boolean | null;
+  pinned_at:      string | null;
+  pinned_by:      string | null;
 }
 
 export interface Channel {
@@ -117,8 +120,13 @@ function normalizeMessage(m: any): Message {
     reactions:     m.reactions ?? {},
     created_at:    m.created_at,
     meta:          m.meta ?? null,
+    pinned:        m.pinned ?? false,
+    pinned_at:     m.pinned_at ?? null,
+    pinned_by:     m.pinned_by ?? null,
   };
 }
+
+
 
 // ─────────────────────────────────────────
 // SEND TEXT MESSAGE
@@ -334,4 +342,72 @@ export function subscribeToChannel(
     .subscribe();
 
   return () => supabase.removeChannel(channel);
+}
+// ─────────────────────────────────────────
+// PINNING
+// ─────────────────────────────────────────
+
+/** Pin or unpin a message. Message pins are SHARED — visible to everyone in the channel. */
+export async function togglePinMessage(
+  message: Message,
+  userId: string
+): Promise<{ error: string | null }> {
+  const next = !message.pinned;
+  const { error } = await supabase
+    .from("messages")
+    .update({
+      pinned:    next,
+      pinned_at: next ? new Date().toISOString() : null,
+      pinned_by: next ? userId : null,
+    })
+    .eq("id", message.id);
+  return { error: error?.message ?? null };
+}
+
+/** All pinned messages in a channel, newest pin first. */
+export async function getPinnedMessages(channelId: string): Promise<Message[]> {
+  const { data } = await supabase
+    .from("messages")
+    .select("*")
+    .eq("channel_id", channelId)
+    .eq("pinned", true)
+    .eq("retracted", false)
+    .order("pinned_at", { ascending: false });
+  return (data ?? []) as Message[];
+}
+
+/** Channel ids this user has pinned. Channel pins are PER-USER. */
+export async function getChannelPins(userId: string): Promise<string[]> {
+  const { data } = await supabase
+    .from("channel_pins")
+    .select("channel_id")
+    .eq("user_id", userId);
+  return (data ?? []).map((r: any) => r.channel_id as string);
+}
+
+export async function toggleChannelPin(
+  channelId: string,
+  userId: string,
+  tenantId: string,
+  currentlyPinned: boolean
+): Promise<{ error: string | null }> {
+  if (currentlyPinned) {
+    const { error } = await supabase
+      .from("channel_pins")
+      .delete()
+      .eq("user_id", userId)
+      .eq("channel_id", channelId);
+    return { error: error?.message ?? null };
+  }
+  const { error } = await supabase
+    .from("channel_pins")
+    .insert({ user_id: userId, channel_id: channelId, tenant_id: tenantId });
+  return { error: error?.message ?? null };
+}
+
+/** Delete a channel and its messages. Admin/manager only — enforce at the call site. */
+export async function deleteChannel(channelId: string): Promise<{ error: string | null }> {
+  await supabase.from("messages").delete().eq("channel_id", channelId);
+  const { error } = await supabase.from("channels").delete().eq("id", channelId);
+  return { error: error?.message ?? null };
 }

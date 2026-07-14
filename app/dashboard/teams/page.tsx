@@ -13,6 +13,8 @@ import {
   sendTextMessage, uploadAndSendFile,
   uploadAndSendVoice, retractMessage,
   toggleReaction, subscribeToChannel,
+  togglePinMessage, getPinnedMessages,
+  getChannelPins, toggleChannelPin, deleteChannel,
   type Message, type Channel,
 } from "@/lib/chat/chat.service";
 import { useMentionInput }           from "@/lib/mentions/mention.hooks";
@@ -32,7 +34,7 @@ import {
   STATUS_META, type UserStatus, type QueueCategory,
 } from "@/lib/teams/status.engine";
 import {
-  Send, Paperclip, Mic, Smile, Reply, Trash2,
+  Send, Paperclip, Mic, Smile, Reply, Trash2, PinOff, Check,
   Plus, Hash, X, Play, Pause, Download,
   StopCircle, Search, Pin, MoreHorizontal,
   CheckCheck, Loader2, ChevronDown,
@@ -719,13 +721,14 @@ function VoicePlayer({ url, secs }: { url: string; secs: number }) {  const [pla
 // ─────────────────────────────────────────
 function MessageBubble({
   message, isMine, profile, allMessages, allProfiles,
-  currentUserId, onQuote, onRetract, onReact,
+  currentUserId, onQuote, onRetract, onReact, onTogglePin,
 }: {
   message:       Message; isMine: boolean; profile: Profile | null;
   allMessages:   Message[]; allProfiles: Record<string, Profile>;
   currentUserId: string;
   onQuote:   (m: Message) => void;
   onRetract: (m: Message) => void;
+  onTogglePin: (m: Message) => void;
   onReact:   (m: Message, e: string) => void;
 }) {
   const [showActions, setShowActions] = useState(false);
@@ -967,7 +970,7 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
   const [loading,        setLoading]        = useState(true);
   const [sending,        setSending]        = useState(false);
   const [searchQuery,    setSearchQuery]    = useState("");
-  const [rightPanel,     setRightPanel]     = useState<"queue" | "members" | null>(null);
+  const [rightPanel,     setRightPanel]     = useState<"queue" | "members" | "pinned" | null>(null);
   const [viewingProfile, setViewingProfile] = useState<Profile | null>(null);
 
   const [myStatus,       setMyStatus]       = useState<UserStatus>("ONLINE");
@@ -982,6 +985,11 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
   const typingChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const typingTimerRef   = useRef<Record<string, NodeJS.Timeout>>({});
   const [quotedMsg,   setQuotedMsg]   = useState<Message | null>(null);
+  const [pinnedMsgs,  setPinnedMsgs]  = useState<Message[]>([]);
+  const [pinnedChans, setPinnedChans] = useState<string[]>([]);
+  const [showChanMenu, setShowChanMenu] = useState(false);
+  const atBottomRef = useRef(true);
+  const isManager = currentUser?.role === "admin" || currentUser?.role === "manager";
   const [showEmoji,   setShowEmoji]   = useState(false);
   const [showMeme,    setShowMeme]    = useState(false);
   const [showNewChan, setShowNewChan] = useState(false);
@@ -1074,13 +1082,18 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
     };
 
     fetchLatest();
-    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+    atBottomRef.current = true;
+    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "auto" }), 100);
 
     unsubRef.current = subscribeToChannel(
       channelId,
       (msg) => {
         setMessages((prev) => prev.find((m) => m.id === msg.id) ? prev : [...prev, msg]);
-        setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+        // Only follow the conversation when the reader is already at the bottom —
+        // yanking the view away mid-read is worse than not scrolling at all.
+        if (atBottomRef.current) {
+          setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+        }
       },
       (msg) => setMessages((prev) => prev.map((m) => m.id === msg.id ? msg : m))
     );
@@ -1234,6 +1247,48 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
     } catch (err) { console.error("Voice send failed:", err); }
   };
 
+  // ── Pins ──
+  const loadPins = useCallback(async () => {
+    if (!activeChannel) { setPinnedMsgs([]); return; }
+    try { setPinnedMsgs(await getPinnedMessages(activeChannel.id)); } catch { setPinnedMsgs([]); }
+  }, [activeChannel]);
+
+  useEffect(() => { loadPins(); }, [loadPins]);
+
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    getChannelPins(currentUser.id).then(setPinnedChans).catch(() => setPinnedChans([]));
+  }, [currentUser?.id]);
+
+  const handleTogglePin = async (m: Message) => {
+    if (!currentUser?.id) return;
+    const { error } = await togglePinMessage(m, currentUser.id);
+    if (error) { console.error("[pin]", error); return; }
+    setMessages((prev) => prev.map((x) => x.id === m.id ? { ...x, pinned: !m.pinned } : x));
+    loadPins();
+  };
+
+  const handleToggleChannelPin = async () => {
+    if (!currentUser?.id || !activeChannel || !tenantId) return;
+    const isPinned = pinnedChans.includes(activeChannel.id);
+    const { error } = await toggleChannelPin(activeChannel.id, currentUser.id, tenantId, isPinned);
+    if (error) { console.error("[channel pin]", error); return; }
+    setPinnedChans((prev) => isPinned
+      ? prev.filter((id) => id !== activeChannel.id)
+      : [...prev, activeChannel.id]);
+    setShowChanMenu(false);
+  };
+
+  const handleDeleteChannel = async () => {
+    if (!activeChannel) return;
+    if (!confirm(`Delete #${activeChannel.name}? This removes the channel and all its messages, permanently.`)) return;
+    const { error } = await deleteChannel(activeChannel.id);
+    if (error) { console.error("[delete channel]", error); return; }
+    setShowChanMenu(false);
+    setActiveChannel(null);
+    if (tenantId) getChannels(tenantId).then((cs) => setChannels(cs as any));
+  };
+
   const handleRetract = async (msg: Message) => {
     if (!currentUser) return;
     try { await retractMessage(msg.id, currentUser.id); } catch {}
@@ -1327,14 +1382,20 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
               <Plus size={11} className="text-zinc-500" />
             </button>
           </div>
-          {channels.map((ch) => (
+          {[...channels].sort((a, b) => {
+            const ap = pinnedChans.includes(a.id) ? 0 : 1;
+            const bp = pinnedChans.includes(b.id) ? 0 : 1;
+            return ap - bp;
+          }).map((ch) => (
             <button key={ch.id} onClick={() => { setActiveChannel(ch as Channel); markRead(ch.id); }}
               className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg mx-0.5
                           transition text-left
                 ${activeChannel?.id === ch.id
                   ? "bg-indigo-500/15 text-white"
                   : "text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200"}`}>
-              <Hash size={13} className="flex-shrink-0" />
+              {pinnedChans.includes(ch.id)
+                ? <Pin size={11} className="flex-shrink-0 text-amber-400" />
+                : <Hash size={13} className="flex-shrink-0" />}
               <span className="text-sm flex-1 truncate">{ch.name}</span>{(unreadCounts[ch.id] ?? 0) > 0 && activeChannel?.id !== ch.id && (<span className="ml-1 min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-500 text-white text-[10px] font-bold flex items-center justify-center">{(unreadCounts[ch.id] ?? 0) > 99 ? "99+" : unreadCounts[ch.id]}</span>)}
             </button>
           ))}
@@ -1472,19 +1533,77 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
                       : "hover:bg-zinc-800 text-zinc-500"}`}>
                   <Users size={15} />
                 </button>
-                <button className="w-8 h-8 rounded-lg hover:bg-zinc-800 flex items-center justify-center transition">
-                  <Pin size={14} className="text-zinc-500" />
+                <button
+                  onClick={() => setRightPanel(rightPanel === "pinned" ? null : "pinned")}
+                  title="Pinned messages"
+                  className={`relative w-8 h-8 rounded-lg flex items-center justify-center transition
+                    ${rightPanel === "pinned"
+                      ? "bg-amber-500/20 text-amber-400"
+                      : "hover:bg-zinc-800 text-zinc-500"}`}>
+                  <Pin size={14} />
+                  {pinnedMsgs.length > 0 && (
+                    <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-500
+                                     flex items-center justify-center text-[9px] font-bold text-black">
+                      {pinnedMsgs.length > 9 ? "9+" : pinnedMsgs.length}
+                    </span>
+                  )}
                 </button>
-                <button className="w-8 h-8 rounded-lg hover:bg-zinc-800 flex items-center justify-center transition">
-                  <MoreHorizontal size={14} className="text-zinc-500" />
-                </button>
+
+                <div className="relative">
+                  <button
+                    onClick={() => setShowChanMenu((v) => !v)}
+                    className="w-8 h-8 rounded-lg hover:bg-zinc-800 flex items-center justify-center transition">
+                    <MoreHorizontal size={14} className="text-zinc-500" />
+                  </button>
+                  {showChanMenu && (
+                    <>
+                      <div className="fixed inset-0 z-30" onClick={() => setShowChanMenu(false)} />
+                      <div className="absolute right-0 top-9 z-40 w-52 rounded-xl border border-zinc-800
+                                      bg-[#0f0f1a] p-1.5 shadow-2xl">
+                        <button
+                          onClick={handleToggleChannelPin}
+                          className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg
+                                     hover:bg-zinc-800 transition text-left">
+                          {activeChannel && pinnedChans.includes(activeChannel.id)
+                            ? <><PinOff size={13} className="text-amber-400" /><span className="text-xs text-zinc-300">Unpin channel</span></>
+                            : <><Pin size={13} className="text-zinc-400" /><span className="text-xs text-zinc-300">Pin to top</span></>}
+                        </button>
+                        <button
+                          onClick={() => { if (activeChannel) markRead(activeChannel.id); setShowChanMenu(false); }}
+                          className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg
+                                     hover:bg-zinc-800 transition text-left">
+                          <Check size={13} className="text-zinc-400" />
+                          <span className="text-xs text-zinc-300">Mark all as read</span>
+                        </button>
+                        {isManager && (
+                          <>
+                            <div className="h-px bg-zinc-800 my-1" />
+                            <button
+                              onClick={handleDeleteChannel}
+                              className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg
+                                         hover:bg-red-500/10 transition text-left">
+                              <Trash2 size={13} className="text-red-400" />
+                              <span className="text-xs text-red-400">Delete channel</span>
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
 
             <div className="flex flex-1 overflow-hidden">
               {/* Messages */}
               <div className="flex-1 flex flex-col overflow-hidden">
-                <div className="flex-1 overflow-y-auto py-4">
+                <div
+              className="flex-1 overflow-y-auto py-4"
+              onScroll={(e) => {
+                const el = e.currentTarget;
+                atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+              }}
+            >
                   {messages.length === 0 && (
                     <div className="flex flex-col items-center justify-center h-full text-zinc-700 gap-2">
                       <Hash size={32} className="opacity-20" />
@@ -1522,6 +1641,7 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
                             allProfiles={allProfiles}
                             currentUserId={currentUser?.id ?? ""}
                             onQuote={(m) => setQuotedMsg(m)}
+                onTogglePin={handleTogglePin}
                             onRetract={handleRetract}
                             onReact={handleReact}
                           />
@@ -1719,7 +1839,7 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
                                 flex flex-col overflow-hidden">
                   <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
                     <p className="text-sm font-semibold text-white">
-                      {rightPanel === "queue" ? "Attention Queue" : "Members"}
+                      {rightPanel === "queue" ? "Attention Queue" : rightPanel === "pinned" ? "Pinned Messages" : "Members"}
                     </p>
                     <button onClick={() => setRightPanel(null)}
                       className="w-7 h-7 rounded-lg hover:bg-zinc-800 flex items-center
@@ -1740,6 +1860,46 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
                         }}
                       />
                     )}
+                    {rightPanel === "pinned" && (
+                      <div className="p-3 space-y-2">
+                        {pinnedMsgs.length === 0 && (
+                          <div className="text-center py-10">
+                            <Pin size={20} className="text-zinc-700 mx-auto mb-2" />
+                            <p className="text-xs text-zinc-600">No pinned messages yet.</p>
+                            <p className="text-[10px] text-zinc-700 mt-1">
+                              Hover any message and hit the pin icon.
+                            </p>
+                          </div>
+                        )}
+                        {pinnedMsgs.map((pm) => {
+                          const author = pm.user_id ? allProfiles[pm.user_id] : null;
+                          return (
+                            <div key={pm.id}
+                              className="rounded-xl border border-amber-500/15 bg-amber-500/[0.03] p-3 space-y-1.5">
+                              <div className="flex items-center gap-2">
+                                <Pin size={10} className="text-amber-400 flex-shrink-0" />
+                                <span className="text-[11px] font-medium text-white truncate">
+                                  {author?.full_name ?? pm.user_name ?? "Unknown"}
+                                </span>
+                                <span className="text-[10px] text-zinc-600 ml-auto flex-shrink-0">
+                                  {formatTime(pm.created_at)}
+                                </span>
+                              </div>
+                              <p className="text-xs text-zinc-400 leading-relaxed line-clamp-4">
+                                {pm.content ?? (pm.file_name ? `📎 ${pm.file_name}` : "Attachment")}
+                              </p>
+                              <button
+                                onClick={() => handleTogglePin(pm)}
+                                className="text-[10px] text-zinc-600 hover:text-amber-400 transition
+                                           flex items-center gap-1">
+                                <PinOff size={9} /> Unpin
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
                     {rightPanel === "members" && (
                       <div className="p-3 space-y-1">
                         {profileList.map((p) => {
