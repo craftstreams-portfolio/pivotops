@@ -130,6 +130,12 @@ export default function FieldPlacer({
 
   const save = async () => {
     if (fields.length === 0) { setErr("Place at least one field, or cancel."); return; }
+    const emptySigners = signers.filter((s) => !fields.some((f) => f.signature_id === s.id));
+    if (emptySigners.length > 0) {
+      const names = emptySigners.map((s) => s.signer_name ?? s.signer_email).join(", ");
+      setErr(`No fields placed for: ${names}. Select each signer in the toolbar and place at least one field for them.`);
+      return;
+    }
     setSaving(true); setErr("");
     try {
       const rows = fields.map((f) => ({
@@ -181,6 +187,14 @@ export default function FieldPlacer({
               <span className="inline-block w-2 h-2 rounded-full mr-1.5"
                 style={{ background: SIGNER_COLORS[i % SIGNER_COLORS.length] }} />
               {s.signer_name ?? s.signer_email}
+              {(() => {
+                const n = fields.filter((f) => f.signature_id === s.id).length;
+                return (
+                  <span className={`ml-1.5 text-[10px] font-semibold ${n === 0 ? "text-amber-400" : "text-zinc-500"}`}>
+                    {n}
+                  </span>
+                );
+              })()}
             </button>
           ))}
         </div>
