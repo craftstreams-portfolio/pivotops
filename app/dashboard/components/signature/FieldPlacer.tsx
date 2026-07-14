@@ -79,9 +79,11 @@ export default function FieldPlacer({
           .from("admin-documents").createSignedUrl(path, 3600);
         if (!link?.signedUrl) { setErr("Could not open the document."); setLoading(false); return; }
 
-        const pdfjs: any = await import("pdfjs-dist");
+        // @ts-expect-error - the /build/ subpath ships no type declarations
+        const pdfjs: any = await import("pdfjs-dist/build/pdf.mjs");
+        // Worker version MUST match the library version, or it fails to load.
         pdfjs.GlobalWorkerOptions.workerSrc =
-          `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.mjs`;
+          `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
         const doc = await pdfjs.getDocument(link.signedUrl).promise;
         if (cancelled) return;
