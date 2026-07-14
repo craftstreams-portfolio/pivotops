@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { sendEmail, EMAIL_SENDERS } from "@/lib/email";
+import { sealSignedDocument } from "@/lib/signature/seal";
 
 function getAdmin() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false } });
@@ -62,7 +63,7 @@ export async function POST(req: NextRequest) {
     if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
 
     // Check if ALL parties on this request have now signed
-    const { data: allSigs } = await admin.from("signatures").select("signed, signer_email, signer_name").eq("request_id", sig.request_id);
+    const { data: allSigs } = await admin.from("signatures").select("signed, signer_email, signer_name, signature_text, signed_at, signer_ip, token").eq("request_id", sig.request_id);
     const remaining = (allSigs ?? []).filter(s => !s.signed).length;
 
     if (remaining === 0) {
@@ -70,7 +71,35 @@ export async function POST(req: NextRequest) {
       await admin.from("signature_requests").update({ status: "completed", completed_at: now }).eq("id", sig.request_id);
       const { data: reqRow } = await admin.from("signature_requests").select("*").eq("id", sig.request_id).single();
       const { data: file } = await admin.from("admin_doc_files").select("name, file_url").eq("id", reqRow?.admin_doc_file_id).single();
-      const signedDocUrl = await signedAdminUrl(admin, file?.file_url ?? null);
+
+      // Seal: append a Certificate of Completion (every signer, time, IP) to the
+      // document, flatten it, and hash it. Previously we emailed the ORIGINAL,
+      // unsigned file — the consent was recorded but the artifact showed nothing.
+      let signedDocUrl: string | null = null;
+      const sealed = await sealSignedDocument(admin, {
+        requestId: sig.request_id,
+        tenantId:  sig.tenant_id,
+        docName:   reqRow?.doc_name ?? file?.name ?? "Document",
+        sentBy:    reqRow?.sent_by ?? "",
+        fileUrl:   file?.file_url ?? null,
+        signers:   (allSigs ?? []) as any,
+      });
+
+      if ("error" in sealed) {
+        console.error("[signature/sign] seal failed:", sealed.error);
+        signedDocUrl = await signedAdminUrl(admin, file?.file_url ?? null); // fall back to the original
+      } else {
+        await admin.from("signature_requests").update({
+          signed_file_path: sealed.path,
+          signed_file_hash: sealed.hash,
+          sealed_at:        now,
+        }).eq("id", sig.request_id);
+
+        const { data: link } = await admin.storage
+          .from("admin-documents")
+          .createSignedUrl(sealed.path, 60 * 60 * 24 * 7);
+        signedDocUrl = link?.signedUrl ?? null;
+      }
       for (const party of (allSigs ?? [])) {
         const html = `
           <div style="font-family:sans-serif;max-width:520px;margin:0 auto">
@@ -78,7 +107,7 @@ export async function POST(req: NextRequest) {
             <p>Hello${party.signer_name ? " " + party.signer_name : ""},</p>
             <p>All parties have signed <strong>${reqRow?.doc_name ?? "the document"}</strong>. A copy is available below.</p>
             ${signedDocUrl ? `<p><a href="${signedDocUrl}" style="display:inline-block;background:#00BFA6;color:#06070D;font-weight:700;padding:12px 24px;border-radius:8px;text-decoration:none">View Document</a></p>` : ""}
-            <p style="font-size:11px;color:#aaa">This document was signed using PivotOps simple electronic signatures. Not a certified or notarized signature.</p>
+            <p style="font-size:11px;color:#aaa">Signed with PivotOps electronic signatures. The attached copy includes a Certificate of Completion recording each signer, the time they signed and their IP address. This is a simple electronic signature under the US ESIGN Act and EU eIDAS; it is not notarised.</p>
           </div>`;
         await sendEmail({ to: party.signer_email, subject: `Completed: ${reqRow?.doc_name ?? "Document"}`, html, from: EMAIL_SENDERS.notifications });
       }
