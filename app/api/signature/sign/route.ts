@@ -30,7 +30,15 @@ export async function GET(req: NextRequest) {
   if (!reqRow) return NextResponse.json({ error: "Request not found." }, { status: 404 });
   const { data: file } = await admin.from("admin_doc_files").select("name, file_url, file_name").eq("id", reqRow.admin_doc_file_id).single();
   const viewUrl = await signedAdminUrl(admin, file?.file_url ?? null);
+  const { data: myFields } = await admin
+    .from("signature_fields")
+    .select("id, kind, label, required, page_index, x, y, w, h, source")
+    .eq("request_id", sig.request_id)
+    .eq("signature_id", sig.id)
+    .order("page_index", { ascending: true });
+
   return NextResponse.json({
+    fields: myFields ?? [],
     docName: reqRow.doc_name ?? file?.name ?? "Document",
     fileUrl: viewUrl,
     message: reqRow.message ?? null,
@@ -46,7 +54,7 @@ export async function GET(req: NextRequest) {
 // POST: record a signature
 export async function POST(req: NextRequest) {
   try {
-    const { token, signatureText } = await req.json();
+    const { token, signatureText, fieldValues } = await req.json();
     if (!token || !signatureText?.trim()) return NextResponse.json({ error: "Missing signature." }, { status: 400 });
 
     const admin = getAdmin();
@@ -62,8 +70,21 @@ export async function POST(req: NextRequest) {
     }).eq("token", token);
     if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
 
+    // Persist what the signer typed into each of their fields. Signature/initials/date
+    // fields are derived at seal time from the signature record, so only free-text
+    // fields need an explicit value here.
+    if (fieldValues && typeof fieldValues === "object") {
+      for (const [fieldId, val] of Object.entries(fieldValues as Record<string, string>)) {
+        if (typeof val !== "string") continue;
+        await admin.from("signature_fields")
+          .update({ value: val.trim() })
+          .eq("id", fieldId)
+          .eq("signature_id", sig.id);   // a signer can only fill their own fields
+      }
+    }
+
     // Check if ALL parties on this request have now signed
-    const { data: allSigs } = await admin.from("signatures").select("signed, signer_email, signer_name, signature_text, signed_at, signer_ip, token").eq("request_id", sig.request_id);
+    const { data: allSigs } = await admin.from("signatures").select("id, signed, signer_email, signer_name, signature_text, signed_at, signer_ip, token").eq("request_id", sig.request_id);
     const remaining = (allSigs ?? []).filter(s => !s.signed).length;
 
     if (remaining === 0) {
@@ -76,6 +97,11 @@ export async function POST(req: NextRequest) {
       // document, flatten it, and hash it. Previously we emailed the ORIGINAL,
       // unsigned file — the consent was recorded but the artifact showed nothing.
       let signedDocUrl: string | null = null;
+      const { data: fieldRows } = await admin
+        .from("signature_fields")
+        .select("*")
+        .eq("request_id", sig.request_id);
+
       const sealed = await sealSignedDocument(admin, {
         requestId: sig.request_id,
         tenantId:  sig.tenant_id,
@@ -83,6 +109,7 @@ export async function POST(req: NextRequest) {
         sentBy:    reqRow?.sent_by ?? "",
         fileUrl:   file?.file_url ?? null,
         signers:   (allSigs ?? []) as any,
+        fields:    (fieldRows ?? []) as any,
       });
 
       if ("error" in sealed) {

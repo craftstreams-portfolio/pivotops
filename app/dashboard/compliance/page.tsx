@@ -1,4 +1,5 @@
 "use client";
+import FieldPlacer from "@/app/dashboard/components/signature/FieldPlacer";
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { supabase }          from "@/lib/supabase";
@@ -617,6 +618,7 @@ function SignatureModal({ file, onClose }: { file: AdminFile; onClose: () => voi
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [done, setDone]       = useState<{ emailed: number; parties: number } | null>(null);
+  const [placing, setPlacing] = useState<{ requestId: string; signers: { id: string; signer_name: string | null; signer_email: string }[]; tenantId: string } | null>(null);
   const [err, setErr]         = useState<string | null>(null);
 
   const setParty = (i: number, key: "name" | "email", val: string) =>
@@ -636,15 +638,62 @@ function SignatureModal({ file, onClose }: { file: AdminFile; onClose: () => voi
       const res = await fetch("/api/signature/create", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ adminDocFileId: file.id, docName: file.name, recipients: valid, message }),
+        body: JSON.stringify({ adminDocFileId: file.id, docName: file.name, recipients: valid, message, defer: true }),
       });
       const json = await res.json();
       if (!res.ok) { setErr(json.error ?? "Failed to send."); setSending(false); return; }
-      setDone({ emailed: json.emailed, parties: json.parties });
+      // Request + signers exist, no emails yet. Place fields, then dispatch.
+      setPlacing({ requestId: json.requestId, signers: json.signers ?? [], tenantId: file.tenant_id });
       setSending(false);
     } catch (e: any) {
       setErr(e?.message ?? "Failed to send."); setSending(false);
     }
+  }
+
+  async function dispatchAfterPlacement() {
+    if (!placing) return;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      const res = await fetch("/api/signature/dispatch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ requestId: placing.requestId }),
+      });
+      const json = await res.json();
+      setPlacing(null);
+      setDone({ emailed: json.emailed ?? 0, parties: json.parties ?? placing.signers.length });
+    } catch (e: any) {
+      setErr(e?.message ?? "Placed the fields, but sending failed.");
+      setPlacing(null);
+    }
+  }
+
+  // Field-placement step: full-screen over the modal.
+  if (placing) {
+    return (
+      <div className="fixed inset-0 z-[60] bg-zinc-950" onClick={(e) => e.stopPropagation()}>
+        <div className="h-full flex flex-col">
+          <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
+            <div>
+              <h3 className="text-white font-semibold text-sm">Place fields · {file.name}</h3>
+              <p className="text-[11px] text-zinc-500">Drop a signature, date or text field for each signer, then send.</p>
+            </div>
+            <button onClick={() => { setPlacing(null); onClose(); }} className="text-zinc-500 hover:text-white"><X size={16} /></button>
+          </div>
+          <div className="flex-1 min-h-0">
+            <FieldPlacer
+              fileId={file.id}
+              requestId={placing.requestId}
+              tenantId={placing.tenantId}
+              signers={placing.signers}
+              onDone={dispatchAfterPlacement}
+              onCancel={() => { setPlacing(null); onClose(); }}
+            />
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -683,7 +732,7 @@ function SignatureModal({ file, onClose }: { file: AdminFile; onClose: () => voi
             <div className="flex gap-2">
               <button onClick={send} disabled={sending}
                 className="flex-1 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium disabled:opacity-60 flex items-center justify-center gap-2">
-                {sending ? <><Loader2 size={13} className="animate-spin" /> Sending</> : "Send"}
+                {sending ? <><Loader2 size={13} className="animate-spin" /> Preparing</> : "Continue to place fields"}
               </button>
               <button onClick={onClose} className="px-4 py-2 rounded-lg border border-zinc-700 text-zinc-400 text-sm">Cancel</button>
             </div>

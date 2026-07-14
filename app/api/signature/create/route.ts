@@ -31,11 +31,12 @@ export async function POST(req: NextRequest) {
     const orgName = tenantRow?.org_name || "Your organization";
 
     const body = await req.json();
-    const { adminDocFileId, docName, recipients, message } = body as {
+    const { adminDocFileId, docName, recipients, message, defer } = body as {
       adminDocFileId: string;
       docName?: string;
       recipients: { name?: string; email: string }[];
       message?: string;
+      defer?: boolean;   // when true, create the request + signers but hold the emails
     };
 
     if (!adminDocFileId || !Array.isArray(recipients) || recipients.length === 0) {
@@ -73,8 +74,13 @@ export async function POST(req: NextRequest) {
       sign_order: i,
       created_at: now,
     }));
-    const { error: sigErr } = await admin.from("signatures").insert(rows);
+    const { data: sigRows, error: sigErr } = await admin.from("signatures").insert(rows).select("id, signer_name, signer_email, token");
     if (sigErr) return NextResponse.json({ error: "Failed to create signatures: " + sigErr.message }, { status: 500 });
+
+    // Deferred: caller will place fields, then hit /api/signature/dispatch to send.
+    if (defer) {
+      return NextResponse.json({ success: true, requestId: reqRow.id, deferred: true, signers: sigRows ?? [] });
+    }
 
     // Email each party a signing link
     let emailed = 0;

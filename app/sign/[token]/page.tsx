@@ -6,7 +6,16 @@ import { useParams } from "next/navigation";
 const NAVY = "#06070D";
 const TEAL = "#00BFA6";
 
+interface SigField {
+  id: string;
+  kind: "signature" | "initials" | "date" | "text";
+  label: string | null;
+  required: boolean;
+  page_index: number | null;
+}
+
 interface SignCtx {
+  fields: SigField[];
   docName: string;
   fileUrl: string | null;
   message: string | null;
@@ -26,6 +35,7 @@ export default function SignPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState<string | null>(null);
   const [typed, setTyped]     = useState("");
+  const [textVals, setTextVals] = useState<Record<string, string>>({});
   const [signing, setSigning] = useState(false);
   const [done, setDone]       = useState(false);
 
@@ -51,7 +61,7 @@ export default function SignPage() {
       const res = await fetch("/api/signature/sign", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, signatureText: typed.trim() }),
+        body: JSON.stringify({ token, signatureText: typed.trim(), fieldValues: textVals }),
       });
       const json = await res.json();
       if (!res.ok) { setError(json.error ?? "Could not sign."); setSigning(false); return; }
@@ -105,11 +115,40 @@ export default function SignPage() {
         </a>
       )}
 
+      {(ctx?.fields?.length ?? 0) > 0 && (
+        <div style={{ marginBottom: 22, padding: 16, background: "#161b22", borderRadius: 10, border: "1px solid #222" }}>
+          <p style={{ fontSize: 11, color: "#888", marginBottom: 12, textTransform: "uppercase", letterSpacing: 1 }}>
+            {ctx!.fields.length} field{ctx!.fields.length === 1 ? "" : "s"} for you on this document
+          </p>
+
+          {ctx!.fields.filter(f => f.kind === "text").map(f => (
+            <div key={f.id} style={{ marginBottom: 12 }}>
+              <label style={{ display: "block", fontSize: 12, color: "#aaa", marginBottom: 5 }}>
+                {f.label ?? "Text"}{f.required ? " *" : ""}
+              </label>
+              <input
+                value={textVals[f.id] ?? ""}
+                onChange={e => setTextVals(v => ({ ...v, [f.id]: e.target.value }))}
+                style={{ width: "100%", padding: "9px 12px", borderRadius: 7, background: "#0d1117",
+                         border: "1px solid #333", color: "#fff", fontSize: 14, boxSizing: "border-box" }}
+              />
+            </div>
+          ))}
+
+          {ctx!.fields.filter(f => f.kind !== "text").length > 0 && (
+            <p style={{ fontSize: 11, color: "#666", marginTop: 4, lineHeight: 1.6 }}>
+              Your signature, initials and the date will be placed on the document automatically
+              wherever they are required — you only type your name once, below.
+            </p>
+          )}
+        </div>
+      )}
+
       <div style={{ marginBottom: 8, fontSize: 13, color: "#aaa" }}>Type your full name to sign:</div>
       <input value={typed} onChange={e => setTyped(e.target.value)} placeholder="Your full name"
         style={{ width: "100%", padding: "12px 14px", borderRadius: 8, background: "#161b22", border: "1px solid #333", color: "#fff", fontSize: 20, fontFamily: "'Brush Script MT', cursive", marginBottom: 6, boxSizing: "border-box" }} />
       <p style={{ fontSize: 11, color: "#666", marginBottom: 20 }}>
-        By typing your name and clicking Sign, you agree this constitutes your electronic signature. This is a simple electronic signature and is not a certified or notarized signature.
+        By typing your name and clicking Sign, you agree this constitutes your electronic signature. Your name, the time you signed and your IP address will be recorded on the document. This is a simple electronic signature under the US ESIGN Act and EU eIDAS; it is not notarised.
       </p>
 
       <button onClick={submit} disabled={!typed.trim() || signing}
