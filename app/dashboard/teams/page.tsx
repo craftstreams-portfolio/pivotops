@@ -1759,7 +1759,7 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
                         <div className="relative">
                           <button onClick={() => setShowEmoji(!showEmoji)}
                             className="group w-9 h-9 rounded-full bg-white/[0.04] hover:bg-white/[0.09]
-                                       border border-white/[0.05] hover:border-white/[0.12]
+                                       border border-transparent hover:border-white/80
                                        flex items-center justify-center transition-all duration-150
                                        hover:scale-105 active:scale-95">
                             <Smile size={17} strokeWidth={1.9}
@@ -1795,7 +1795,7 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
                         <div className="relative">
                           <button onClick={() => setShowMeme(!showMeme)}
                             className="group w-9 h-9 rounded-full bg-white/[0.04] hover:bg-white/[0.09]
-                                       border border-white/[0.05] hover:border-white/[0.12]
+                                       border border-transparent hover:border-white/80
                                        flex items-center justify-center transition-all duration-150
                                        hover:scale-105 active:scale-95
                                        text-[10px] font-bold tracking-[0.06em]
@@ -1830,7 +1830,7 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
                         <button onClick={() => fileRef.current?.click()}
                           title="Attach a file"
                           className="group w-9 h-9 rounded-full bg-white/[0.04] hover:bg-white/[0.09]
-                                     border border-white/[0.05] hover:border-white/[0.12]
+                                     border border-transparent hover:border-white/80
                                      flex items-center justify-center transition-all duration-150
                                      hover:scale-105 active:scale-95">
                           <Paperclip size={17} strokeWidth={1.9}
@@ -1839,7 +1839,7 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
                         <button onClick={voice.start}
                           title="Record a voice note"
                           className="group w-9 h-9 rounded-full bg-white/[0.04] hover:bg-white/[0.09]
-                                     border border-white/[0.05] hover:border-white/[0.12]
+                                     border border-transparent hover:border-white/80
                                      flex items-center justify-center transition-all duration-150
                                      hover:scale-105 active:scale-95">
                           <Mic size={17} strokeWidth={1.9}
