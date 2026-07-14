@@ -833,6 +833,13 @@ function MessageBubble({
                          transition-opacity bg-zinc-900 border border-zinc-700
                          rounded-xl px-1.5 py-1 shadow-lg
           ${isMine ? "mr-1" : "ml-1"}`}>
+          <button onClick={() => onTogglePin(message)}
+            title={message.pinned ? "Unpin message" : "Pin message"}
+            className="w-7 h-7 rounded-lg hover:bg-zinc-800 flex items-center justify-center transition">
+            {message.pinned
+              ? <PinOff size={13} className="text-amber-400" />
+              : <Pin size={13} className="text-zinc-400" />}
+          </button>
           <button onClick={() => onQuote(message)}
             className="w-7 h-7 rounded-lg hover:bg-zinc-800 flex items-center justify-center transition">
             <Reply size={13} className="text-zinc-400" />
