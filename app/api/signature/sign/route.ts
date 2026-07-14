@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
 // POST: record a signature
 export async function POST(req: NextRequest) {
   try {
-    const { token, signatureText, fieldValues } = await req.json();
+    const { token, signatureText, fieldValues, signatureImage } = await req.json();
     if (!token || !signatureText?.trim()) return NextResponse.json({ error: "Missing signature." }, { status: 400 });
 
     const admin = getAdmin();
@@ -67,6 +67,7 @@ export async function POST(req: NextRequest) {
 
     const { error: updErr } = await admin.from("signatures").update({
       signed: true, signature_text: signatureText.trim(), signed_at: now, signer_ip: ip,
+      signature_image: typeof signatureImage === "string" && signatureImage.startsWith("data:image") ? signatureImage : null,
     }).eq("token", token);
     if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
 
@@ -84,7 +85,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Check if ALL parties on this request have now signed
-    const { data: allSigs } = await admin.from("signatures").select("id, signed, signer_email, signer_name, signature_text, signed_at, signer_ip, token").eq("request_id", sig.request_id);
+    const { data: allSigs } = await admin.from("signatures").select("id, signed, signer_email, signer_name, signature_text, signed_at, signer_ip, token, signature_image").eq("request_id", sig.request_id);
     const remaining = (allSigs ?? []).filter(s => !s.signed).length;
 
     if (remaining === 0) {

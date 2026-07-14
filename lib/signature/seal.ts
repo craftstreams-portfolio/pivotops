@@ -12,6 +12,7 @@ export interface SignerRecord {
   signed_at:      string | null;
   signer_ip:      string | null;
   token:          string;
+  signature_image?: string | null;
 }
 
 export interface FieldRecord {
@@ -156,18 +157,43 @@ export async function sealSignedDocument(
       const py   = ph - (f.y * ph) - boxH;
 
       const isSig = f.kind === "signature" || f.kind === "initials";
-      const size  = isSig
+
+      // A drawn/typed signature image takes priority for signature fields.
+      let drewImage = false;
+      if (f.kind === "signature" && signer?.signature_image?.startsWith("data:image")) {
+        try {
+          const b64 = signer.signature_image.split(",")[1];
+          const imgBytes = Buffer.from(b64, "base64");
+          const png = await pdf.embedPng(imgBytes);
+          const scale = Math.min((boxW - 4) / png.width, (boxH * 1.6) / png.height);
+          const iw = png.width * scale;
+          const ih = png.height * scale;
+          page.drawImage(png, {
+            x: px + 2,
+            y: py + (boxH - ih) / 2 + 2,
+            width: iw,
+            height: ih,
+          });
+          drewImage = true;
+        } catch (e) {
+          console.error("[seal] signature image embed failed:", e);
+        }
+      }
+
+      const size = isSig
         ? Math.min(boxH * 0.72, 22)
         : Math.min(boxH * 0.6, 11);
 
-      page.drawText(text, {
-        x: px + 2,
-        y: py + (boxH - size) / 2 + 1,
-        size,
-        font: isSig ? fontScript : font,
-        color: ink,
-        maxWidth: boxW - 4,
-      });
+      if (!drewImage) {
+        page.drawText(text, {
+          x: px + 2,
+          y: py + (boxH - size) / 2 + 1,
+          size,
+          font: isSig ? fontScript : font,
+          color: ink,
+          maxWidth: boxW - 4,
+        });
+      }
 
       if (isSig) {
         page.drawLine({

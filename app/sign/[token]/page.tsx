@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import SignaturePad from "./SignaturePad";
 
 const NAVY = "#06070D";
 const TEAL = "#00BFA6";
@@ -36,6 +37,7 @@ export default function SignPage() {
   const [error, setError]     = useState<string | null>(null);
   const [typed, setTyped]     = useState("");
   const [textVals, setTextVals] = useState<Record<string, string>>({});
+  const [sigImage, setSigImage] = useState<string | null>(null);
   const [signing, setSigning] = useState(false);
   const [done, setDone]       = useState(false);
 
@@ -61,7 +63,7 @@ export default function SignPage() {
       const res = await fetch("/api/signature/sign", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, signatureText: typed.trim(), fieldValues: textVals }),
+        body: JSON.stringify({ token, signatureText: typed.trim(), fieldValues: textVals, signatureImage: sigImage }),
       });
       const json = await res.json();
       if (!res.ok) { setError(json.error ?? "Could not sign."); setSigning(false); return; }
@@ -144,15 +146,19 @@ export default function SignPage() {
         </div>
       )}
 
-      <div style={{ marginBottom: 8, fontSize: 13, color: "#aaa" }}>Type your full name to sign:</div>
-      <input value={typed} onChange={e => setTyped(e.target.value)} placeholder="Your full name"
-        style={{ width: "100%", padding: "12px 14px", borderRadius: 8, background: "#161b22", border: "1px solid #333", color: "#fff", fontSize: 20, fontFamily: "'Brush Script MT', cursive", marginBottom: 6, boxSizing: "border-box" }} />
+      <div style={{ marginBottom: 8, fontSize: 13, color: "#aaa" }}>Draw your signature, or switch to Type:</div>
+      <SignaturePad name={typed} onChange={setSigImage} />
+
+      <div style={{ marginTop: 12, marginBottom: 6, fontSize: 12, color: "#888" }}>Your full legal name</div>
+      <input value={typed} onChange={e => setTyped(e.target.value)} placeholder="Full name (for the record)"
+        style={{ width: "100%", padding: "10px 12px", borderRadius: 8, background: "#161b22", border: "1px solid #333", color: "#fff", fontSize: 14, marginBottom: 10, boxSizing: "border-box" }} />
+
       <p style={{ fontSize: 11, color: "#666", marginBottom: 20 }}>
-        By typing your name and clicking Sign, you agree this constitutes your electronic signature. Your name, the time you signed and your IP address will be recorded on the document. This is a simple electronic signature under the US ESIGN Act and EU eIDAS; it is not notarised.
+        By signing above and clicking Sign, you agree this constitutes your electronic signature. Your signature, name, the time you signed and your IP address will be recorded on the document. This is a simple electronic signature under the US ESIGN Act and EU eIDAS; it is not notarised.
       </p>
 
-      <button onClick={submit} disabled={!typed.trim() || signing}
-        style={{ width: "100%", padding: "14px", borderRadius: 10, border: "none", background: TEAL, color: NAVY, fontSize: 16, fontWeight: 700, cursor: typed.trim() && !signing ? "pointer" : "default", opacity: typed.trim() && !signing ? 1 : 0.5 }}>
+      <button onClick={submit} disabled={(!sigImage && !typed.trim()) || signing}
+        style={{ width: "100%", padding: "14px", borderRadius: 10, border: "none", background: TEAL, color: NAVY, fontSize: 16, fontWeight: 700, cursor: ((sigImage || typed.trim()) && !signing) ? "pointer" : "default", opacity: ((sigImage || typed.trim()) && !signing) ? 1 : 0.5 }}>
         {signing ? "Signing…" : "Sign document"}
       </button>
 
