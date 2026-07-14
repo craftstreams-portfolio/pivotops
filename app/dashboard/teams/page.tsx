@@ -37,7 +37,7 @@ import {
   Send, Paperclip, Mic, Smile, Reply, Trash2, PinOff, Check,
   Plus, Hash, X, Play, Pause, Download,
   StopCircle, Search, Pin, MoreHorizontal,
-  CheckCheck, Loader2, ChevronDown,
+  CheckCheck, Loader2, ChevronDown, ChevronUp,
   Inbox, AtSign, Users, CheckCircle2,
   Bell, MessageSquare, ClipboardList,
   ShieldAlert, Brain, ExternalLink,
@@ -1751,33 +1751,48 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
                       <div className="flex items-center gap-1.5 pb-0.5">
                         <div className="relative">
                           <button onClick={() => setShowEmoji(!showEmoji)}
-                            className="w-9 h-9 rounded-xl bg-zinc-800 hover:bg-zinc-700
-                                       flex items-center justify-center transition">
-                            <Smile size={16} className="text-zinc-400" />
+                            className="group w-9 h-9 rounded-full bg-white/[0.04] hover:bg-white/[0.09]
+                                       border border-white/[0.05] hover:border-white/[0.12]
+                                       flex items-center justify-center transition-all duration-150
+                                       hover:scale-105 active:scale-95">
+                            <Smile size={17} strokeWidth={1.9}
+                              className="text-zinc-500 group-hover:text-white transition-colors" />
                           </button>
                           {showEmoji && (
-                            <div className="absolute bottom-11 right-0 bg-zinc-900 border
-                                            border-zinc-700 rounded-2xl p-2 grid grid-cols-8
-                                            gap-1 shadow-2xl z-50 w-max">
-                              {EMOJI_LIST.map((e) => (
-                                <button key={e}
-                                  onClick={() => {
-                                    mention.setValue(mention.value + e);
-                                    setShowEmoji(false);
-                                  }}
-                                  className="w-8 h-8 rounded-lg hover:bg-zinc-800
-                                             flex items-center justify-center text-lg transition">
-                                  {e}
-                                </button>
-                              ))}
+                            <div className="absolute bottom-12 right-0 z-50 w-max rounded-2xl
+                                            border border-white/[0.06] bg-[#12121c]/95 backdrop-blur-xl
+                                            p-3 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.9)]">
+                              <p className="text-[9px] uppercase tracking-[0.18em] text-zinc-600 px-1 pb-2.5">
+                                Emoji
+                              </p>
+                              <div className="grid grid-cols-8 gap-1">
+                                {EMOJI_LIST.map((e) => (
+                                  <button key={e}
+                                    onClick={() => {
+                                      mention.setValue(mention.value + e);
+                                      setShowEmoji(false);
+                                    }}
+                                    className="group relative w-9 h-9 rounded-xl flex items-center
+                                               justify-center text-[24px] leading-none
+                                               transition-transform duration-150
+                                               hover:scale-[1.35] active:scale-110">
+                                    <span className="absolute inset-0 rounded-xl bg-white/0
+                                                     group-hover:bg-white/[0.07] transition-colors" />
+                                    <span className="relative">{e}</span>
+                                  </button>
+                                ))}
+                              </div>
                             </div>
                           )}
                         </div>
                         <div className="relative">
                           <button onClick={() => setShowMeme(!showMeme)}
-                            className="w-9 h-9 rounded-xl bg-zinc-800 hover:bg-zinc-700
-                                       flex items-center justify-center transition
-                                       text-xs font-bold text-zinc-400">
+                            className="group w-9 h-9 rounded-full bg-white/[0.04] hover:bg-white/[0.09]
+                                       border border-white/[0.05] hover:border-white/[0.12]
+                                       flex items-center justify-center transition-all duration-150
+                                       hover:scale-105 active:scale-95
+                                       text-[10px] font-bold tracking-[0.06em]
+                                       text-zinc-500 group-hover:text-white">
                             GIF
                           </button>
                           {showMeme && (
@@ -1806,21 +1821,42 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
                           )}
                         </div>
                         <button onClick={() => fileRef.current?.click()}
-                          className="w-9 h-9 rounded-xl bg-zinc-800 hover:bg-zinc-700
-                                     flex items-center justify-center transition">
-                          <Paperclip size={16} className="text-zinc-400" />
+                          title="Attach a file"
+                          className="group w-9 h-9 rounded-full bg-white/[0.04] hover:bg-white/[0.09]
+                                     border border-white/[0.05] hover:border-white/[0.12]
+                                     flex items-center justify-center transition-all duration-150
+                                     hover:scale-105 active:scale-95">
+                          <Paperclip size={17} strokeWidth={1.9}
+                            className="text-zinc-500 group-hover:text-white transition-colors" />
                         </button>
                         <button onClick={voice.start}
-                          className="w-9 h-9 rounded-xl bg-zinc-800 hover:bg-zinc-700
-                                     flex items-center justify-center transition">
-                          <Mic size={16} className="text-zinc-400" />
+                          title="Record a voice note"
+                          className="group w-9 h-9 rounded-full bg-white/[0.04] hover:bg-white/[0.09]
+                                     border border-white/[0.05] hover:border-white/[0.12]
+                                     flex items-center justify-center transition-all duration-150
+                                     hover:scale-105 active:scale-95">
+                          <Mic size={17} strokeWidth={1.9}
+                            className="text-zinc-500 group-hover:text-white transition-colors" />
                         </button>
+
+                        {/* Send — concentric ring + rising chevron */}
                         <button onClick={handleSend} disabled={sending || !mention.value.trim()}
-                          className="w-9 h-9 rounded-xl bg-indigo-600 hover:bg-indigo-500
-                                     flex items-center justify-center transition disabled:opacity-40">
+                          title="Send"
+                          className="group relative ml-0.5 w-10 h-10 rounded-full
+                                     flex items-center justify-center
+                                     border transition-all duration-200
+                                     border-[#00BFA6]/45 hover:border-[#00BFA6]
+                                     disabled:border-zinc-800 disabled:cursor-not-allowed">
+                          <span className="absolute inset-[3px] rounded-full bg-[#00BFA6]
+                                           transition-transform duration-200
+                                           group-hover:scale-105 group-active:scale-95
+                                           group-disabled:bg-zinc-800/80" />
                           {sending
-                            ? <Loader2 size={15} className="text-white animate-spin" />
-                            : <Send    size={15} className="text-white" />}
+                            ? <Loader2 size={15} className="relative text-[#04211E] animate-spin" />
+                            : <ChevronUp size={18} strokeWidth={3}
+                                className="relative text-[#04211E] transition-transform duration-200
+                                           group-hover:-translate-y-[1px]
+                                           group-disabled:text-zinc-600" />}
                         </button>
                       </div>
                     </div>
