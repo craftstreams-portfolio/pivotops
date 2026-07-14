@@ -200,12 +200,20 @@ export default function FieldPlacer({
         </div>
 
         <p className="text-[10px] text-zinc-600 ml-auto">
-          Click the page to place a field
+          Pick a signer, pick a field, then click the page
         </p>
       </div>
 
       {/* Pages */}
       <div className="flex-1 overflow-y-auto bg-zinc-950 p-6 space-y-6">
+        <div className="max-w-2xl mx-auto rounded-xl border border-[#00BFA6]/20 bg-[#00BFA6]/[0.04] px-4 py-3">
+          <p className="text-xs text-zinc-300 leading-relaxed">
+            <span className="text-[#00BFA6] font-medium">You&apos;re marking where each person signs.</span>{" "}
+            The boxes you drop are empty placeholders &mdash; nothing is typed here. After you send,
+            each signer opens their own private link, types their name once, and their signature,
+            initials and date drop into the boxes you placed for them.
+          </p>
+        </div>
         {loading && (
           <div className="flex items-center justify-center gap-2 py-20 text-zinc-500 text-sm">
             <Loader2 size={16} className="animate-spin" /> Rendering document...
@@ -233,7 +241,20 @@ export default function FieldPlacer({
                     border: `1.5px solid ${colorFor(f.signature_id)}`,
                     background: `${colorFor(f.signature_id)}1f`,
                   }}>
-                  <span className="absolute -top-4 left-0 text-[9px] font-medium whitespace-nowrap"
+                  <span className="absolute inset-0 flex items-center justify-center gap-1
+                                    text-[9px] font-medium pointer-events-none px-1 overflow-hidden"
+                    style={{ color: colorFor(f.signature_id) }}>
+                    {(() => {
+                      const KIcon = KINDS.find((k) => k.id === f.kind)?.icon;
+                      return KIcon ? <KIcon size={10} className="flex-shrink-0" /> : null;
+                    })()}
+                    <span className="truncate">
+                      {signers.find((s) => s.id === f.signature_id)?.signer_name
+                        ?? signers.find((s) => s.id === f.signature_id)?.signer_email
+                        ?? "Signer"}
+                    </span>
+                  </span>
+                  <span className="absolute -top-4 left-0 text-[8px] font-medium whitespace-nowrap opacity-70"
                     style={{ color: colorFor(f.signature_id) }}>
                     {KINDS.find((k) => k.id === f.kind)?.label}
                   </span>
