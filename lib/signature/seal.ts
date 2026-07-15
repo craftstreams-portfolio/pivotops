@@ -115,26 +115,32 @@ export async function sealSignedDocument(
     const fields = opts.fields ?? [];
 
     // ── 1. AcroForm fields ──
-    if (originalIsPdf && fields.some((f) => f.source === "acroform")) {
+    // Fill any mapped fields, then ALWAYS flatten the form if the PDF has one —
+    // otherwise empty interactive fields (e.g. a template's grey input boxes)
+    // survive into the final document and read like redaction bars.
+    if (originalIsPdf) {
       try {
         const form = pdf.getForm();
-        for (const f of fields.filter((x) => x.source === "acroform" && x.acro_name)) {
-          const text = fieldText(f, f.signature_id ? signerById.get(f.signature_id) : undefined);
-          if (!text) continue;
-          try {
-            const tf = form.getTextField(f.acro_name!);
-            tf.setText(text);
-            filledFields++;
-          } catch {
+        const hasForm = form.getFields().length > 0;
+        if (hasForm) {
+          for (const f of fields.filter((x) => x.source === "acroform" && x.acro_name)) {
+            const text = fieldText(f, f.signature_id ? signerById.get(f.signature_id) : undefined);
+            if (!text) continue;
             try {
-              const cb = form.getCheckBox(f.acro_name!);
-              if (text.toLowerCase() !== "false" && text !== "0") { cb.check(); filledFields++; }
-            } catch { /* field missing or unsupported type — skip */ }
+              const tf = form.getTextField(f.acro_name!);
+              tf.setText(text);
+              filledFields++;
+            } catch {
+              try {
+                const cb = form.getCheckBox(f.acro_name!);
+                if (text.toLowerCase() !== "false" && text !== "0") { cb.check(); filledFields++; }
+              } catch { /* field missing or unsupported type — skip */ }
+            }
           }
+          form.flatten(); // bake all fields (filled or empty) into static content
         }
-        form.flatten(); // nothing stays editable
       } catch (e) {
-        console.error("[seal] acroform fill failed:", e);
+        console.error("[seal] acroform handling failed:", e);
       }
     }
 
