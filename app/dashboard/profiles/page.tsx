@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { useTenant } from "@/lib/hooks/useTenant";
 import LeaveTimeOff from "@/app/dashboard/components/leave/LeaveTimeOff";
+import EmployeeRecords from "@/app/dashboard/components/leave/EmployeeRecords";
 import {
   getCurrentProfile, upsertProfile,
   uploadAvatar, getYearsOfService,
@@ -98,7 +99,7 @@ export default function ProfilePage() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [toasts,          setToasts]          = useState<Toast[]>([]);
   const [isEditing,       setIsEditing]       = useState(false);
-  const [section,         setSection]         = useState<"profile" | "leave">("profile");
+  const [section,         setSection]         = useState<"profile" | "leave" | "records">("profile");
 
   // Form state
   const [fullName,    setFullName]    = useState("");
@@ -240,7 +241,7 @@ export default function ProfilePage() {
 
         {/* Section tabs */}
         <div className="flex items-center gap-1.5 border-b border-zinc-800 pb-2">
-          {([["profile","Profile"],["leave","Leave / Time Off"]] as const).map(([id, label]) => (
+          {([["profile","Profile"],["leave","Leave / Time Off"],["records","Records"]] as const).map(([id, label]) => (
             <button key={id} onClick={() => setSection(id)}
               className={`px-3 py-1.5 rounded-lg text-xs transition
                 ${section === id ? "bg-white/[0.07] text-white" : "text-zinc-500 hover:text-zinc-300"}`}>
@@ -251,6 +252,16 @@ export default function ProfilePage() {
 
         {section === "leave" && profile && tenantId && (
           <LeaveTimeOff userId={profile.id} tenantId={tenantId} role={profile.role} />
+        )}
+
+        {section === "records" && profile && tenantId && (
+          <EmployeeRecords
+            userId={profile.id}
+            tenantId={tenantId}
+            role={profile.role}
+            fullName={profile.full_name}
+            dateJoined={profile.date_joined}
+          />
         )}
 
         {section === "profile" && (<>
