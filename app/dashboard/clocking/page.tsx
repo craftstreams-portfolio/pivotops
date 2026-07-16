@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
+import { logEmployeeRecord } from "@/lib/records/log";
 import { useTenant } from "@/lib/hooks/useTenant";
 import { FeatureGate } from "@/app/components/FeatureGate";
 import { clockIn, clockOut, getClockingLogs } from "@/lib/clocking/clocking.service";
@@ -283,12 +284,15 @@ function ClockingPageInner() {
   // ── Load corrections ───────────────────
   const loadCorrections = useCallback(async () => {
     if (!currentUser || tenantLoading) return;
-    const { data } = await supabase
+    const isMgr = currentUser.role === "admin" || currentUser.role === "manager";
+    // Managers see every correction in the tenant (to approve); everyone else sees their own.
+    let q = supabase
       .from("timesheet_corrections")
       .select("*")
-      .eq("employee_id", currentUser.id)
-      .eq("tenant_id",   tenantId)
+      .eq("tenant_id", tenantId)
       .order("requested_at", { ascending: false });
+    if (!isMgr) q = q.eq("employee_id", currentUser.id);
+    const { data } = await q;
     if (data) setCorrections(data as TimesheetCorrection[]);
   }, [currentUser, tenantId, tenantLoading]);
 
@@ -421,6 +425,80 @@ function ClockingPageInner() {
     if (error) { showToast("error", error.message); return; }
     showToast("success", "Schedule removed");
     await loadSchedules();
+  };
+
+  // ── Approve / Decline Correction (manager) ──
+  const [processingId, setProcessingId] = useState<string | null>(null);
+
+  const handleResolveCorrection = async (
+    c: TimesheetCorrection,
+    decision: "approved" | "rejected",
+    note?: string
+  ) => {
+    if (!currentUser || processingId) return;
+    setProcessingId(c.id);
+    try {
+      const nowIso = new Date().toISOString();
+
+      if (decision === "approved" && c.proposed_time && c.log_id) {
+        // The correction references the session's CLOCK_IN (log_id). Find whether
+        // that session already has a CLOCK_OUT, then fix or insert it.
+        const { data: inLog } = await supabase
+          .from("clocking_logs").select("*").eq("id", c.log_id).single();
+
+        if (inLog) {
+          // The next log after this CLOCK_IN for the same user, if any.
+          const { data: after } = await supabase
+            .from("clocking_logs")
+            .select("*")
+            .eq("tenant_id", tenantId)
+            .eq("user_id", inLog.user_id)
+            .gt("timestamp", inLog.timestamp)
+            .order("timestamp", { ascending: true })
+            .limit(1);
+          const nextLog = after?.[0];
+
+          if (nextLog && nextLog.type === "CLOCK_OUT") {
+            await supabase.from("clocking_logs")
+              .update({ timestamp: c.proposed_time })
+              .eq("id", nextLog.id);
+          } else {
+            await supabase.from("clocking_logs").insert({
+              tenant_id: tenantId,
+              user_id:   inLog.user_id,
+              type:      "CLOCK_OUT",
+              timestamp: c.proposed_time,
+              timezone:  inLog.timezone ?? null,
+            });
+          }
+
+          // Log the reconciliation onto the employee's record.
+          const when = new Date(c.proposed_time).toLocaleString();
+          await logEmployeeRecord({
+            tenantId,
+            userId:    inLog.user_id,
+            kind:      "timesheet",
+            title:     "Timesheet corrected",
+            detail:    `Clock-out set to ${when}. ${c.reason ? `Reason: ${c.reason}` : ""}`.trim(),
+            createdBy: currentUser.id,
+          });
+        }
+      }
+
+      await supabase.from("timesheet_corrections").update({
+        status:       decision,
+        reviewed_by:  currentUser.id,
+        reviewed_at:  nowIso,
+        manager_note: note?.trim() || null,
+      }).eq("id", c.id);
+
+      showToast("success", decision === "approved" ? "Correction applied to timesheet" : "Correction declined");
+      await Promise.all([loadCorrections(), loadLogs()]);
+    } catch (err) {
+      showToast("error", err instanceof Error ? err.message : String(err));
+    } finally {
+      setProcessingId(null);
+    }
   };
 
   // ── Submit Correction ──────────────────
@@ -885,13 +963,41 @@ function ClockingPageInner() {
                           )}
                           <p className="text-[10px] text-zinc-600">{formatDateTime(c.requested_at)}</p>
                         </div>
-                        <span className={`text-[10px] px-2 py-1 rounded-full border flex-shrink-0 font-semibold
-                          ${c.status === "approved" ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/25" :
-                            c.status === "rejected" ? "bg-red-500/15 text-red-400 border-red-500/25" :
-                            "bg-amber-500/15 text-amber-400 border-amber-500/25"
-                          }`}>
-                          {c.status}
-                        </span>
+                        {(() => {
+                          const isMgr = currentUser?.role === "admin" || currentUser?.role === "manager";
+                          const isOwn = c.employee_id === currentUser?.id;
+                          // Managers get approve/decline on pending items that aren't their own.
+                          if (isMgr && !isOwn && c.status === "pending") {
+                            return (
+                              <div className="flex items-center gap-1.5 flex-shrink-0">
+                                <button
+                                  onClick={() => handleResolveCorrection(c, "approved")}
+                                  disabled={processingId === c.id}
+                                  className="px-2.5 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-[#04211E] text-[11px] font-semibold transition disabled:opacity-50">
+                                  {processingId === c.id ? "…" : "Approve"}
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    const note = window.prompt("Reason for declining (optional):") ?? "";
+                                    handleResolveCorrection(c, "rejected", note);
+                                  }}
+                                  disabled={processingId === c.id}
+                                  className="px-2.5 py-1 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 text-[11px] transition disabled:opacity-50">
+                                  Decline
+                                </button>
+                              </div>
+                            );
+                          }
+                          return (
+                            <span className={`text-[10px] px-2 py-1 rounded-full border flex-shrink-0 font-semibold
+                              ${c.status === "approved" ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/25" :
+                                c.status === "rejected" ? "bg-red-500/15 text-red-400 border-red-500/25" :
+                                "bg-amber-500/15 text-amber-400 border-amber-500/25"
+                              }`}>
+                              {c.status}
+                            </span>
+                          );
+                        })()}
                       </div>
                     ))}
                   </div>
