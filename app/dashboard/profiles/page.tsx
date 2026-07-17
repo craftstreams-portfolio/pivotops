@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { useTenant } from "@/lib/hooks/useTenant";
 import LeaveTimeOff from "@/app/dashboard/components/leave/LeaveTimeOff";
 import EmployeeRecords from "@/app/dashboard/components/leave/EmployeeRecords";
+import { logEmployeeRecord } from "@/lib/records/log";
 import {
   getCurrentProfile, upsertProfile,
   uploadAvatar, getYearsOfService,
@@ -165,9 +166,12 @@ export default function ProfilePage() {
 
     setSaving(true);
     try {
+      const prevDept = profile?.department ?? null;
+      const newDept  = department === "__custom__" ? customDept.trim() : department.trim();
+
       const saved = await upsertProfile({
         full_name:   fullName.trim(),
-        department:  department === "__custom__" ? customDept.trim() : department.trim(),
+        department:  newDept,
         position:    position.trim(),
         timezone,
         tenant_id:   tenantId,
@@ -177,6 +181,18 @@ export default function ProfilePage() {
         phone:       phone.trim()      || undefined,
       });
       setProfile(saved);
+
+      // Log a department change onto the employee's record (only when it changed).
+      if (saved && tenantId && prevDept && newDept && prevDept !== newDept) {
+        await logEmployeeRecord({
+          tenantId,
+          userId:    saved.id,
+          kind:      "role_change",
+          title:     "Department changed",
+          detail:    `${prevDept} → ${newDept}`,
+          createdBy: saved.id,
+        });
+      }
       setIsEditing(false);
       showToast("success", "Profile saved successfully");
     } catch (err) {

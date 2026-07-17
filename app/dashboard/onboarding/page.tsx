@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { logEmployeeRecord } from "@/lib/records/log";
 import {
   updateOnboardingStatus,
   type OnboardingStatus,
@@ -78,6 +79,29 @@ export default function OnboardingPage() {
     setUpdating(userId);
     try {
       await updateOnboardingStatus(supabase, userId, newStatus);
+
+      if (newStatus === "completed") {
+        const row = users.find((u) => u.id === userId);
+        if (row?.tenant_id && row?.candidate_id) {
+          // Resolve candidate -> profile by email; the record must key to a real
+          // profile id (how Records reads), so skip if they have no profile yet.
+          const { data: cand } = await supabase
+            .from("candidates").select("email, name").eq("id", row.candidate_id).single();
+          if (cand?.email) {
+            const { data: prof } = await supabase
+              .from("profiles").select("id").ilike("email", cand.email).maybeSingle();
+            if (prof?.id) {
+              await logEmployeeRecord({
+                tenantId: row.tenant_id,
+                userId:   prof.id,
+                kind:     "onboarding",
+                title:    "Onboarding completed",
+                detail:   "Marked complete in the onboarding workflow.",
+              });
+            }
+          }
+        }
+      }
       setUsers((prev) =>
         prev.map((u) => (u.id === userId ? { ...u, status: newStatus } : u))
       );

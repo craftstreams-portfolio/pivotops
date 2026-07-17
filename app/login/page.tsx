@@ -310,6 +310,24 @@ function LoginPage() {
     }
   }
 
+  async function handleMagicLink() {
+    if (!email.trim()) { setError("Please enter your email address."); return; }
+    if (!isValidEmail(email)) { setError("Please enter a valid email address."); return; }
+    setLoading(true); setError(""); setSuccess("");
+    try {
+      const { error: otpErr } = await supabase.auth.signInWithOtp({
+        email: email.trim(),
+        options: { emailRedirectTo: window.location.origin + "/auth/callback" },
+      });
+      if (otpErr) { setError(otpErr.message); setLoading(false); return; }
+      setSuccess("Check your email for a sign-in link. It works even if you never set a password — useful for invited teammates.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not send the sign-in link.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleForgotPassword() {
     if (!email.trim()) { setError("Please enter your email address."); return; }
     if (!isValidEmail(email)) { setError("Please enter a valid email address."); return; }
@@ -410,6 +428,12 @@ function LoginPage() {
                 onClick={() => { setMode("forgot"); setError(""); setSuccess(""); }}
                 className="text-xs text-zinc-600 hover:text-indigo-400 transition">
                 Forgot password?
+              </button>
+              <button
+                onClick={handleMagicLink}
+                disabled={loading || !email}
+                className="text-xs text-zinc-600 hover:text-emerald-400 transition disabled:opacity-40">
+                Email me a sign-in link
               </button>
             </div>
           )}
