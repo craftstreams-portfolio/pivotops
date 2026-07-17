@@ -179,7 +179,7 @@ function StatusSwitcher({
                 <span className={`w-2 h-2 rounded-full flex-shrink-0 mt-1.5 ${m.dot}`} />
                 <div className="min-w-0">
                   <p className={`text-sm font-medium ${m.color}`}>{m.label}</p>
-                  <p className="text-[10px] text-zinc-600 leading-tight mt-0.5">{m.description}</p>
+                  <p className="text-[10px] text-zinc-400 leading-tight mt-0.5">{m.description}</p>
                 </div>
               </button>
             );
@@ -1522,9 +1522,22 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
                   onClick={() => setRightPanel(rightPanel === "queue" ? null : "queue")}
                   className={`relative w-8 h-8 rounded-lg flex items-center justify-center transition
                     ${rightPanel === "queue"
-                      ? "bg-indigo-500/20 text-indigo-400"
-                      : "hover:bg-zinc-800 text-zinc-500"}`}>
-                  <Inbox size={15} />
+                      ? "bg-[#00BFA6]/20"
+                      : "hover:bg-zinc-800"}`}>
+                  {/* Queue: teal tray with a white envelope dropping in */}
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    {/* tray / inbox (teal) */}
+                    <path d="M3 13l2.5 0a2 2 0 0 1 1.9 1.4l.2 .6a2 2 0 0 0 1.9 1.4h4.8a2 2 0 0 0 1.9-1.4l.2-.6a2 2 0 0 1 1.9-1.4H21"
+                      stroke="#00BFA6" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M4.5 13.5 5.8 19a2 2 0 0 0 1.95 1.5h8.5A2 2 0 0 0 18.2 19l1.3-5.5"
+                      stroke="#00BFA6" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                    {/* envelope (white) */}
+                    <rect x="8" y="3.2" width="8" height="6" rx="1" fill="#ffffff" />
+                    <path d="M8.3 4 12 6.6 15.7 4" stroke="#04211E" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                    {/* small down-arrow, envelope into tray */}
+                    <path d="M12 9.4v2.2M12 11.6l-1.1-1.1M12 11.6l1.1-1.1"
+                      stroke="#ffffff" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
                   {queueCount > 0 && (
                     <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500
                                      flex items-center justify-center text-[9px] font-bold text-white">
