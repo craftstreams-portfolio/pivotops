@@ -194,7 +194,19 @@ function LoginPage() {
       if (!cancelled) routeAfterAuth(result);
     });
 
-    return () => { cancelled = true; };
+    // An invite / magic link arrives with the session token in the URL. The
+    // Supabase client parses it asynchronously AFTER mount, so the one-shot
+    // check above sees no user yet. Listen for the session to be established
+    // (SIGNED_IN) and route the invited teammate into their tenant then.
+    const { data: authSub } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (cancelled) return;
+      if ((event === "SIGNED_IN" || event === "INITIAL_SESSION") && session?.user) {
+        const result = await resolvePostLoginRoute(session.user);
+        if (!cancelled) routeAfterAuth(result);
+      }
+    });
+
+    return () => { cancelled = true; authSub.subscription.unsubscribe(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
