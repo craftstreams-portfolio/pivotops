@@ -169,6 +169,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             setTenantId(data.tenant_id ?? "");
             setOrgSize(data.org_size ?? "");
             setUserName((data as any).full_name ?? "");
+            // Profiles created by the signup trigger don't carry org_name.
+            // Fall back to the tenant's own name so invited users see it.
+            if (data.tenant_id && !data.org_name) {
+              supabase.from("tenants").select("org_name").eq("id", data.tenant_id).maybeSingle()
+                .then(({ data: tnt }) => { if (tnt?.org_name) setOrgName(tnt.org_name); });
+            }
             if (data.tenant_id) {
               supabase.from("xavier_notifications").select("id", { count:"exact" }).eq("read", false).eq("tenant_id", data.tenant_id)
                 .then(({ count }) => setNotifCount(count ?? 0));
