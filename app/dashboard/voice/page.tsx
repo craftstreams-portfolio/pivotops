@@ -791,7 +791,7 @@ export default function HuddlesPage() {
      RENDER: ACTIVE ROOM
   ──────────────────────────────────────────────────────────────────── */
   return (
-    <div className="min-h-screen bg-[#0a0812] px-6 py-8 flex flex-col">
+    <div className="h-[calc(100vh-6rem)] bg-[#0a0812] px-6 py-8 flex flex-col">
       <div className="max-w-3xl w-full mx-auto flex-1 flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
@@ -844,7 +844,7 @@ export default function HuddlesPage() {
         )}
 
         {/* Participant grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-5 flex-1">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-5 flex-1 min-h-0 overflow-y-auto content-start pb-4">
           {participants.map((p) => {
             const profile = profiles[p.user_id];
             const name = displayName(profile, p.user_id === me?.id ? "You" : "Member");
@@ -897,8 +897,9 @@ export default function HuddlesPage() {
           })}
         </div>
 
-        {/* Control bar */}
-        <div className="mt-8 flex items-center justify-center gap-3">
+        {/* Control bar — pinned so a full participant grid can't push it off-screen */}
+        <div className="mt-6 flex-shrink-0 sticky bottom-0 flex items-center justify-center gap-3
+                        py-4 bg-[#0a0812]/95 backdrop-blur-sm border-t border-white/[0.06]">
           <button
             onClick={toggleMute}
             className={`px-5 py-3 rounded-xl text-sm font-medium transition ${
