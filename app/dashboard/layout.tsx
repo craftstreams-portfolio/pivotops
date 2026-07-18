@@ -135,6 +135,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const [orgName,    setOrgName]    = useState("");
   const [userName,   setUserName]   = useState("");
+  const [position,   setPosition]   = useState("");
   const [tenantId,   setTenantId]   = useState("");
   const sub = useSubscription(tenantId);
 
@@ -162,13 +163,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       setUserEmail(email);
       setUserInitial((session.user.user_metadata?.full_name?.[0] ?? email[0] ?? "P").toUpperCase());
       setUserId(session.user.id);
-      supabase.from("profiles").select("org_name, tenant_id, org_size").eq("id", session.user.id).maybeSingle()
+      supabase.from("profiles").select("org_name, tenant_id, org_size, full_name, position").eq("id", session.user.id).maybeSingle()
         .then(({ data }) => {
           if (data) {
             setOrgName(data.org_name ?? "");
             setTenantId(data.tenant_id ?? "");
             setOrgSize(data.org_size ?? "");
             setUserName((data as any).full_name ?? "");
+            setPosition((data as any).position ?? "");
             // Profiles created by the signup trigger don't carry org_name.
             // Fall back to the tenant's own name so invited users see it.
             if (data.tenant_id && !data.org_name) {
@@ -264,6 +266,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     <Plus size={11} />
                   </button>
                 </div>
+              )}
+              {position && (
+                <p className="text-[10px] text-zinc-500 truncate max-w-[170px] mt-0.5">
+                  {position}
+                </p>
               )}
             </div>
           </div>

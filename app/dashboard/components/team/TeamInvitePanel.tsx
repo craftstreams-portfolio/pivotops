@@ -20,6 +20,14 @@ function parseSeatCap(orgSize: string): number {
   return 5;
 }
 
+interface Member {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+  role: string | null;
+  position: string | null;
+}
+
 interface PendingInvite {
   id: string;
   email: string;
@@ -39,6 +47,13 @@ export default function TeamInvitePanel({
   const [email,    setEmail]    = useState("");
   const [role,     setRole]     = useState("operator");
   const [position, setPosition] = useState("");
+  const [members,  setMembers]  = useState<Member[]>([]);
+  const [myRole,   setMyRole]   = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editRole,  setEditRole]  = useState("operator");
+  const [editTitle, setEditTitle] = useState("");
+  const [savingMember, setSavingMember] = useState(false);
+  const [memberErr, setMemberErr] = useState("");
   const [sending,  setSending]  = useState(false);
   const [error,    setError]    = useState("");
   const [lastLink, setLastLink] = useState("");
@@ -58,6 +73,43 @@ export default function TeamInvitePanel({
     setMemberCount(count ?? 0);
     const { data } = await supabase.from("team_invites").select("id, email, role, status, created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(20);
     setInvites((data ?? []) as PendingInvite[]);
+
+    const { data: mem } = await supabase
+      .from("profiles").select("id, full_name, email, role, position")
+      .eq("tenant_id", tenantId).order("full_name", { ascending: true });
+    setMembers((mem ?? []) as Member[]);
+
+    const { data: auth } = await supabase.auth.getUser();
+    if (auth?.user) {
+      const me = (mem ?? []).find((m: any) => m.id === auth.user!.id);
+      setMyRole(me?.role ?? "");
+    }
+  }
+
+  function startEdit(m: Member) {
+    setEditingId(m.id);
+    setEditRole(m.role ?? "operator");
+    setEditTitle(m.position ?? "");
+    setMemberErr("");
+  }
+
+  async function saveMember(memberId: string) {
+    setSavingMember(true); setMemberErr("");
+    try {
+      const res = await fetch("/api/team/members", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ memberId, role: editRole, position: editTitle }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not update teammate.");
+      setEditingId(null);
+      refreshCounts();
+    } catch (err) {
+      setMemberErr(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setSavingMember(false);
+    }
   }
 
   const pendingCount = invites.filter((i) => i.status === "pending").length;
@@ -196,6 +248,76 @@ export default function TeamInvitePanel({
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {members.length > 0 && (
+            <div className="mb-6">
+              <div className="flex items-center gap-2 mb-3">
+                <Users size={13} className="text-zinc-500" />
+                <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Team members</h3>
+              </div>
+
+              {memberErr && (
+                <div className="mb-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-[11px] text-red-400">
+                  {memberErr}
+                </div>
+              )}
+
+              <div className="space-y-2">
+                {members.map((m) => {
+                  const canEdit = myRole === "admin" || (myRole === "manager" && m.role !== "admin");
+                  const isEditing = editingId === m.id;
+                  return (
+                    <div key={m.id} className="px-3 py-2.5 rounded-lg bg-zinc-900/50 border border-zinc-800">
+                      {!isEditing ? (
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-xs text-white truncate">{m.full_name || m.email}</p>
+                            <p className="text-[10px] text-zinc-500">
+                              <span className="capitalize">{m.role ?? "operator"}</span>
+                              {m.position ? ` \u00B7 ${m.position}` : ""}
+                            </p>
+                          </div>
+                          {canEdit && (
+                            <button onClick={() => startEdit(m)}
+                              className="flex-shrink-0 text-[10px] px-2 py-1 rounded-md border border-zinc-700
+                                         text-zinc-400 hover:text-white hover:border-zinc-600 transition">
+                              Edit
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <p className="text-xs text-white truncate">{m.full_name || m.email}</p>
+                          <select value={editRole} onChange={(e) => setEditRole(e.target.value)}
+                            className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-2
+                                       text-xs text-white outline-none focus:border-emerald-500">
+                            {ROLES.map((r) => (
+                              <option key={r.value} value={r.value}>{r.label}</option>
+                            ))}
+                          </select>
+                          <input value={editTitle} onChange={(e) => setEditTitle(e.target.value)}
+                            maxLength={60} placeholder="Job title (optional)"
+                            className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-2
+                                       text-xs text-white placeholder-zinc-600 outline-none focus:border-emerald-500" />
+                          <div className="flex gap-2">
+                            <button onClick={() => saveMember(m.id)} disabled={savingMember}
+                              className="flex-1 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500
+                                         text-white text-[11px] font-semibold disabled:opacity-40 transition">
+                              {savingMember ? "Saving..." : "Save"}
+                            </button>
+                            <button onClick={() => { setEditingId(null); setMemberErr(""); }}
+                              className="px-3 py-1.5 rounded-lg border border-zinc-700 text-zinc-400 text-[11px] transition">
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
 

@@ -1285,6 +1285,7 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
         channelId: activeChannel.id, userId: currentUser.id,
         userName:  currentUser.full_name ?? currentUser.email ?? "Unknown",
         tenantId, file, quotedId: quotedMsg?.id ?? null,
+        priority: isManager ? msgPriority : "normal",
       });
       setQuotedMsg(null);
 
@@ -1299,6 +1300,7 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
           senderId:   currentUser.id,
           tenantId,
           content:    `Sent a file: ${file.name}`,
+          priority:   isManager ? msgPriority : undefined,
           senderName: currentUser.full_name ?? currentUser.email ?? "A teammate",
         }),
       }).catch(() => {});
@@ -1314,6 +1316,7 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
         channelId: activeChannel.id, userId: currentUser.id,
         userName:  currentUser.full_name ?? currentUser.email ?? "Unknown",
         tenantId, blob, durationSecs: duration,
+        priority: isManager ? msgPriority : "normal",
       });
 
       fetch("/api/teams/route-event", {
@@ -1325,6 +1328,7 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
           senderId:   currentUser.id,
           tenantId,
           content:    `Sent a voice note (${Math.round(duration)}s)`,
+          priority:   isManager ? msgPriority : undefined,
           senderName: currentUser.full_name ?? currentUser.email ?? "A teammate",
         }),
       }).catch(() => {});

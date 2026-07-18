@@ -176,6 +176,7 @@ export async function uploadAndSendFile(payload: {
   tenantId:  string;
   file:      File;
   quotedId?: string | null;
+  priority?: MessagePriority;
 }): Promise<Message> {
   const { file } = payload;
   const isImage  = file.type.startsWith("image/");
@@ -209,6 +210,7 @@ export async function uploadAndSendFile(payload: {
       file_name:  file.name,
       file_type:  file.type,
       quoted_id:  payload.quotedId ?? null,
+      priority:   payload.priority ?? "normal",
       retracted:  false,
       reactions:  {},
       created_at: new Date().toISOString(),
@@ -230,6 +232,7 @@ export async function uploadAndSendVoice(payload: {
   tenantId:     string;
   blob:         Blob;
   durationSecs: number;
+  priority?:    MessagePriority;
 }): Promise<Message> {
   const path = `voice/${payload.channelId}/${crypto.randomUUID()}.webm`;
 
@@ -254,6 +257,7 @@ export async function uploadAndSendVoice(payload: {
       tenant_id:     payload.tenantId,
       content:       "Voice message",
       type:          "voice",
+      priority:      payload.priority ?? "normal",
       voice_url:     urlData.publicUrl,
       voice_seconds: Math.round(payload.durationSecs),
       retracted:     false,
