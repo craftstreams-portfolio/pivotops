@@ -289,6 +289,7 @@ export default function HuddlesPage() {
   const lastBroadcastRef = useRef<number>(0);
   const myMutedRef = useRef(true);
   const speakingReadyRef = useRef(false);
+  const speakerSeenRef = useRef<Record<string, { name: string; at: number }>>({});
   const roomChanRef = useRef<any>(null);
   const notifyChanRef = useRef<any>(null);
 
@@ -364,6 +365,27 @@ export default function HuddlesPage() {
     };
   }, []);
 
+  // One sweep expires stale speakers, rather than a timer per message.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const now = Date.now();
+      const live = speakerSeenRef.current;
+      let changed = false;
+      const next: Record<string, string> = {};
+      for (const [roomId, entry] of Object.entries(live)) {
+        if (now - entry.at < 2500) next[roomId] = entry.name;
+        else { delete live[roomId]; changed = true; }
+      }
+      setRoomSpeakers((prev) => {
+        const prevKeys = Object.keys(prev);
+        if (!changed && prevKeys.length === Object.keys(next).length &&
+            prevKeys.every((k) => prev[k] === next[k])) return prev;
+        return next;
+      });
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   /* ── Safety net: reconcile on a timer and when the tab regains focus.
      Realtime can silently drop events on flaky networks or after sleep; without
      this a stale roster persists for the whole call. */
@@ -418,17 +440,14 @@ export default function HuddlesPage() {
     const chan = supabase
       .channel(`huddle-speaking-${me.tenantId}`)
       .on("broadcast", { event: "speaking" }, ({ payload }: any) => {
-        console.log("[huddle] speaking received", payload);
         if (!payload?.roomId || !payload?.name) return;
-        setRoomSpeakers((s) => ({ ...s, [payload.roomId]: payload.name }));
-        window.setTimeout(() => {
-          setRoomSpeakers((s) => {
-            if (s[payload.roomId] !== payload.name) return s;
-            const copy = { ...s };
-            delete copy[payload.roomId];
-            return copy;
-          });
-        }, 2500);
+        // Record when we last heard from this room. A per-message delete timer
+        // expired the entry even while newer broadcasts kept arriving, so the
+        // label flickered off almost as fast as it appeared.
+        speakerSeenRef.current[payload.roomId] = { name: payload.name, at: Date.now() };
+        setRoomSpeakers((s) =>
+          s[payload.roomId] === payload.name ? s : { ...s, [payload.roomId]: payload.name }
+        );
       })
       .subscribe((status: string) => {
         // Sending before the socket has joined makes supabase-js fall back to
@@ -937,7 +956,6 @@ export default function HuddlesPage() {
                     </div>
                   </div>
                   <h3 className="text-white font-semibold text-base">{room.name}</h3>
-                  {(() => { if (Object.keys(roomSpeakers).length) console.log("[huddle] render check", { cardId: room.id, speakers: roomSpeakers }); return null; })()}
                   {roomSpeakers[room.id] ? (
                     <p className="text-xs mt-1 flex items-center gap-1.5">
                       <span className="flex items-end gap-[2px] h-2.5">
