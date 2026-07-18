@@ -287,6 +287,8 @@ export default function HuddlesPage() {
   const participantsChanRef = useRef<any>(null);
   const speakingChanRef = useRef<any>(null);
   const lastBroadcastRef = useRef<number>(0);
+  const myMutedRef = useRef(true);
+  const speakingReadyRef = useRef(false);
   const roomChanRef = useRef<any>(null);
   const notifyChanRef = useRef<any>(null);
 
@@ -362,6 +364,52 @@ export default function HuddlesPage() {
     };
   }, []);
 
+  /* ── Safety net: reconcile on a timer and when the tab regains focus.
+     Realtime can silently drop events on flaky networks or after sleep; without
+     this a stale roster persists for the whole call. */
+  useEffect(() => {
+    if (!activeRoom) return;
+    const id = activeRoom.id;
+    const timer = window.setInterval(() => refreshParticipants(id), 15000);
+    const onFocus = () => refreshParticipants(id);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRoom?.id]);
+
+  /* ── Authoritative participant refresh ──
+     Patching local state from individual realtime events is fragile: one dropped
+     or out-of-order event and the roster stays wrong until you rejoin. We re-read
+     the room from the database on any change and dedupe by user_id, so the list
+     self-heals regardless of what the socket missed. */
+  const refreshingRef = useRef(false);
+  const refreshParticipants = useCallback(async (roomId: string) => {
+    if (refreshingRef.current) return;
+    refreshingRef.current = true;
+    try {
+      const { data, error } = await supabase
+        .from("voice_room_participants")
+        .select("*")
+        .eq("room_id", roomId)
+        .order("joined_at", { ascending: true });
+      if (error) { console.error("[huddle] refresh failed:", error.message); return; }
+
+      const seen = new Set<string>();
+      const rows = ((data as VoiceRoomParticipant[]) ?? []).filter((p) => {
+        if (seen.has(p.user_id)) return false;
+        seen.add(p.user_id);
+        return true;
+      });
+      console.log("[huddle] roster:", rows.length, rows.map((r) => r.user_id));
+      setParticipants(rows);
+    } finally {
+      refreshingRef.current = false;
+    }
+  }, []);
+
   /* ── Live "who's speaking" across the tenant ──
      Speaking level only exists inside the audio mesh, so people in the lobby
      can't compute it. In-call clients broadcast it instead — no DB writes. */
@@ -370,6 +418,7 @@ export default function HuddlesPage() {
     const chan = supabase
       .channel(`huddle-speaking-${me.tenantId}`)
       .on("broadcast", { event: "speaking" }, ({ payload }: any) => {
+        console.log("[huddle] speaking received", payload);
         if (!payload?.roomId || !payload?.name) return;
         setRoomSpeakers((s) => ({ ...s, [payload.roomId]: payload.name }));
         window.setTimeout(() => {
@@ -381,28 +430,46 @@ export default function HuddlesPage() {
           });
         }, 2500);
       })
-      .subscribe();
+      .subscribe((status: string) => {
+        // Sending before the socket has joined makes supabase-js fall back to
+        // REST, which subscribers don't reliably receive. Gate on SUBSCRIBED.
+        speakingReadyRef.current = status === "SUBSCRIBED";
+        console.log("[huddle] speaking channel:", status);
+      });
     speakingChanRef.current = chan;
-    return () => { supabase.removeChannel(chan); speakingChanRef.current = null; };
+    return () => {
+      speakingReadyRef.current = false;
+      supabase.removeChannel(chan);
+      speakingChanRef.current = null;
+    };
   }, [me?.tenantId]);
 
-  // Broadcast my own speaking, throttled to once a second.
+  // Broadcast my own speaking on a timer. A render-driven effect missed most
+  // level updates (and the throttle swallowed the rest), so the lobby never
+  // heard anything. A ref keeps the newest level without re-running the effect.
+  const levelsRef = useRef<Record<string, number>>({});
+  useEffect(() => { levelsRef.current = levels; }, [levels]);
+
   useEffect(() => {
-    if (!me || !activeRoom || myMuted) return;
-    const level = levels[me.id] ?? 0;
-    if (level <= 18) return;
-    const now = Date.now();
-    if (now - lastBroadcastRef.current < 1000) return;
-    lastBroadcastRef.current = now;
-    speakingChanRef.current?.send({
-      type: "broadcast",
-      event: "speaking",
-      payload: {
-        roomId: activeRoom.id,
-        name:   displayName(profiles[me.id], "Someone"),
-      },
-    });
-  }, [levels, activeRoom, myMuted, me, profiles]);
+    if (!me || !activeRoom) return;
+    const timer = window.setInterval(() => {
+      if (myMutedRef.current) return;
+      const level = levelsRef.current[me.id] ?? 0;
+      if (level <= 8) return;
+      const chan = speakingChanRef.current;
+      if (!chan || !speakingReadyRef.current) return;
+      chan.send({
+        type: "broadcast",
+        event: "speaking",
+        payload: {
+          roomId: activeRoom.id,
+          name:   displayName(profiles[me.id], "Someone"),
+        },
+      });
+      console.log("[huddle] broadcast speaking", { room: activeRoom.id, level });
+    }, 900);
+    return () => window.clearInterval(timer);
+  }, [me, activeRoom, profiles]);
 
   /* ── Announce a new huddle in #general ── */
   async function announceHuddle(room: VoiceRoom) {
@@ -573,30 +640,26 @@ export default function HuddlesPage() {
         "postgres_changes",
         { event: "*", schema: "public", table: "voice_room_participants", filter: `room_id=eq.${roomId}` },
         (payload) => {
-          if (payload.eventType === "DELETE") {
-            const deletedId = (payload.old as any).id;
-            if (deletedId === myParticipantIdRef.current) {
-              // I was removed by the host
-              finishCall({ duration: elapsed, count: participants.length, reason: "removed" });
-              return;
-            }
-            setParticipants((prev) => prev.filter((p) => p.id !== deletedId));
-          } else if (payload.eventType === "INSERT") {
-            const incoming = payload.new as VoiceRoomParticipant;
-            setParticipants((prev) => {
-              // Key on user_id: the same person re-joining gets a NEW row id, so
-              // an id-only check let them appear twice.
-              const without = prev.filter((p) => p.user_id !== incoming.user_id);
-              return [...without, incoming];
-            });
-          } else if (payload.eventType === "UPDATE") {
+          if (payload.eventType === "DELETE" && (payload.old as any).id === myParticipantIdRef.current) {
+            finishCall({ duration: elapsed, count: participants.length, reason: "removed" });
+            return;
+          }
+          if (payload.eventType === "UPDATE") {
+            // Patch in place so hand-raise and mute stay instant.
             setParticipants((prev) =>
               prev.map((p) => (p.id === (payload.new as any).id ? (payload.new as VoiceRoomParticipant) : p))
             );
+            return;
           }
+          // Joins and leaves re-read the roster rather than guessing at it.
+          refreshParticipants(roomId);
         }
       )
-      .subscribe();
+      .subscribe((status: string) => {
+        console.log("[huddle] participants channel:", status);
+        // On (re)connect, reconcile immediately — we may have missed events while down.
+        if (status === "SUBSCRIBED") refreshParticipants(roomId);
+      });
 
     roomChanRef.current = supabase
       .channel(`huddle-room-${roomId}`)
@@ -703,6 +766,7 @@ export default function HuddlesPage() {
   function toggleMute() {
     const next = !myMuted;
     setMyMuted(next);
+    myMutedRef.current = next;
     engineRef.current?.setMuted(next);
     if (myParticipantIdRef.current) {
       supabase.from("voice_room_participants").update({ is_muted: next }).eq("id", myParticipantIdRef.current);
