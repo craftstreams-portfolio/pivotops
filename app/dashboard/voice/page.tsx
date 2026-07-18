@@ -937,6 +937,7 @@ export default function HuddlesPage() {
                     </div>
                   </div>
                   <h3 className="text-white font-semibold text-base">{room.name}</h3>
+                  {(() => { if (Object.keys(roomSpeakers).length) console.log("[huddle] render check", { cardId: room.id, speakers: roomSpeakers }); return null; })()}
                   {roomSpeakers[room.id] ? (
                     <p className="text-xs mt-1 flex items-center gap-1.5">
                       <span className="flex items-end gap-[2px] h-2.5">
