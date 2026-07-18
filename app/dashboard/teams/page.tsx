@@ -1217,13 +1217,29 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
     if (!content || !currentUser || !activeChannel || sending) return;
     setSending(true); mention.reset(); setQuotedMsg(null);
     try {
-      await sendTextMessage({
+      const sent = await sendTextMessage({
         channelId: activeChannel.id, content,
         userId:    currentUser.id,
         userName:  currentUser.full_name ?? currentUser.email ?? "Unknown",
         tenantId,  quotedId: quotedMsg?.id ?? null,
       });
       await mention.processMentions(content);
+
+      // Route the message through each recipient's status (queues it for anyone
+      // in Meeting / OOO / Vacation / DND / Offline). Fire-and-forget: a routing
+      // failure must never break sending.
+      fetch("/api/teams/route-event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messageId:  sent?.id ?? null,
+          channelId:  activeChannel.id,
+          senderId:   currentUser.id,
+          tenantId,
+          content,
+          senderName: currentUser.full_name ?? currentUser.email ?? "A teammate",
+        }),
+      }).catch(() => {});
     } catch (err) { console.error("Send failed:", err); mention.setValue(content); }
     finally { setSending(false); }
   };
