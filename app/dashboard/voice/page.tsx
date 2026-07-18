@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import FloatingReactions from "@/app/dashboard/components/voice/FloatingReactions";
 import { supabase } from "@/lib/supabase";
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -275,6 +276,7 @@ export default function HuddlesPage() {
   const [summary, setSummary] = useState<{ duration: number; count: number; reason: string } | null>(null);
   const [reactions, setReactions] = useState<Record<string, string>>({});
   const [handQueueOpen, setHandQueueOpen] = useState(false);
+  const [reactionBurst, setReactionBurst] = useState<{ id: string; emoji: string } | null>(null);
   const [roomSpeakers, setRoomSpeakers] = useState<Record<string, string>>({});
   const [newRoomName, setNewRoomName] = useState("");
   const [showNewRoom, setShowNewRoom] = useState(false);
@@ -502,7 +504,7 @@ export default function HuddlesPage() {
     if (!general?.id) return;
 
     const myName = displayName(profiles[me.id], "A teammate");
-    const text = `🎙️ ${myName} started a huddle: "${room.name}" — join from Conference.`;
+    const text = `🎙️ ${myName} started a huddle: "${room.name}" — join in.`;
 
     const { data: msg } = await supabase
       .from("messages")
@@ -702,6 +704,7 @@ export default function HuddlesPage() {
       .channel(`huddle-notify-${roomId}`)
       .on("broadcast", { event: "reaction" }, ({ payload }: any) => {
         setReactions((r) => ({ ...r, [payload.userId]: payload.emoji }));
+        setReactionBurst({ id: `${Date.now()}-${Math.random()}`, emoji: payload.emoji });
         setTimeout(() => setReactions((r) => {
           const copy = { ...r };
           delete copy[payload.userId];
@@ -830,6 +833,7 @@ export default function HuddlesPage() {
     if (!me) return;
     notifyChanRef.current?.send({ type: "broadcast", event: "reaction", payload: { userId: me.id, emoji } });
     setReactions((r) => ({ ...r, [me.id]: emoji }));
+    setReactionBurst({ id: `${Date.now()}-${Math.random()}`, emoji });
     setTimeout(() => setReactions((r) => {
       const copy = { ...r };
       delete copy[me.id];
@@ -883,18 +887,39 @@ export default function HuddlesPage() {
   ──────────────────────────────────────────────────────────────────── */
   if (!activeRoom) {
     return (
-      <div className="min-h-screen bg-[#0a0812] px-6 py-10">
-        <div className="max-w-3xl mx-auto">
-          <div className="flex items-center justify-between mb-8">
+      <div className="relative min-h-screen bg-[#08060f] px-6 py-10 overflow-hidden">
+        <style>{`@keyframes pv-bar { from { transform: scaleY(0.45); } to { transform: scaleY(1.25); } } @keyframes pv-pop { 0% { transform: scale(0) rotate(-15deg); opacity: 0; } 60% { transform: scale(1.25) rotate(6deg); opacity: 1; } 100% { transform: scale(1) rotate(0deg); opacity: 1; } }`}</style>
+        {/* Ambient depth — a room you're waiting outside of */}
+        <div className="pointer-events-none absolute inset-0" aria-hidden>
+          <div className="absolute -top-40 left-1/4 w-[520px] h-[520px] rounded-full opacity-[0.13] blur-[110px]"
+               style={{ background: "radial-gradient(circle, #7C3AED 0%, transparent 70%)" }} />
+          <div className="absolute top-1/3 -right-32 w-[420px] h-[420px] rounded-full opacity-[0.10] blur-[120px]"
+               style={{ background: "radial-gradient(circle, #00BFA6 0%, transparent 70%)" }} />
+          <div className="absolute inset-0 opacity-[0.35]"
+               style={{ backgroundImage: "radial-gradient(rgba(255,255,255,0.045) 1px, transparent 1px)", backgroundSize: "34px 34px" }} />
+        </div>
+
+        <div className="relative max-w-3xl mx-auto">
+          <div className="flex items-end justify-between mb-9">
             <div>
-              <h1 className="text-white text-2xl font-bold tracking-tight">Huddles</h1>
-              <p className="text-zinc-500 text-sm mt-1">Quick voice rooms for your team.</p>
+              <p className="text-[10px] font-mono uppercase tracking-[0.28em] text-purple-400/70 mb-2">
+                Live rooms
+              </p>
+              <h1 className="text-white text-[27px] font-bold tracking-tight leading-none">Huddles</h1>
+              <p className="text-zinc-500 text-sm mt-2">Drop in. No links, no scheduling.</p>
             </div>
             <button
               onClick={() => setShowNewRoom(true)}
-              className="bg-purple-600 hover:bg-purple-500 text-white font-semibold px-4 py-2.5 rounded-xl transition text-sm"
+              className="group relative overflow-hidden rounded-xl px-5 py-2.5 text-sm font-semibold text-white
+                         transition-all duration-200 hover:-translate-y-[1px]"
+              style={{ background: "linear-gradient(135deg,#7C3AED,#5B21B6)", boxShadow: "0 6px 20px rgba(124,58,237,0.35)" }}
             >
-              New Huddle
+              <span className="relative z-10 flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-white/90" />
+                New Huddle
+              </span>
+              <span className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                    style={{ background: "linear-gradient(135deg,#8B5CF6,#6D28D9)" }} />
             </button>
           </div>
 
@@ -928,8 +953,21 @@ export default function HuddlesPage() {
           )}
 
           {rooms.length === 0 ? (
-            <div className="rounded-2xl border border-zinc-800 p-10 text-center text-zinc-500 text-sm">
-              No active huddles right now. Start one to get your team talking.
+            <div className="relative rounded-3xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-sm
+                            p-14 text-center overflow-hidden">
+              <div className="absolute inset-x-0 top-0 h-px"
+                   style={{ background: "linear-gradient(90deg,transparent,rgba(124,58,237,0.5),transparent)" }} />
+              <div className="relative mx-auto mb-5 w-14 h-14 rounded-2xl flex items-center justify-center"
+                   style={{ background: "linear-gradient(135deg,rgba(124,58,237,0.18),rgba(124,58,237,0.05))",
+                            border: "1px solid rgba(124,58,237,0.25)" }}>
+                <span className="text-xl">🎙️</span>
+                <span className="absolute inset-0 rounded-2xl animate-ping opacity-20"
+                      style={{ background: "rgba(124,58,237,0.4)", animationDuration: "3s" }} />
+              </div>
+              <p className="text-zinc-300 text-sm font-medium">The room is quiet</p>
+              <p className="text-zinc-600 text-xs mt-1.5 max-w-xs mx-auto leading-relaxed">
+                Start a huddle and your team gets a nudge in #general. No invites to send.
+              </p>
             </div>
           ) : (
             <div className="grid sm:grid-cols-2 gap-4">
@@ -938,39 +976,77 @@ export default function HuddlesPage() {
                   key={room.id}
                   disabled={busy}
                   onClick={() => joinRoom(room)}
-                  className="text-left rounded-2xl border border-zinc-800 bg-zinc-900/30 hover:border-zinc-600 p-5 transition disabled:opacity-50"
+                  className="group relative text-left rounded-2xl p-[1px] transition-all duration-200
+                             hover:-translate-y-[2px] disabled:opacity-50 disabled:translate-y-0"
+                  style={{
+                    background: roomSpeakers[room.id]
+                      ? "linear-gradient(135deg,rgba(124,58,237,0.55),rgba(124,58,237,0.12))"
+                      : "linear-gradient(135deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))",
+                  }}
                 >
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
-                      <span className="text-xs text-purple-400 font-semibold uppercase tracking-wider">Live</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-500/15 border border-purple-500/25">
-                      <span className="text-xs font-bold text-purple-300">{participantCounts[room.id] ?? 0}</span>
-                      <div className="flex items-end gap-[2px] h-3">
-                        {[0,1,2].map((i) => (
-                          <span key={i} className="w-[2px] rounded-full bg-purple-400"
-                            style={{ height: (8 + Math.sin(Date.now()/400 + i) * 4) + "px", opacity: 0.7 }} />
-                        ))}
+                  <div className="relative rounded-[15px] bg-[#0d0a17]/95 backdrop-blur-sm p-5 overflow-hidden h-full">
+                    {/* speaking wash */}
+                    {roomSpeakers[room.id] && (
+                      <div className="pointer-events-none absolute -top-16 -right-10 w-40 h-40 rounded-full opacity-25 blur-3xl"
+                           style={{ background: "radial-gradient(circle,#7C3AED,transparent 70%)" }} />
+                    )}
+
+                    <div className="relative flex items-center justify-between mb-3.5">
+                      <div className="flex items-center gap-2">
+                        <span className="relative flex w-2 h-2">
+                          <span className="absolute inset-0 rounded-full bg-purple-400 animate-ping opacity-70" />
+                          <span className="relative w-2 h-2 rounded-full bg-purple-400" />
+                        </span>
+                        <span className="text-[10px] text-purple-300 font-bold uppercase tracking-[0.16em]">Live</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full"
+                           style={{ background: "rgba(124,58,237,0.14)", border: "1px solid rgba(124,58,237,0.28)" }}>
+                        <span className="text-[11px] font-bold text-purple-200 tabular-nums">
+                          {participantCounts[room.id] ?? 0}
+                        </span>
+                        <span className="text-[9px] text-purple-300/70 uppercase tracking-wider">in</span>
                       </div>
                     </div>
+
+                    <h3 className="relative text-white font-semibold text-[17px] tracking-tight truncate">
+                      {room.name}
+                    </h3>
+
+                    <div className="relative mt-2 h-5 flex items-center">
+                      {roomSpeakers[room.id] ? (
+                        <span className="flex items-center gap-2 min-w-0">
+                          <span className="flex items-end gap-[2px] h-3.5 flex-shrink-0">
+                            {[0,1,2,3].map((i) => (
+                              <span key={i} className="w-[2.5px] rounded-full bg-purple-400"
+                                style={{
+                                  height: `${5 + (i % 2 ? 8 : 4)}px`,
+                                  animation: `pv-bar 900ms ease-in-out ${i * 110}ms infinite alternate`,
+                                }} />
+                            ))}
+                          </span>
+                          <span className="text-xs text-purple-200 font-medium truncate">
+                            {roomSpeakers[room.id]} is speaking
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="text-xs text-zinc-500">
+                          {(participantCounts[room.id] ?? 0) === 0 ? "Empty room" : "Quiet right now"}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* join affordance */}
+                    <div className="relative mt-4 pt-3.5 border-t border-white/[0.06] flex items-center justify-between">
+                      <span className="text-[11px] text-zinc-500 group-hover:text-zinc-300 transition-colors">
+                        {busy ? "Connecting…" : "Tap to join"}
+                      </span>
+                      <span className="w-7 h-7 rounded-full flex items-center justify-center transition-all duration-200
+                                       group-hover:translate-x-0.5"
+                            style={{ background: "rgba(124,58,237,0.16)", border: "1px solid rgba(124,58,237,0.3)" }}>
+                        <span className="text-purple-300 text-xs leading-none">→</span>
+                      </span>
+                    </div>
                   </div>
-                  <h3 className="text-white font-semibold text-base">{room.name}</h3>
-                  {roomSpeakers[room.id] ? (
-                    <p className="text-xs mt-1 flex items-center gap-1.5">
-                      <span className="flex items-end gap-[2px] h-2.5">
-                        {[0,1,2].map((i) => (
-                          <span key={i} className="w-[2px] rounded-full bg-purple-400 animate-pulse"
-                            style={{ height: `${6 + i * 2}px`, animationDelay: `${i * 120}ms` }} />
-                        ))}
-                      </span>
-                      <span className="text-purple-300 font-medium truncate">
-                        {roomSpeakers[room.id]} is speaking
-                      </span>
-                    </p>
-                  ) : (
-                    <p className="text-xs text-zinc-500 mt-1">{participantCounts[room.id] ?? 0} in call · Tap to join</p>
-                  )}
                 </button>
               ))}
             </div>
@@ -984,19 +1060,41 @@ export default function HuddlesPage() {
      RENDER: ACTIVE ROOM
   ──────────────────────────────────────────────────────────────────── */
   return (
-    <div className="h-[calc(100vh-6rem)] bg-[#0a0812] px-6 py-8 flex flex-col">
-      <div className="max-w-3xl w-full mx-auto flex-1 flex flex-col">
+    <div className="relative h-[calc(100vh-6rem)] bg-[#08060f] px-6 py-8 flex flex-col overflow-hidden">
+      <style>{`@keyframes pv-bar { from { transform: scaleY(0.45); } to { transform: scaleY(1.25); } } @keyframes pv-pop { 0% { transform: scale(0) rotate(-15deg); opacity: 0; } 60% { transform: scale(1.25) rotate(6deg); opacity: 1; } 100% { transform: scale(1) rotate(0deg); opacity: 1; } }`}</style>
+
+      {/* Ambient depth */}
+      <div className="pointer-events-none absolute inset-0" aria-hidden>
+        <div className="absolute -top-32 left-1/3 w-[480px] h-[480px] rounded-full opacity-[0.12] blur-[110px]"
+             style={{ background: "radial-gradient(circle,#7C3AED 0%,transparent 70%)" }} />
+        <div className="absolute inset-0 opacity-[0.3]"
+             style={{ backgroundImage: "radial-gradient(rgba(255,255,255,0.04) 1px, transparent 1px)", backgroundSize: "34px 34px" }} />
+      </div>
+
+      <FloatingReactions trigger={reactionBurst} />
+
+      <div className="relative max-w-3xl w-full mx-auto flex-1 flex flex-col min-h-0">
         {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-white font-semibold text-lg">{activeRoom.name}</h1>
-            <p className="text-zinc-500 text-sm font-mono mt-0.5">{formatDuration(elapsed)}</p>
+        <div className="flex items-center justify-between mb-7 flex-shrink-0">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="relative flex w-2 h-2">
+                <span className="absolute inset-0 rounded-full bg-purple-400 animate-ping opacity-70" />
+                <span className="relative w-2 h-2 rounded-full bg-purple-400" />
+              </span>
+              <span className="text-[10px] text-purple-300 font-bold uppercase tracking-[0.18em]">Live</span>
+              <span className="text-zinc-700">·</span>
+              <span className="text-[11px] text-zinc-500 font-mono tabular-nums">{formatDuration(elapsed)}</span>
+            </div>
+            <h1 className="text-white font-bold text-xl tracking-tight truncate">{activeRoom.name}</h1>
           </div>
-          <div className="flex items-center gap-3">
+
+          <div className="flex items-center gap-2.5 flex-shrink-0">
             {isHost && raisedHands.length > 0 && (
               <button
                 onClick={() => setHandQueueOpen((v) => !v)}
-                className="relative rounded-xl border border-zinc-700 px-3 py-2 text-sm text-zinc-200 hover:border-zinc-500 transition"
+                className="relative rounded-xl px-3 py-2 text-sm font-medium transition-all hover:-translate-y-[1px]"
+                style={{ background: "rgba(245,158,11,0.14)", border: "1px solid rgba(245,158,11,0.35)", color: "#FCD34D" }}
               >
                 ✋ {raisedHands.length}
               </button>
@@ -1004,14 +1102,16 @@ export default function HuddlesPage() {
             {isHost ? (
               <button
                 onClick={endHuddle}
-                className="bg-red-600 hover:bg-red-500 text-white font-semibold px-4 py-2 rounded-xl transition text-sm"
+                className="text-white font-semibold px-4 py-2 rounded-xl text-sm transition-all hover:-translate-y-[1px]"
+                style={{ background: "linear-gradient(135deg,#DC2626,#B91C1C)", boxShadow: "0 4px 16px rgba(220,38,38,0.3)" }}
               >
                 End Huddle
               </button>
             ) : (
               <button
                 onClick={leaveRoom}
-                className="border border-zinc-700 hover:border-zinc-500 text-zinc-200 font-medium px-4 py-2 rounded-xl transition text-sm"
+                className="border border-white/[0.12] hover:border-white/25 hover:bg-white/[0.04]
+                           text-zinc-200 font-medium px-4 py-2 rounded-xl transition text-sm"
               >
                 Leave
               </button>
@@ -1045,9 +1145,21 @@ export default function HuddlesPage() {
             const speaking = level > 18 && !(p.user_id === me?.id ? myMuted : p.is_muted);
             const reaction = reactions[p.user_id];
             return (
-              <div key={p.id} className="relative flex flex-col items-center text-center group">
+              <div
+                key={p.id}
+                className="relative flex flex-col items-center text-center group rounded-2xl p-4
+                           transition-all duration-200"
+                style={{
+                  background: speaking ? "rgba(124,58,237,0.10)" : "rgba(255,255,255,0.02)",
+                  border: speaking ? "1px solid rgba(124,58,237,0.45)" : "1px solid rgba(255,255,255,0.05)",
+                  boxShadow: speaking ? "0 0 28px rgba(124,58,237,0.18)" : "none",
+                }}
+              >
                 {reaction && (
-                  <span className="absolute -top-2 text-2xl animate-bounce z-10">{reaction}</span>
+                  <span className="absolute -top-3 right-3 text-2xl z-10"
+                        style={{ animation: "pv-pop 420ms cubic-bezier(.34,1.56,.64,1)" }}>
+                    {reaction}
+                  </span>
                 )}
                 {/* Avatar + hand badge share a wrapper so the badge anchors to the
                     avatar, not the grid cell — otherwise it drifts and clips. */}
@@ -1080,11 +1192,16 @@ export default function HuddlesPage() {
                     </span>
                   )}
                 </div>
-                <p className="text-white text-sm font-medium mt-2 truncate max-w-full">{name}</p>
-                <div className="mt-1.5 flex items-center gap-1.5">
-                  <Spectrum level={level} active={speaking} />
-                  {(p.user_id === me?.id ? myMuted : p.is_muted) && (
-                    <span className="inline-flex items-center gap-1 text-[10px] text-zinc-500 bg-zinc-800/70 px-1.5 py-0.5 rounded-md">Muted</span>
+                <p className="text-white text-[13px] font-semibold mt-3 truncate max-w-full tracking-tight">
+                  {name}
+                </p>
+                <div className="mt-2 flex items-center gap-2 h-4">
+                  {(p.user_id === me?.id ? myMuted : p.is_muted) ? (
+                    <span className="inline-flex items-center gap-1 text-[10px] text-zinc-500">
+                      <span className="text-[11px] leading-none">🔇</span> Muted
+                    </span>
+                  ) : (
+                    <Spectrum level={level} active={speaking} />
                   )}
                 </div>
 
@@ -1104,27 +1221,54 @@ export default function HuddlesPage() {
 
         {/* Control bar — pinned so a full participant grid can't push it off-screen */}
         <div className="mt-6 flex-shrink-0 sticky bottom-0 flex items-center justify-center gap-3
-                        py-4 bg-[#0a0812]/95 backdrop-blur-sm border-t border-white/[0.06]">
+                        py-5 bg-[#08060f]/90 backdrop-blur-xl border-t border-white/[0.06] gap-8">
           <button
             onClick={toggleMute}
-            className={`px-5 py-3 rounded-xl text-sm font-medium transition ${
-              myMuted ? "bg-zinc-800 text-zinc-300 border border-zinc-700" : "bg-purple-600 text-white"
-            }`}
+            title={myMuted ? "Unmute" : "Mute"}
+            className="group flex flex-col items-center gap-1.5 transition-transform hover:-translate-y-[2px]"
           >
-            {myMuted ? "🔇 Unmute" : "🎙️ Mute"}
+            <span className="w-13 h-13 rounded-full flex items-center justify-center text-lg transition-all"
+                  style={{
+                    width: 52, height: 52,
+                    background: myMuted ? "rgba(220,38,38,0.16)" : "rgba(124,58,237,0.18)",
+                    border: myMuted ? "1px solid rgba(220,38,38,0.45)" : "1px solid rgba(124,58,237,0.45)",
+                  }}>
+              {myMuted ? "🔇" : "🎙️"}
+            </span>
+            <span className="text-[10px] text-zinc-500 group-hover:text-zinc-300 transition-colors">
+              {myMuted ? "Unmute" : "Mute"}
+            </span>
           </button>
+
           <button
             onClick={toggleHand}
-            className={`px-5 py-3 rounded-xl text-sm font-medium transition border ${
-              myHandRaised ? "bg-white text-zinc-900 border-white" : "border-zinc-700 text-zinc-300"
-            }`}
+            title={myHandRaised ? "Lower hand" : "Raise hand"}
+            className="group flex flex-col items-center gap-1.5 transition-transform hover:-translate-y-[2px]"
           >
-            ✋ {myHandRaised ? "Lower hand" : "Raise hand"}
+            <span className="rounded-full flex items-center justify-center text-lg transition-all"
+                  style={{
+                    width: 52, height: 52,
+                    background: myHandRaised ? "rgba(245,158,11,0.9)" : "rgba(255,255,255,0.05)",
+                    border: myHandRaised ? "1px solid #F59E0B" : "1px solid rgba(255,255,255,0.12)",
+                  }}>
+              ✋
+            </span>
+            <span className="text-[10px] transition-colors"
+                  style={{ color: myHandRaised ? "#FCD34D" : undefined }}>
+              <span className={myHandRaised ? "" : "text-zinc-500 group-hover:text-zinc-300"}>
+                {myHandRaised ? "Lower" : "Raise"}
+              </span>
+            </span>
           </button>
           <div className="relative">
             <details className="group">
-              <summary className="list-none cursor-pointer px-5 py-3 rounded-xl text-sm font-medium border border-zinc-700 text-zinc-300">
-                😊 React
+              <summary className="list-none cursor-pointer flex flex-col items-center gap-1.5
+                                  transition-transform hover:-translate-y-[2px]">
+                <span className="rounded-full flex items-center justify-center text-lg"
+                      style={{ width: 52, height: 52, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.12)" }}>
+                  😊
+                </span>
+                <span className="text-[10px] text-zinc-500">React</span>
               </summary>
               <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-zinc-900 border border-zinc-700 rounded-xl p-2 grid grid-cols-6 gap-1 w-56 z-20">
                 {EMOJIS.map((e) => (
