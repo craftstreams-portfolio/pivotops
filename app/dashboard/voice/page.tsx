@@ -844,7 +844,7 @@ export default function HuddlesPage() {
         )}
 
         {/* Participant grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-5 flex-1 min-h-0 overflow-y-auto content-start pb-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-5 flex-1 min-h-0 overflow-y-auto content-start pt-3 pb-4 px-1">
           {participants.map((p) => {
             const profile = profiles[p.user_id];
             const name = displayName(profile, p.user_id === me?.id ? "You" : "Member");
@@ -856,24 +856,36 @@ export default function HuddlesPage() {
                 {reaction && (
                   <span className="absolute -top-2 text-2xl animate-bounce z-10">{reaction}</span>
                 )}
-                {p.hand_raised && (
-                  <span
-                    className="absolute -top-1 right-4 z-20 w-7 h-7 rounded-full flex items-center
-                               justify-center text-sm shadow-lg animate-pulse"
-                    style={{ background: "#F59E0B", boxShadow: "0 0 0 2px rgba(24,24,27,1), 0 4px 12px rgba(245,158,11,0.45)" }}
-                    title="Hand raised"
+                {/* Avatar + hand badge share a wrapper so the badge anchors to the
+                    avatar, not the grid cell — otherwise it drifts and clips. */}
+                <div className="relative">
+                  <div
+                    className="w-16 h-16 rounded-full flex items-center justify-center text-white font-semibold text-sm"
+                    style={{
+                      background: "linear-gradient(135deg, #7C3AED, #5B21B6)",
+                      boxShadow: p.hand_raised
+                        ? "0 0 0 2px #F59E0B"
+                        : speaking
+                          ? "0 0 0 3px rgba(124,58,237,0.65)"
+                          : "0 0 0 1px rgba(124,58,237,0.35)",
+                    }}
                   >
-                    ✋
-                  </span>
-                )}
-                <div
-                  className="w-16 h-16 rounded-full flex items-center justify-center text-white font-semibold text-sm relative"
-                  style={{
-                    background: "linear-gradient(135deg, #7C3AED, #5B21B6)",
-                    boxShadow: speaking ? "0 0 0 3px rgba(124,58,237,0.65)" : "0 0 0 1px rgba(124,58,237,0.35)",
-                  }}
-                >
-                  {initials(name)}
+                    {initials(name)}
+                  </div>
+                  {p.hand_raised && (
+                    <span
+                      className="absolute -bottom-0.5 -right-0.5 z-20 w-6 h-6 rounded-full
+                                 flex items-center justify-center text-[12px] leading-none select-none"
+                      style={{
+                        background: "#F59E0B",
+                        border: "2px solid #0a0812",
+                        boxShadow: "0 2px 6px rgba(0,0,0,0.55)",
+                      }}
+                      title="Hand raised"
+                    >
+                      ✋
+                    </span>
+                  )}
                 </div>
                 <p className="text-white text-sm font-medium mt-2 truncate max-w-full">{name}</p>
                 <div className="mt-1.5 flex items-center gap-1.5">
