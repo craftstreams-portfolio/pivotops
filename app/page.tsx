@@ -274,10 +274,10 @@ function askXavier(messages: { role: string; content: string }[]): string {
     return "I'm built for staffing agencies and workforce-heavy teams — everything from healthcare staffing to retail and merchant operations. Whether you're a handful of people or a multi-location operation feeling the daily sting of slow hiring, that's exactly who I help. Tell me a bit about your team and I'll help you size it up.";
 
   if (has("setup","implement","onboard","how long","time to","get started","begin","launch"))
-    return "No six-month rollout, I promise. We scope a first pilot around your active pipeline and map it to how you actually work — so you're looking at a live workflow in weeks, not quarters. Want to get started? I can point you to signup.";
+    return "No rollout phase at all. Onboarding is automated - connect your pipeline and the workflow is live the same day, mapped to how you already hire. Want to get started? I can point you to signup.";
 
   if (has("result","roi","outcome","time to hire","faster","speed","72","hours","quick"))
-    return "Here's the number that matters: most teams take 14 to 30 days from application to interview. The goal with PivotOps is to compress that to a 72-hour window — intake through interview scheduling — and we measure it against your own pipeline during the pilot, so it's real, not a marketing line.";
+    return "Here's the number that matters: most teams take 14 to 30 days from application to interview. The goal with PivotOps is to compress that to a 72-hour window — intake through interview scheduling — and we measure it against your own pipeline from week one, so it's real, not a marketing line.";
 
   if (has("secure","security","private","privacy","gdpr","safe","data"))
     return "Absolutely — I take this seriously. Your data is tenant-isolated (your info never touches another company's), with compliance document tracking and full audit logging baked in. Enterprise plans also get a compliance review before rollout. Anything specific on the security side you want me to dig into?";
@@ -481,10 +481,10 @@ const FAQS = [
   { q: "What does PivotOps actually do?", a: "PivotOps automates the entire path from a job opening to a working employee: intake, AI scoring, interview routing, onboarding, task routing, compliance tracking, and attendance - running as one system instead of five disconnected tools." },
   { q: "Is this an ATS replacement?", a: "No. PivotOps is the coordination and decision-routing layer that ATS software was never built for - the part your team currently runs over WhatsApp and spreadsheets. It sits on top of what you already have." },
   { q: "Who is PivotOps for?", a: "Staffing agencies and workforce-heavy teams - from healthcare staffing to merchant and retail operations - running anywhere from a handful of employees to multi-location teams who feel the daily cost of slow hiring." },
-  { q: "How long does setup take?", a: "A first pilot is scoped around your active pipeline, not a six-month implementation. Expect a live workflow within weeks, mapped to your actual process from day one." },
-  { q: "Do we need to replace our current tools?", a: "No. PivotOps sits on top of what you already run. The goal in an early pilot is to prove the time-to-hire compression - not force a tool migration before you have seen results." },
+  { q: "How long does setup take?", a: "Onboarding is instant and automated. You're not waiting on an implementation team - connect your pipeline and the workflow is live the same day, mapped to how you already hire." },
+  { q: "Do we need to replace our current tools?", a: "No. PivotOps sits on top of what you already run. The goal early on is to prove the time-to-hire compression - not force a tool migration before you have seen results." },
   { q: "How is this different from Bullhorn or Workday?", a: "Those are systems of record - built to store data. PivotOps is built to run the daily operating rhythm: who owns a role right now, what happens the moment an application lands, and how a decision gets made without a WhatsApp thread." },
-  { q: "What results should we expect?", a: "The target is compressing your hiring loop from 14-30 days down to a 72-hour window for intake through interview scheduling, measured against your own pipeline during a pilot." },
+  { q: "What results should we expect?", a: "The target is compressing your hiring loop from 14-30 days down to a 72-hour window for intake through interview scheduling, measured against your own pipeline in your first weeks." },
   { q: "Is it secure enough for compliance-sensitive teams?", a: "Yes. PivotOps includes compliance document tracking, tenant-isolated data access, and audit logging as core features, not add-ons. Enterprise plans include a compliance review before rollout." },
 ];
 
