@@ -38,6 +38,7 @@ export default function TeamInvitePanel({
 }) {
   const [email,    setEmail]    = useState("");
   const [role,     setRole]     = useState("operator");
+  const [position, setPosition] = useState("");
   const [sending,  setSending]  = useState(false);
   const [error,    setError]    = useState("");
   const [lastLink, setLastLink] = useState("");
@@ -73,12 +74,13 @@ export default function TeamInvitePanel({
       const res = await fetch("/api/team/invites", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), role }),
+        body: JSON.stringify({ email: email.trim(), role, position: position.trim() || undefined }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to send invite.");
       setLastLink(data.inviteLink || "");
       setEmail("");
+      setPosition("");
       refreshCounts();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
@@ -133,6 +135,23 @@ export default function TeamInvitePanel({
                   placeholder="teammate@company.com"
                   className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white placeholder-zinc-600 outline-none focus:border-emerald-500 transition"
                 />
+              </div>
+
+              <div>
+                <label className="text-xs text-zinc-500 mb-1.5 block">
+                  Job title <span className="text-zinc-600">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={position}
+                  onChange={(e) => setPosition(e.target.value)}
+                  maxLength={60}
+                  placeholder="e.g. Senior Recruiter, Regional Ops Lead"
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white placeholder-zinc-600 outline-none focus:border-emerald-500 transition"
+                />
+                <p className="text-[11px] text-zinc-600 mt-1.5">
+                  Shown on their profile. Access is set by the role below.
+                </p>
               </div>
 
               <div>

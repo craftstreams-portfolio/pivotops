@@ -43,6 +43,8 @@ export type ApplyInput = z.infer<typeof ApplySchema>;
 export const TeamInviteSchema = z.object({
   email: email,
   role: z.enum(["admin","manager","operator","recruiter"]).default("operator"),
+  // Job title is descriptive only — permissions come from role above.
+  position: z.string().trim().max(60).optional(),
 });
 export type TeamInviteInput = z.infer<typeof TeamInviteSchema>;
 export type CandidateActionInput = z.infer<typeof CandidateActionSchema>;

@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const parsed = TeamInviteSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: "Invalid invite request." }, { status: 400 });
-    const { email, role } = parsed.data;
+    const { email, role, position } = parsed.data;
 
     const admin = getAdmin();
 
@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
       type: "invite",
       email: emailNorm,
       options: {
-        data: { tenant_id: tenantId, role, invited: true },
+        data: { tenant_id: tenantId, role, position: position ?? null, invited: true },
         redirectTo: baseUrl + "/login",
       },
     });
