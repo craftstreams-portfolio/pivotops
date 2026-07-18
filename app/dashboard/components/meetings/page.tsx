@@ -687,8 +687,7 @@ export default function ConferencePage() {
               </div>
               <h1 className="text-2xl font-bold text-white">Conference</h1>
             </div>
-            <p className="text-zinc-500 text-sm">Enterprise-grade video conferencing</p>
-          </div>
+                      </div>
           <button
             onClick={() => setShowNewMeeting(true)}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600

@@ -614,6 +614,21 @@ export default function HuddlesPage() {
       setMyHandRaised(false);
       subscribeRoomChannels(room.id);
     } catch (e: any) {
+      // The participant row is written before the mic is requested, so a failure
+      // here (mic busy, permission denied) would otherwise leave a ghost in the
+      // roster — someone everyone can see who was never actually in the call.
+      if (myParticipantIdRef.current) {
+        await supabase
+          .from("voice_room_participants")
+          .delete()
+          .eq("id", myParticipantIdRef.current)
+          .then(() => {}, () => {});
+        myParticipantIdRef.current = null;
+      }
+      try { engineRef.current?.leave?.(); } catch {}
+      engineRef.current = null;
+      setParticipants([]);
+      setActiveRoom(null);
       setError(e.message ?? "Couldn't join the huddle. Check mic permissions and try again.");
     } finally {
       setBusy(false);

@@ -2,6 +2,7 @@
 import { safeGetUserMedia } from "@/lib/media/safeGetUserMedia";
 
 import { useEffect, useState, useRef, useCallback } from "react";
+import FloatingReactions from "@/app/dashboard/components/voice/FloatingReactions";
 import { supabase } from "@/lib/supabase";
 import { useTenant } from "@/lib/hooks/useTenant";
 import { FeatureGate } from "@/app/components/FeatureGate";
@@ -412,6 +413,7 @@ function ConferencePageInner() {
   const [loading,        setLoading]        = useState(false);
   const [endedTitle,     setEndedTitle]     = useState("");
   const [showEmojiBar,   setShowEmojiBar]   = useState(false);
+  const [reactionBurst,  setReactionBurst]  = useState<{ id: string; emoji: string } | null>(null);
 
   const engineRef    = useRef<WebRTCEngine | null>(null);
   const timerRef     = useRef<NodeJS.Timeout | null>(null);
@@ -712,32 +714,63 @@ function ConferencePageInner() {
   // ─────────────────────────────────────
   if (view === "lobby") {
     return (
-      <div className="p-4 md:p-6 max-w-5xl space-y-6">
-        <div className="flex items-center justify-between">
+      <div className="relative p-4 md:p-6 max-w-5xl space-y-6 overflow-hidden">
+        <style>{`@keyframes pv-sheen { from { transform: translateX(-120%); } to { transform: translateX(220%); } }`}</style>
+
+        {/* Ambient depth */}
+        <div className="pointer-events-none absolute inset-0 -z-10" aria-hidden>
+          <div className="absolute -top-32 left-1/4 w-[460px] h-[460px] rounded-full opacity-[0.10] blur-[110px]"
+               style={{ background: "radial-gradient(circle,#6366F1 0%,transparent 70%)" }} />
+          <div className="absolute top-1/2 -right-24 w-[380px] h-[380px] rounded-full opacity-[0.08] blur-[110px]"
+               style={{ background: "radial-gradient(circle,#00BFA6 0%,transparent 70%)" }} />
+        </div>
+
+        <div className="flex items-end justify-between">
           <div>
-            <div className="flex items-center gap-3 mb-1">
-              <div className="w-9 h-9 rounded-xl bg-indigo-500/15 border border-indigo-500/25
-                              flex items-center justify-center">
-                <RadioTower size={18} className="text-indigo-400" />
+            <div className="flex items-center gap-3 mb-1.5">
+              <div className="relative w-10 h-10 rounded-xl flex items-center justify-center"
+                   style={{ background: "linear-gradient(135deg,rgba(99,102,241,0.22),rgba(99,102,241,0.06))",
+                            border: "1px solid rgba(99,102,241,0.3)" }}>
+                <RadioTower size={18} className="text-indigo-300" />
               </div>
-              <h1 className="text-2xl font-bold text-white">Conference</h1>
+              <div>
+                <p className="text-[10px] font-mono uppercase tracking-[0.28em] text-indigo-400/70 leading-none mb-1.5">
+                  Video rooms
+                </p>
+                <h1 className="text-[26px] font-bold text-white tracking-tight leading-none">Conference</h1>
+              </div>
             </div>
-            <p className="text-zinc-500 text-sm">Enterprise-grade video conferencing</p>
-          </div>
+                      </div>
           <button onClick={() => setShowNewMeeting(true)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600
-                       hover:bg-indigo-500 text-white text-sm font-semibold transition">
-            <Plus size={15} /> New Conference
+            className="group relative flex items-center gap-2 px-5 py-2.5 rounded-xl text-white
+                       text-sm font-semibold transition-all duration-200 hover:-translate-y-[1px] overflow-hidden"
+            style={{ background: "linear-gradient(135deg,#4F46E5,#4338CA)", boxShadow: "0 6px 20px rgba(79,70,229,0.32)" }}>
+            <span className="relative z-10 flex items-center gap-2"><Plus size={15} /> New Conference</span>
+            <span className="absolute inset-y-0 w-1/3 opacity-0 group-hover:opacity-100"
+                  style={{ background: "linear-gradient(90deg,transparent,rgba(255,255,255,0.22),transparent)",
+                           animation: "pv-sheen 900ms ease-out" }} />
           </button>
         </div>
 
         {meetings.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-zinc-800 p-12 text-center space-y-3">
-            <RadioTower size={32} className="text-zinc-700 mx-auto" />
-            <p className="text-zinc-500 text-sm">No conferences scheduled</p>
+          <div className="relative rounded-3xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-sm
+                          p-14 text-center overflow-hidden">
+            <div className="absolute inset-x-0 top-0 h-px"
+                 style={{ background: "linear-gradient(90deg,transparent,rgba(99,102,241,0.5),transparent)" }} />
+            <div className="relative mx-auto mb-5 w-16 h-16 rounded-2xl flex items-center justify-center"
+                 style={{ background: "linear-gradient(135deg,rgba(99,102,241,0.18),rgba(99,102,241,0.04))",
+                          border: "1px solid rgba(99,102,241,0.25)" }}>
+              <RadioTower size={26} className="text-indigo-300" />
+              <span className="absolute inset-0 rounded-2xl animate-ping opacity-20"
+                    style={{ background: "rgba(99,102,241,0.4)", animationDuration: "3s" }} />
+            </div>
+            <p className="text-zinc-200 text-sm font-medium">Nobody's in the room yet</p>
+            <p className="text-zinc-600 text-xs mt-1.5 max-w-sm mx-auto leading-relaxed">
+              Open a conference and share the room code — your team joins from here, no downloads.
+            </p>
             <button onClick={() => setShowNewMeeting(true)}
-              className="text-indigo-400 text-sm hover:text-indigo-300 transition">
-              Create your first conference →
+              className="mt-5 text-indigo-300 text-sm hover:text-indigo-200 transition font-medium">
+              Start a conference →
             </button>
           </div>
         ) : (
@@ -748,19 +781,32 @@ function ConferencePageInner() {
               const isHost2  = m.host_user_id === currentUser?.id;
               return (
                 <div key={m.id}
-                  className={`rounded-2xl border p-5 transition hover:border-zinc-700
-                    ${isLive ? "border-indigo-500/30 bg-indigo-500/5" :
-                      isEnded ? "border-zinc-800/50 bg-zinc-900/50 opacity-60" :
-                      "border-zinc-800 bg-zinc-900"}`}>
+                  className="group relative rounded-2xl p-[1px] transition-all duration-200 hover:-translate-y-[2px]"
+                  style={{
+                    background: isLive
+                      ? "linear-gradient(135deg,rgba(239,68,68,0.5),rgba(99,102,241,0.18))"
+                      : isEnded
+                        ? "rgba(255,255,255,0.04)"
+                        : "linear-gradient(135deg,rgba(255,255,255,0.09),rgba(255,255,255,0.02))",
+                    opacity: isEnded ? 0.55 : 1,
+                  }}>
+                  <div className="relative rounded-[15px] bg-[#0c0d17]/95 backdrop-blur-sm p-5 overflow-hidden">
+                    {isLive && (
+                      <div className="pointer-events-none absolute -top-20 -right-12 w-48 h-48 rounded-full opacity-20 blur-3xl"
+                           style={{ background: "radial-gradient(circle,#EF4444,transparent 70%)" }} />
+                    )}
                   <div className="flex items-start justify-between gap-4">
                     <div className="space-y-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <p className="text-white font-semibold truncate">{m.title}</p>
                         {isLive && (
-                          <span className="flex items-center gap-1 text-[10px] text-red-400
-                                           bg-red-500/15 border border-red-500/25 px-2 py-0.5
-                                           rounded-full font-semibold flex-shrink-0">
-                            <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
+                          <span className="flex items-center gap-1.5 text-[10px] text-red-300
+                                           px-2.5 py-1 rounded-full font-bold tracking-[0.12em] flex-shrink-0"
+                                style={{ background: "rgba(239,68,68,0.16)", border: "1px solid rgba(239,68,68,0.4)" }}>
+                            <span className="relative flex w-1.5 h-1.5">
+                              <span className="absolute inset-0 rounded-full bg-red-400 animate-ping opacity-75" />
+                              <span className="relative w-1.5 h-1.5 rounded-full bg-red-400" />
+                            </span>
                             LIVE
                           </span>
                         )}
@@ -789,16 +835,19 @@ function ConferencePageInner() {
                     </div>
                     {!isEnded && (
                       <button onClick={() => handleJoinMeeting(m)} disabled={loading}
-                        className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm
-                                    font-semibold transition flex-shrink-0 disabled:opacity-50
-                          ${isLive
-                            ? "bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30"
-                            : "bg-indigo-600 hover:bg-indigo-500 text-white"
-                          }`}>
+                        className="group/btn flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm
+                                   font-semibold transition-all flex-shrink-0 disabled:opacity-50
+                                   hover:-translate-y-[1px]"
+                        style={isLive
+                          ? { background: "rgba(239,68,68,0.16)", border: "1px solid rgba(239,68,68,0.4)", color: "#FCA5A5" }
+                          : { background: "linear-gradient(135deg,#4F46E5,#4338CA)", color: "#fff",
+                              boxShadow: "0 4px 16px rgba(79,70,229,0.3)" }}>
                         {loading ? <Loader2 size={14} className="animate-spin" /> : <Video size={14} />}
                         {isLive ? "Join Live" : "Start"}
+                        <span className="transition-transform group-hover/btn:translate-x-0.5">→</span>
                       </button>
                     )}
+                    </div>
                   </div>
                 </div>
               );
@@ -881,15 +930,19 @@ function ConferencePageInner() {
   // LIVE CALL
   // ─────────────────────────────────────
   return (
-    <div className="flex flex-col h-screen bg-[#060608] overflow-hidden">
+    <div className="relative flex flex-col h-screen bg-[#060608] overflow-hidden">
+      <FloatingReactions trigger={reactionBurst} />
 
       {/* Top bar */}
-      <div className="flex items-center justify-between px-5 py-3
-                      bg-zinc-900/80 border-b border-zinc-800 flex-shrink-0 backdrop-blur-sm">
+      <div className="flex items-center justify-between px-5 py-3 flex-shrink-0
+                      bg-[#0c0d17]/85 border-b border-white/[0.06] backdrop-blur-xl">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-            <span className="text-white font-semibold text-sm truncate max-w-[200px]">
+            <span className="relative flex w-2 h-2">
+              <span className="absolute inset-0 rounded-full bg-red-500 animate-ping opacity-75" />
+              <span className="relative w-2 h-2 rounded-full bg-red-500" />
+            </span>
+            <span className="text-white font-semibold text-sm truncate max-w-[200px] tracking-tight">
               {activeMeeting?.title}
             </span>
           </div>
@@ -1084,7 +1137,7 @@ function ConferencePageInner() {
                             rounded-2xl p-2 grid grid-cols-6 gap-1 shadow-2xl z-50 w-max">
               {EMOJI_LIST.map(e => (
                 <button key={e}
-                  onClick={() => { handleReact(currentUser?.id ?? "", e); setShowEmojiBar(false); }}
+                  onClick={() => { handleReact(currentUser?.id ?? "", e); setReactionBurst({ id: `${Date.now()}-${Math.random()}`, emoji: e }); setShowEmojiBar(false); }}
                   className="w-9 h-9 rounded-xl hover:bg-zinc-800 flex items-center
                              justify-center text-xl transition">
                   {e}
