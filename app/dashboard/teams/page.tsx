@@ -1019,6 +1019,7 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
   const isManager = currentUser?.role === "admin" || currentUser?.role === "manager";
   const [msgPriority, setMsgPriority] = useState<MessagePriority>("normal");
   const [showPrio, setShowPrio] = useState(false);
+  const [prioNotice, setPrioNotice] = useState<string | null>(null);
   const [showEmoji,   setShowEmoji]   = useState(false);
   const [showMeme,    setShowMeme]    = useState(false);
   const [showNewChan, setShowNewChan] = useState(false);
@@ -1246,7 +1247,14 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
         tenantId,  quotedId: quotedMsg?.id ?? null,
         priority:  isManager ? msgPriority : "normal",
       });
-      setMsgPriority("normal");   // don't let an urgent flag leak into the next message
+      // Reset so an urgent flag can't ride along into the next message — but say
+      // so, otherwise the admin has no idea the flag dropped.
+      if (isManager && msgPriority !== "normal") {
+        const was = msgPriority === "critical" ? "Critical" : msgPriority === "high" ? "Top priority" : "Low priority";
+        setPrioNotice(`Sent as ${was} \u2014 priority reset to normal`);
+        setTimeout(() => setPrioNotice(null), 3500);
+      }
+      setMsgPriority("normal");
       await mention.processMentions(content);
 
       // Route the message through each recipient's status (queues it for anyone
@@ -1987,6 +1995,9 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
                         </button>
                       </div>
                     </div>
+                  )}
+                  {prioNotice && (
+                    <p className="text-[10px] text-amber-400/90 mt-1.5 px-1">{prioNotice}</p>
                   )}
                   <p className="text-[10px] text-zinc-700 mt-1.5 px-1">
                     <span className="text-zinc-500">@name</span> · person{"  "}
