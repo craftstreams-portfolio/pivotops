@@ -15,7 +15,7 @@ import {
   toggleReaction, subscribeToChannel,
   togglePinMessage, getPinnedMessages,
   getChannelPins, toggleChannelPin, deleteChannel,
-  type Message, type Channel,
+  type Message, type Channel, type MessagePriority,
 } from "@/lib/chat/chat.service";
 import { useMentionInput }           from "@/lib/mentions/mention.hooks";
 import { MentionInput, MentionText } from "@/lib/mentions/MentionInput";
@@ -779,6 +779,26 @@ function MessageBubble({
             <p className="text-xs text-zinc-400 italic">Message retracted</p>
           ) : (
             <>
+              {/* Priority banner — set by admins/managers, drives routing too.
+                  Normal carries no banner so flagged messages actually stand out. */}
+              {message.priority === "critical" && (
+                <div className="-mx-3.5 -mt-2.5 mb-2 px-3.5 py-1.5 rounded-t-2xl bg-red-600
+                                flex items-center gap-1.5">
+                  <span className="text-[11px] font-bold tracking-wide text-white">!! ATTENTION — CRITICAL</span>
+                </div>
+              )}
+              {message.priority === "high" && (
+                <div className="-mx-3.5 -mt-2.5 mb-2 px-3.5 py-1.5 rounded-t-2xl bg-amber-500
+                                flex items-center gap-1.5">
+                  <span className="text-[11px] font-bold tracking-wide text-[#2a1a00]">! TOP PRIORITY</span>
+                </div>
+              )}
+              {message.priority === "low" && (
+                <span className="inline-flex items-center gap-1 mb-1 px-1.5 py-0.5 rounded
+                                 bg-white/5 text-[9px] text-zinc-400">
+                  ↓ Low priority
+                </span>
+              )}
               {message.type === "text" && (
                 <p className="text-sm leading-relaxed whitespace-pre-wrap">
                   <MentionText content={message.content ?? ""} />
@@ -997,6 +1017,8 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
   const [showChanMenu, setShowChanMenu] = useState(false);
   const atBottomRef = useRef(true);
   const isManager = currentUser?.role === "admin" || currentUser?.role === "manager";
+  const [msgPriority, setMsgPriority] = useState<MessagePriority>("normal");
+  const [showPrio, setShowPrio] = useState(false);
   const [showEmoji,   setShowEmoji]   = useState(false);
   const [showMeme,    setShowMeme]    = useState(false);
   const [showNewChan, setShowNewChan] = useState(false);
@@ -1222,7 +1244,9 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
         userId:    currentUser.id,
         userName:  currentUser.full_name ?? currentUser.email ?? "Unknown",
         tenantId,  quotedId: quotedMsg?.id ?? null,
+        priority:  isManager ? msgPriority : "normal",
       });
+      setMsgPriority("normal");   // don't let an urgent flag leak into the next message
       await mention.processMentions(content);
 
       // Route the message through each recipient's status (queues it for anyone
@@ -1237,6 +1261,7 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
           senderId:   currentUser.id,
           tenantId,
           content,
+          priority:   isManager ? msgPriority : undefined,
           senderName: currentUser.full_name ?? currentUser.email ?? "A teammate",
         }),
       }).catch(() => {});
@@ -1248,12 +1273,27 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
     const file = e.target.files?.[0];
     if (!file || !currentUser || !activeChannel) return;
     try {
-      await uploadAndSendFile({
+      const sentFile = await uploadAndSendFile({
         channelId: activeChannel.id, userId: currentUser.id,
         userName:  currentUser.full_name ?? currentUser.email ?? "Unknown",
         tenantId, file, quotedId: quotedMsg?.id ?? null,
       });
       setQuotedMsg(null);
+
+      // Route through recipient status, same as a text message. No text body,
+      // so the queue summary uses the file name.
+      fetch("/api/teams/route-event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messageId:  sentFile?.id ?? null,
+          channelId:  activeChannel.id,
+          senderId:   currentUser.id,
+          tenantId,
+          content:    `Sent a file: ${file.name}`,
+          senderName: currentUser.full_name ?? currentUser.email ?? "A teammate",
+        }),
+      }).catch(() => {});
     } catch (err) { console.error("File send failed:", err); }
     e.target.value = "";
   };
@@ -1262,11 +1302,24 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
     if (!currentUser || !activeChannel) return;
     const { blob, duration } = await voice.stop();
     try {
-      await uploadAndSendVoice({
+      const sentVoice = await uploadAndSendVoice({
         channelId: activeChannel.id, userId: currentUser.id,
         userName:  currentUser.full_name ?? currentUser.email ?? "Unknown",
         tenantId, blob, durationSecs: duration,
       });
+
+      fetch("/api/teams/route-event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messageId:  sentVoice?.id ?? null,
+          channelId:  activeChannel.id,
+          senderId:   currentUser.id,
+          tenantId,
+          content:    `Sent a voice note (${Math.round(duration)}s)`,
+          senderName: currentUser.full_name ?? currentUser.email ?? "A teammate",
+        }),
+      }).catch(() => {});
     } catch (err) { console.error("Voice send failed:", err); }
   };
 
@@ -1785,6 +1838,44 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
                         />
                       </div>
                       <div className="flex items-center gap-1.5 pb-0.5">
+                        {isManager && (
+                          <div className="relative">
+                            <button onClick={() => setShowPrio((v) => !v)}
+                              title="Message priority"
+                              className={`w-9 h-9 rounded-full flex items-center justify-center
+                                          border transition-all duration-150 text-[11px] font-bold
+                                ${msgPriority === "critical" ? "bg-red-600 border-red-500 text-white"
+                                  : msgPriority === "high"   ? "bg-amber-500 border-amber-400 text-[#2a1a00]"
+                                  : msgPriority === "low"    ? "bg-white/[0.04] border-transparent text-zinc-500"
+                                  : "bg-white/[0.04] border-transparent hover:border-white/50 text-zinc-500"}`}>
+                              {msgPriority === "critical" ? "!!" : msgPriority === "high" ? "!" : msgPriority === "low" ? "\u2193" : "\u2014"}
+                            </button>
+                            {showPrio && (
+                              <>
+                                <div className="fixed inset-0 z-30" onClick={() => setShowPrio(false)} />
+                                <div className="absolute bottom-12 left-0 z-40 w-52 rounded-xl border
+                                                border-white/[0.06] bg-[#12121c]/95 backdrop-blur-xl p-1.5 shadow-2xl">
+                                  <p className="text-[9px] uppercase tracking-[0.18em] text-zinc-600 px-2 py-1.5">
+                                    Priority
+                                  </p>
+                                  {([
+                                    ["critical", "!! Attention \u2014 Critical", "text-red-400"],
+                                    ["high",     "! Top priority",              "text-amber-400"],
+                                    ["normal",   "Normal",                       "text-zinc-300"],
+                                    ["low",      "\u2193 Low priority",          "text-zinc-500"],
+                                  ] as const).map(([val, label, cls]) => (
+                                    <button key={val}
+                                      onClick={() => { setMsgPriority(val); setShowPrio(false); }}
+                                      className={`w-full text-left px-2.5 py-2 rounded-lg text-xs transition
+                                        ${msgPriority === val ? "bg-white/[0.08]" : "hover:bg-white/[0.05]"} ${cls}`}>
+                                      {label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        )}
                         <div className="relative">
                           <button onClick={() => setShowEmoji(!showEmoji)}
                             className="group w-9 h-9 rounded-full bg-white/[0.04] hover:bg-white/[0.09]

@@ -11,6 +11,8 @@ export type MessageType =
   | "system"
   | "meme";
 
+export type MessagePriority = "critical" | "high" | "normal" | "low";
+
 export interface Message {
   id:             string;
   channel_id:     string;
@@ -34,6 +36,7 @@ export interface Message {
   pinned:         boolean | null;
   pinned_at:      string | null;
   pinned_by:      string | null;
+  priority:       MessagePriority;
 }
 
 export interface Channel {
@@ -123,6 +126,7 @@ function normalizeMessage(m: any): Message {
     pinned:        m.pinned ?? false,
     pinned_at:     m.pinned_at ?? null,
     pinned_by:     m.pinned_by ?? null,
+    priority:      (m.priority ?? "normal") as MessagePriority,
   };
 }
 
@@ -138,6 +142,7 @@ export async function sendTextMessage(payload: {
   userName:   string;
   tenantId:   string;
   quotedId?:  string | null;
+  priority?:  MessagePriority;
 }): Promise<Message> {
   const { data, error } = await supabase
     .from("messages")
@@ -149,6 +154,7 @@ export async function sendTextMessage(payload: {
       tenant_id:   payload.tenantId,
       type:        "text",
       quoted_id:   payload.quotedId ?? null,
+      priority:    payload.priority ?? "normal",
       retracted:   false,
       reactions:   {},
       created_at:  new Date().toISOString(),

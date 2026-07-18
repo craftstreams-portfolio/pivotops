@@ -26,7 +26,7 @@ function getAdmin() {
  */
 export async function POST(req: NextRequest) {
   try {
-    const { messageId, channelId, senderId, tenantId, content, senderName } = await req.json();
+    const { messageId, channelId, senderId, tenantId, content, senderName, priority: requestedPriority } = await req.json();
     if (!channelId || !senderId || !tenantId) {
       return NextResponse.json({ error: "Missing channel, sender or tenant." }, { status: 400 });
     }
@@ -56,6 +56,18 @@ export async function POST(req: NextRequest) {
     const statusOf = new Map<string, UserStatus>();
     for (const p of presence ?? []) statusOf.set(p.user_id, p.status as UserStatus);
 
+    // Only admins/managers may raise a message's priority. The composer hides the
+    // control, but authority lives here — a crafted request must not be able to
+    // mark a message critical and break through everyone's DND.
+    let effectivePriority: EventPriority | null = null;
+    if (requestedPriority && ["critical", "high", "normal", "low"].includes(requestedPriority)) {
+      const { data: sender } = await admin
+        .from("profiles").select("role").eq("id", senderId).maybeSingle();
+      if (sender?.role === "admin" || sender?.role === "manager") {
+        effectivePriority = requestedPriority as EventPriority;
+      }
+    }
+
     const text = String(content ?? "");
     const mentionsAll = /@all\b/i.test(text);
 
@@ -68,10 +80,12 @@ export async function POST(req: NextRequest) {
 
       // Priority: @all is critical, a direct mention or DM is high, else normal.
       const mentionedDirectly = new RegExp(`@${rid}\\b`).test(text);
+      // An explicit, authorised priority wins; otherwise infer from the content.
       const priority: EventPriority =
-        mentionsAll ? "critical"
-        : (isDM || mentionedDirectly) ? "high"
-        : "normal";
+        effectivePriority ??
+        (mentionsAll ? "critical"
+         : (isDM || mentionedDirectly) ? "high"
+         : "normal");
 
       const action = getRoutingAction(status, priority);
 
