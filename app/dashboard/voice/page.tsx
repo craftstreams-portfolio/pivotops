@@ -365,12 +365,27 @@ export default function HuddlesPage() {
     setBusy(true);
     setError("");
     try {
+      // Clear any row this user already holds in the room. Without this a
+      // refresh or reconnect leaves a second live row, so the person renders
+      // twice for everyone — the bug this replaces.
+      await supabase
+        .from("voice_room_participants")
+        .delete()
+        .eq("room_id", room.id)
+        .eq("user_id", me.id);
+
       const { data: existingRows } = await supabase
         .from("voice_room_participants")
         .select("*")
         .eq("room_id", room.id);
 
-      const existing = (existingRows as VoiceRoomParticipant[]) ?? [];
+      // Defensive: one entry per person even if legacy duplicates survive.
+      const seen = new Set<string>();
+      const existing = ((existingRows as VoiceRoomParticipant[]) ?? []).filter((p) => {
+        if (p.user_id === me.id || seen.has(p.user_id)) return false;
+        seen.add(p.user_id);
+        return true;
+      });
       const existingPeerIds = existing.map((p) => p.user_id);
 
       const { data: myRow, error: insertErr } = await supabase
@@ -471,9 +486,13 @@ export default function HuddlesPage() {
             }
             setParticipants((prev) => prev.filter((p) => p.id !== deletedId));
           } else if (payload.eventType === "INSERT") {
-            setParticipants((prev) =>
-              prev.some((p) => p.id === (payload.new as any).id) ? prev : [...prev, payload.new as VoiceRoomParticipant]
-            );
+            const incoming = payload.new as VoiceRoomParticipant;
+            setParticipants((prev) => {
+              // Key on user_id: the same person re-joining gets a NEW row id, so
+              // an id-only check let them appear twice.
+              const without = prev.filter((p) => p.user_id !== incoming.user_id);
+              return [...without, incoming];
+            });
           } else if (payload.eventType === "UPDATE") {
             setParticipants((prev) =>
               prev.map((p) => (p.id === (payload.new as any).id ? (payload.new as VoiceRoomParticipant) : p))
@@ -595,11 +614,35 @@ export default function HuddlesPage() {
   }
 
   /* ── Hand raise toggle ── */
-  function toggleHand() {
+  async function toggleHand() {
     const next = !myHandRaised;
     setMyHandRaised(next);
+
+    // Update my own tile immediately. The grid renders from `participants`, so
+    // without this my hand only appeared once the realtime echo came back —
+    // which read as the feature not working at all.
+    if (me) {
+      setParticipants((prev) =>
+        prev.map((p) => (p.user_id === me.id ? { ...p, hand_raised: next } : p))
+      );
+    }
+
     if (myParticipantIdRef.current) {
-      supabase.from("voice_room_participants").update({ hand_raised: next }).eq("id", myParticipantIdRef.current);
+      const { error } = await supabase
+        .from("voice_room_participants")
+        .update({ hand_raised: next })
+        .eq("id", myParticipantIdRef.current);
+
+      // Roll back rather than leave a hand nobody else can see.
+      if (error) {
+        console.error("[huddle] hand raise failed:", error.message);
+        setMyHandRaised(!next);
+        if (me) {
+          setParticipants((prev) =>
+            prev.map((p) => (p.user_id === me.id ? { ...p, hand_raised: !next } : p))
+          );
+        }
+      }
     }
   }
 
@@ -814,7 +857,14 @@ export default function HuddlesPage() {
                   <span className="absolute -top-2 text-2xl animate-bounce z-10">{reaction}</span>
                 )}
                 {p.hand_raised && (
-                  <span className="absolute top-0 right-6 text-base z-10">✋</span>
+                  <span
+                    className="absolute -top-1 right-4 z-20 w-7 h-7 rounded-full flex items-center
+                               justify-center text-sm shadow-lg animate-pulse"
+                    style={{ background: "#F59E0B", boxShadow: "0 0 0 2px rgba(24,24,27,1), 0 4px 12px rgba(245,158,11,0.45)" }}
+                    title="Hand raised"
+                  >
+                    ✋
+                  </span>
                 )}
                 <div
                   className="w-16 h-16 rounded-full flex items-center justify-center text-white font-semibold text-sm relative"
