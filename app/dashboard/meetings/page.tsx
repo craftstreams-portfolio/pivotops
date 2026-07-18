@@ -484,6 +484,20 @@ function ConferencePageInner() {
   };
 
   // ── Join meeting ───────────────────────
+  // Arriving from the #general Join button: open that conference straight away.
+  const autoJoinedRef = useRef(false);
+  useEffect(() => {
+    if (autoJoinedRef.current || view !== "lobby" || meetings.length === 0) return;
+    const target = new URLSearchParams(window.location.search).get("join");
+    if (!target) return;
+    const meeting = meetings.find((m) => m.id === target);
+    if (!meeting || meeting.meeting_status === "ended") return;
+    autoJoinedRef.current = true;
+    window.history.replaceState({}, "", "/dashboard/meetings");
+    handleJoinMeeting(meeting);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meetings, view]);
+
   const handleJoinMeeting = async (meeting: Meeting) => {
     setActiveMeeting(meeting);
     setLoading(true);
@@ -499,6 +513,45 @@ function ConferencePageInner() {
     }
   };
 
+  /* ── Announce a live conference in #general ──
+     The room code is deliberately left out (the channel is readable by the whole
+     tenant); the message carries a meta payload so Teams can render a Join button. */
+  async function announceConference(meeting: Meeting) {
+    if (!currentUser || !tenantId) return;
+    const { data: general } = await supabase
+      .from("channels").select("id").eq("tenant_id", tenantId).eq("name", "general").maybeSingle();
+    if (!general?.id) return;
+
+    const myName = currentUser.full_name ?? currentUser.email ?? "A teammate";
+    const text = `📹 ${myName} started a conference: "${meeting.title}"`;
+
+    const { data: msg } = await supabase
+      .from("messages")
+      .insert({
+        channel_id: general.id,
+        tenant_id:  tenantId,
+        user_id:    currentUser.id,
+        user_name:  myName,
+        content:    text,
+        type:       "text",
+        priority:   "normal",
+        reactions:  {},
+        meta:       { kind: "conference_invite", meetingId: meeting.id, title: meeting.title },
+        created_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    fetch("/api/teams/route-event", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messageId: msg?.id ?? null, channelId: general.id,
+        senderId: currentUser.id, tenantId, content: text, senderName: myName,
+      }),
+    }).catch(() => {});
+  }
+
   // ── Enter live call ────────────────────
   const handleEnterCall = async () => {
     if (!activeMeeting || !currentUser) return;
@@ -513,7 +566,12 @@ function ConferencePageInner() {
         tenantId,
       });
       setMyParticipant(p);
-      if (role === "host") await updateMeetingStatus(activeMeeting.id, "live");
+      if (role === "host") {
+        await updateMeetingStatus(activeMeeting.id, "live");
+        // Only the host, only on the transition to live — so this fires once per
+        // conference rather than once per person joining.
+        announceConference(activeMeeting).catch(() => {});
+      }
 
       const engine = new WebRTCEngine(activeMeeting.id, currentUser.id);
       engineRef.current = engine;

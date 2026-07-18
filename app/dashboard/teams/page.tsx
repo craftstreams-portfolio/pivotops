@@ -804,6 +804,21 @@ function MessageBubble({
                   <MentionText content={message.content ?? ""} />
                 </p>
               )}
+              {(message.meta as any)?.kind === "conference_invite" && (message.meta as any)?.meetingId && (
+                <a
+                  href={`/dashboard/meetings?join=${(message.meta as any).meetingId}`}
+                  className="mt-2.5 inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs
+                             font-semibold text-white transition-all hover:-translate-y-[1px]"
+                  style={{ background: "linear-gradient(135deg,#4F46E5,#4338CA)",
+                           boxShadow: "0 4px 14px rgba(79,70,229,0.3)" }}
+                >
+                  <span className="relative flex w-1.5 h-1.5">
+                    <span className="absolute inset-0 rounded-full bg-white animate-ping opacity-70" />
+                    <span className="relative w-1.5 h-1.5 rounded-full bg-white" />
+                  </span>
+                  Join conference
+                </a>
+              )}
               {message.type === "meme" && <p className="text-2xl">{message.content}</p>}
               {message.type === "image" && message.file_url && (
                 <div className="space-y-1.5">
