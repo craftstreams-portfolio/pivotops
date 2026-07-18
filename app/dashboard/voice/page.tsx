@@ -275,6 +275,7 @@ export default function HuddlesPage() {
   const [summary, setSummary] = useState<{ duration: number; count: number; reason: string } | null>(null);
   const [reactions, setReactions] = useState<Record<string, string>>({});
   const [handQueueOpen, setHandQueueOpen] = useState(false);
+  const [roomSpeakers, setRoomSpeakers] = useState<Record<string, string>>({});
   const [newRoomName, setNewRoomName] = useState("");
   const [showNewRoom, setShowNewRoom] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -284,6 +285,8 @@ export default function HuddlesPage() {
   const audioElsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
   const myParticipantIdRef = useRef<string | null>(null);
   const participantsChanRef = useRef<any>(null);
+  const speakingChanRef = useRef<any>(null);
+  const lastBroadcastRef = useRef<number>(0);
   const roomChanRef = useRef<any>(null);
   const notifyChanRef = useRef<any>(null);
 
@@ -358,6 +361,94 @@ export default function HuddlesPage() {
       engineRef.current?.leave();
     };
   }, []);
+
+  /* ── Live "who's speaking" across the tenant ──
+     Speaking level only exists inside the audio mesh, so people in the lobby
+     can't compute it. In-call clients broadcast it instead — no DB writes. */
+  useEffect(() => {
+    if (!me) return;
+    const chan = supabase
+      .channel(`huddle-speaking-${me.tenantId}`)
+      .on("broadcast", { event: "speaking" }, ({ payload }: any) => {
+        if (!payload?.roomId || !payload?.name) return;
+        setRoomSpeakers((s) => ({ ...s, [payload.roomId]: payload.name }));
+        window.setTimeout(() => {
+          setRoomSpeakers((s) => {
+            if (s[payload.roomId] !== payload.name) return s;
+            const copy = { ...s };
+            delete copy[payload.roomId];
+            return copy;
+          });
+        }, 2500);
+      })
+      .subscribe();
+    speakingChanRef.current = chan;
+    return () => { supabase.removeChannel(chan); speakingChanRef.current = null; };
+  }, [me?.tenantId]);
+
+  // Broadcast my own speaking, throttled to once a second.
+  useEffect(() => {
+    if (!me || !activeRoom || myMuted) return;
+    const level = levels[me.id] ?? 0;
+    if (level <= 18) return;
+    const now = Date.now();
+    if (now - lastBroadcastRef.current < 1000) return;
+    lastBroadcastRef.current = now;
+    speakingChanRef.current?.send({
+      type: "broadcast",
+      event: "speaking",
+      payload: {
+        roomId: activeRoom.id,
+        name:   displayName(profiles[me.id], "Someone"),
+      },
+    });
+  }, [levels, activeRoom, myMuted, me, profiles]);
+
+  /* ── Announce a new huddle in #general ── */
+  async function announceHuddle(room: VoiceRoom) {
+    if (!me) return;
+    const { data: general } = await supabase
+      .from("channels")
+      .select("id")
+      .eq("tenant_id", me.tenantId)
+      .eq("name", "general")
+      .maybeSingle();
+    if (!general?.id) return;
+
+    const myName = displayName(profiles[me.id], "A teammate");
+    const text = `🎙️ ${myName} started a huddle: "${room.name}" — join from Conference.`;
+
+    const { data: msg } = await supabase
+      .from("messages")
+      .insert({
+        channel_id: general.id,
+        tenant_id:  me.tenantId,
+        user_id:    me.id,
+        user_name:  myName,
+        content:    text,
+        type:       "text",
+        priority:   "normal",
+        reactions:  {},
+        created_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    // Route it like any other message so people in a meeting get it queued
+    // rather than interrupted.
+    fetch("/api/teams/route-event", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messageId:  msg?.id ?? null,
+        channelId:  general.id,
+        senderId:   me.id,
+        tenantId:   me.tenantId,
+        content:    text,
+        senderName: myName,
+      }),
+    }).catch(() => {});
+  }
 
   /* ── Join a room ── */
   async function joinRoom(room: VoiceRoom) {
@@ -462,6 +553,11 @@ export default function HuddlesPage() {
       if (roomErr) throw roomErr;
       setShowNewRoom(false);
       setNewRoomName("");
+
+      // Tell the team in #general. Fire-and-forget — a failed announcement must
+      // never stop the huddle starting.
+      announceHuddle(room as VoiceRoom).catch(() => {});
+
       await joinRoom(room as VoiceRoom);
     } catch (e: any) {
       setError(e.message ?? "Couldn't create the huddle.");
@@ -777,7 +873,21 @@ export default function HuddlesPage() {
                     </div>
                   </div>
                   <h3 className="text-white font-semibold text-base">{room.name}</h3>
-                  <p className="text-xs text-zinc-500 mt-1">{participantCounts[room.id] ?? 0} in call · Tap to join</p>
+                  {roomSpeakers[room.id] ? (
+                    <p className="text-xs mt-1 flex items-center gap-1.5">
+                      <span className="flex items-end gap-[2px] h-2.5">
+                        {[0,1,2].map((i) => (
+                          <span key={i} className="w-[2px] rounded-full bg-purple-400 animate-pulse"
+                            style={{ height: `${6 + i * 2}px`, animationDelay: `${i * 120}ms` }} />
+                        ))}
+                      </span>
+                      <span className="text-purple-300 font-medium truncate">
+                        {roomSpeakers[room.id]} is speaking
+                      </span>
+                    </p>
+                  ) : (
+                    <p className="text-xs text-zinc-500 mt-1">{participantCounts[room.id] ?? 0} in call · Tap to join</p>
+                  )}
                 </button>
               ))}
             </div>
