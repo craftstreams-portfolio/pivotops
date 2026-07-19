@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { buildSessions, getLiveStatus, splitSession, type WorkSession } from "@/lib/clocking/sessions";
+import { zonedWallClockToUtc, formatInZone, zoneAbbr } from "@/lib/time/zones";
 import { startBreak, endBreak } from "@/lib/clocking/clocking.service";
 import { supabase } from "@/lib/supabase";
 import { logEmployeeRecord } from "@/lib/records/log";
@@ -573,8 +574,17 @@ function ClockingPageInner() {
     if (!currentUser || savingSchedule) return;
     setSavingSchedule(true);
     try {
-      const startISO = new Date(`${newSchedule.date}T${newSchedule.start_time}`).toISOString();
-      const endISO   = new Date(`${newSchedule.date}T${newSchedule.end_time}`).toISOString();
+      // Resolve against the zone the user selected, not the browser's — otherwise
+      // rostering "09:00 America/New_York" from Lagos would store 09:00 Lagos.
+      const zone = newSchedule.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const startISO = zonedWallClockToUtc(newSchedule.date, newSchedule.start_time, zone).toISOString();
+      let   endDate  = zonedWallClockToUtc(newSchedule.date, newSchedule.end_time,   zone);
+      const startDate = new Date(startISO);
+      // An end earlier than the start means the shift runs past midnight.
+      if (endDate.getTime() <= startDate.getTime()) {
+        endDate = new Date(endDate.getTime() + 24 * 60 * 60 * 1000);
+      }
+      const endISO = endDate.toISOString();
       const { error } = await supabase.from("schedules").insert({
         user_id:    currentUser.id,
         tenant_id:  tenantId,
