@@ -64,6 +64,37 @@ export const PLAN_FEATURES: Record<PlanTier, {
   },
 };
 
+/**
+ * Seats included in a plan. This is the ONLY definition — the invite route and
+ * the team panel both read it, so the server cap and the UI counter can never
+ * disagree. Seats were previously derived from tenants.org_size, the team-size
+ * range picked at signup, which meant a Starter tenant who selected "50+" got
+ * unlimited seats.
+ */
+/**
+ * Tenants exempt from seat limits: the SHOPLINE review workspaces, which
+ * reviewers must be able to populate regardless of plan. Anything added here
+ * bypasses billing, so it should never grow without a reason recorded beside it.
+ */
+export const SEAT_EXEMPT_TENANTS: readonly string[] = [
+  "pivotops-demo-mr2eh9yo",     // PivotOps Demo - SHOPLINE reviewer workspace
+  "byc-staffing-inc-mqsjpn1q",  // BYC Staffing INC - shopline-review@pivotops.app
+];
+
+export function isSeatExempt(tenantId: string | null | undefined): boolean {
+  return !!tenantId && SEAT_EXEMPT_TENANTS.includes(tenantId);
+}
+
+export function seatCapForPlan(plan: PlanTier | string | null | undefined): number {
+  const key = (plan ?? "free") as PlanTier;
+  return PLAN_FEATURES[key]?.maxRecruiters ?? PLAN_FEATURES.free.maxRecruiters;
+}
+
+export function planLabel(plan: PlanTier | string | null | undefined): string {
+  const key = (plan ?? "free") as PlanTier;
+  return PLAN_FEATURES[key]?.name ?? PLAN_FEATURES.free.name;
+}
+
 export function getPriceId(plan: Exclude<PlanTier,"free">, cycle: BillingCycle): string {
   return PADDLE_CONFIG.prices[plan][cycle];
 }

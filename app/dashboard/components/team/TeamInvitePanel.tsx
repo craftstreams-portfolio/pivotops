@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { isValidEmail } from "@/lib/validation";
 import { supabase } from "@/lib/supabase";
 import { X, Mail, Send, Copy, Check, Loader2, AlertCircle, Users } from "lucide-react";
+import { seatCapForPlan, planLabel, isSeatExempt } from "@/lib/paddle/config";
 
 const ROLES = [
   { value: "admin",     label: "Admin",     desc: "Full access - manage settings, billing, and all team members." },
@@ -12,13 +13,6 @@ const ROLES = [
   { value: "operator",  label: "Operator",  desc: "Day-to-day operations - clocking, tasks, and team chat." },
 ];
 
-function parseSeatCap(orgSize: string): number {
-  if (!orgSize) return 5;
-  const range = orgSize.match(/(\d+)\s*-\s*(\d+)/);
-  if (range) return parseInt(range[2], 10);
-  if (orgSize.includes("+")) return Infinity;
-  return 5;
-}
 
 interface Member {
   id: string;
@@ -61,7 +55,24 @@ export default function TeamInvitePanel({
   const [invites,  setInvites]  = useState<PendingInvite[]>([]);
   const [memberCount, setMemberCount] = useState(0);
 
-  const cap = parseSeatCap(orgSize);
+  // Seats come from the paid tier, read from the same table every feature gate
+  // uses - so this counter and the server-side cap cannot drift apart.
+  const [plan, setPlan] = useState<string>("free");
+  useEffect(() => {
+    if (!tenantId) return;
+    supabase.from("subscriptions").select("plan, status").eq("tenant_id", tenantId).maybeSingle()
+      .then(({ data }) => {
+        if (data?.plan) {
+          const live = data.status === "active" || data.status === "trialing";
+          setPlan(live ? data.plan : "free");
+          return;
+        }
+        supabase.from("tenants").select("plan").eq("id", tenantId).maybeSingle()
+          .then(({ data: tn }) => setPlan(tn?.plan ?? "free"));
+      });
+  }, [tenantId]);
+
+  const cap = isSeatExempt(tenantId) ? Infinity : seatCapForPlan(plan);
 
   useEffect(() => {
     if (!open || !tenantId) return;
@@ -160,7 +171,7 @@ export default function TeamInvitePanel({
           <div>
             <h2 className="text-base font-semibold text-white">Invite teammates</h2>
             <p className="text-xs text-zinc-500 mt-0.5">
-              {cap === Infinity ? memberCount + " members" : seatsUsed + " of " + cap + " seats used"}
+              {cap === Infinity ? memberCount + " members" : seatsUsed + " of " + cap + " seats used · " + planLabel(plan)}
             </p>
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-500 hover:text-white hover:bg-zinc-800 transition">
@@ -173,7 +184,7 @@ export default function TeamInvitePanel({
             <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
               <AlertCircle size={15} className="text-amber-400 flex-shrink-0 mt-0.5" />
               <p className="text-xs text-amber-300 leading-relaxed">
-                You've reached the seat limit for your plan size. Upgrade your tier to invite more teammates.
+                {planLabel(plan)} includes {cap} seat{cap === 1 ? "" : "s"}, all currently used or pending. Upgrade your plan in Settings to invite more teammates.
               </p>
             </div>
           ) : (

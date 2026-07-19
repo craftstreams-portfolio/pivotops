@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { TeamInviteSchema } from "@/lib/security/schemas";
+import { seatCapForPlan, planLabel, isSeatExempt } from "@/lib/paddle/config";
 import { sendEmail } from "@/lib/email";
 import { logAudit } from "@/lib/audit";
 
@@ -13,12 +14,27 @@ function getAdmin() {
   return createClient(url, key, { auth: { persistSession: false } });
 }
 
-function parseSeatCap(orgSize: string | null | undefined): number {
-  if (!orgSize) return 5;
-  const range = orgSize.match(/(\d+)\s*-\s*(\d+)/);
-  if (range) return parseInt(range[2], 10);
-  if (orgSize.includes("+")) return Number.MAX_SAFE_INTEGER;
-  return 5;
+/**
+ * The tenant's paid tier. `subscriptions` is authoritative — it is what every
+ * feature gate in the app reads — with tenants.plan as a fallback for rows
+ * predating the subscriptions table.
+ */
+async function resolvePlan(admin: ReturnType<typeof getAdmin>, tenantId: string): Promise<string> {
+  const { data: sub } = await admin
+    .from("subscriptions")
+    .select("plan, status")
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+
+  if (sub?.plan) {
+    // A cancelled or past-due subscription falls back to free-tier seats.
+    const live = sub.status === "active" || sub.status === "trialing";
+    return live ? sub.plan : "free";
+  }
+
+  const { data: tenantRow } = await admin
+    .from("tenants").select("plan").eq("id", tenantId).maybeSingle();
+  return tenantRow?.plan ?? "free";
 }
 
 async function getAuthedUser(req: NextRequest) {
@@ -57,8 +73,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Too many invites sent recently. Please try again in a while." }, { status: 429 });
     }
 
-    const { data: tenantRow } = await admin.from("tenants").select("org_size").eq("id", tenantId).maybeSingle();
-    const cap = parseSeatCap(tenantRow?.org_size);
+    const plan = await resolvePlan(admin, tenantId);
+    const cap  = isSeatExempt(tenantId) ? Number.MAX_SAFE_INTEGER : seatCapForPlan(plan);
     const emailNorm = email.trim().toLowerCase();
 
     const { data: reserveResult, error: reserveErr } = await admin.rpc("reserve_team_invite_seat", {
@@ -73,7 +89,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: reserveErr.message }, { status: 500 });
     }
     if (!reserveResult?.ok) {
-      return NextResponse.json({ error: "Seat limit reached (" + cap + " seats on your current plan size). Upgrade your tier to invite more teammates." }, { status: 403 });
+      return NextResponse.json({
+        error: `Seat limit reached. ${planLabel(plan)} includes ${cap} seat${cap === 1 ? "" : "s"}, all currently used or pending. Upgrade your plan in Settings to invite more teammates.`,
+        code: "SEAT_LIMIT",
+        plan, cap, used: reserveResult?.used ?? cap,
+      }, { status: 403 });
     }
 
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
