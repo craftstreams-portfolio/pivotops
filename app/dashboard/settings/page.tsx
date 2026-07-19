@@ -138,7 +138,7 @@ export default function SettingsPage(){
         )}
         <ToggleRow
           label="Paid Breaks"
-          sub="On: break time counts toward worked hours and payroll totals. Off: breaks are deducted from the shift. Breaks are recorded either way."
+          sub="Applies to scheduled hours only. On: break time counts toward the workday. Off: it is deducted. Overtime never includes break time, whichever way this is set."
           value={settings.paid_breaks}
           onChange={v=>set("paid_breaks",v)}
         />

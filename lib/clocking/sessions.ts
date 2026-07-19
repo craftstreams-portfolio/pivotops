@@ -234,10 +234,15 @@ export function splitSession(
   let regularMs  = Math.max(0, regEnd - start);
   let overtimeMs = Math.max(0, end - otStart);
 
+  // Regular hours follow tenant policy: a rostered window is a full workday and
+  // already accounts for a break, so a paid-breaks tenant keeps that time.
   if (!paidBreaks) {
-    regularMs  = Math.max(0, regularMs  - breakMsWithin(session, start, regEnd, now));
-    overtimeMs = Math.max(0, overtimeMs - breakMsWithin(session, otStart, end, now));
+    regularMs = Math.max(0, regularMs - breakMsWithin(session, start, regEnd, now));
   }
+
+  // Overtime NEVER includes break time, whatever the paid-breaks policy — nobody
+  // accrues overtime while they are on break.
+  overtimeMs = Math.max(0, overtimeMs - breakMsWithin(session, otStart, end, now));
 
   return {
     regularMs,
