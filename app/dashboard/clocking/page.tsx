@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
-import { buildSessions, getLiveStatus, type WorkSession } from "@/lib/clocking/sessions";
+import { buildSessions, getLiveStatus, splitSession, type WorkSession } from "@/lib/clocking/sessions";
 import { startBreak, endBreak } from "@/lib/clocking/clocking.service";
 import { supabase } from "@/lib/supabase";
 import { logEmployeeRecord } from "@/lib/records/log";
@@ -183,15 +183,17 @@ function ClockingPageInner() {
   const [clockedIn,     setClockedIn]     = useState(false);
   // Tenant break policy. Paid breaks count toward worked hours; unpaid are deducted.
   const [paidBreaks, setPaidBreaks] = useState(false);
+  const [overtimeEnabled, setOvertimeEnabled] = useState(true);
   useEffect(() => {
     if (tenantLoading || !tenantId) return;
     (async () => {
       const { data } = await supabase
         .from("workspace_settings")
-        .select("paid_breaks")
+        .select("paid_breaks, overtime_enabled")
         .eq("tenant_id", tenantId)
         .maybeSingle();
       setPaidBreaks(data?.paid_breaks === true);
+      setOvertimeEnabled(data?.overtime_enabled !== false);
     })();
   }, [tenantId, tenantLoading]);
   const [onBreak,       setOnBreak]       = useState(false);
@@ -294,7 +296,9 @@ function ClockingPageInner() {
         currentUser.full_name ?? currentUser.email ?? currentUser.id,
         myLogs,
         new Date(),
-        paidBreaks
+        paidBreaks,
+        schedules,
+        overtimeEnabled
       );
       setXavierReport(report);
     };
@@ -302,7 +306,7 @@ function ClockingPageInner() {
     // paidBreaks is a dep: it loads asynchronously, and without it the fatigue
     // report and clock status would keep the values computed before the tenant
     // policy arrived.
-  }, [currentUser, tenantId, tenantLoading, paidBreaks]);
+  }, [currentUser, tenantId, tenantLoading, paidBreaks, schedules, overtimeEnabled]);
 
   // ── Load schedules ─────────────────────
   const loadSchedules = useCallback(async () => {
@@ -517,7 +521,46 @@ function ClockingPageInner() {
       setBreakStart(null);
       setBreakElapsed(0);
       showToast("success", `👋 Clocked out${sessionMins ? ` · ${sessionMins} min session` : ""}`);
-      await loadLogs();
+      const fresh = await loadLogs();
+
+      // Record the finished shift against the roster. Regular and overtime are
+      // written as separate rows so a payslip dispute can be traced to one of
+      // them rather than a single blended figure.
+      try {
+        const mine = fresh.filter((l) => l.user_id === currentUser.id);
+        const built = buildSessions(mine as any, Date.now(), { paidBreaks });
+        const done = [...built].reverse().find((s) => s.out);
+        if (done) {
+          const { regularMs, overtimeMs, scheduledMs } =
+            splitSession(done, schedules as any, overtimeEnabled);
+          const hrs = (ms: number) => (ms / 3600000).toFixed(1);
+
+          await logEmployeeRecord({
+            tenantId,
+            userId:    currentUser.id,
+            kind:      "timesheet",
+            title:     `Shift completed · ${hrs(regularMs)}h regular`,
+            detail:    `${formatTime(done.in.timestamp)} to ${formatTime(done.out!.timestamp)}` +
+                       (done.breakMs > 0
+                          ? ` · ${Math.round(done.breakMs / 60000)}m break${paidBreaks ? " (paid)" : " deducted"}`
+                          : ""),
+            createdBy: currentUser.id,
+          });
+
+          if (overtimeEnabled && overtimeMs > 60000) {
+            await logEmployeeRecord({
+              tenantId,
+              userId:    currentUser.id,
+              kind:      "overtime",
+              title:     `Overtime · ${hrs(overtimeMs)}h`,
+              detail:    scheduledMs === null
+                ? "Worked with no schedule rostered for this day."
+                : `Beyond the ${hrs(scheduledMs)}h rostered window.`,
+              createdBy: currentUser.id,
+            });
+          }
+        }
+      } catch { /* logging must never block a clock-out */ }
     } catch (err) {
       showToast("error", err instanceof Error ? err.message : String(err));
     } finally {

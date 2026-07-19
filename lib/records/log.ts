@@ -2,7 +2,8 @@ import { supabase } from "@/lib/supabase";
 
 export type RecordKind =
   | "commendation" | "note" | "role_change" | "onboarding"
-  | "offboarding"  | "compliance" | "timesheet" | "milestone";
+  | "offboarding"  | "compliance" | "timesheet" | "milestone"
+  | "overtime";
 
 /**
  * Append one entry to an employee's activity ledger (employee_records).

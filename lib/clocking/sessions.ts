@@ -134,6 +134,54 @@ export function getLiveStatus(
   };
 }
 
+export interface ScheduleWindow {
+  start_time: string;
+  end_time:   string;
+}
+
+const ymd = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+/** Rostered milliseconds for a date, or null when nothing was scheduled. */
+export function scheduledMsForDate(dateKey: string, schedules: ScheduleWindow[]): number | null {
+  const rows = schedules.filter((s) => ymd(new Date(s.start_time)) === dateKey);
+  if (rows.length === 0) return null;
+  let ms = 0;
+  for (const s of rows) {
+    const st = new Date(s.start_time).getTime();
+    const en = new Date(s.end_time).getTime();
+    if (en > st) ms += en - st;
+  }
+  return ms;
+}
+
+/**
+ * Split a session into regular and overtime against that day's roster.
+ * Overtime begins the moment the scheduled window is exhausted — the day of the
+ * week is irrelevant, since agencies roster regular shifts on weekends too.
+ */
+export function splitSession(
+  session: WorkSession,
+  schedules: ScheduleWindow[],
+  overtimeEnabled: boolean = true
+): { regularMs: number; overtimeMs: number; scheduledMs: number | null } {
+  const dateKey = ymd(new Date(session.in.timestamp));
+  const scheduledMs = scheduledMsForDate(dateKey, schedules);
+
+  if (!overtimeEnabled) {
+    return { regularMs: session.netMs, overtimeMs: 0, scheduledMs };
+  }
+  if (scheduledMs === null) {
+    // Worked with nothing rostered — all of it is beyond the schedule.
+    return { regularMs: 0, overtimeMs: session.netMs, scheduledMs: null };
+  }
+  return {
+    regularMs:   Math.min(session.netMs, scheduledMs),
+    overtimeMs:  Math.max(0, session.netMs - scheduledMs),
+    scheduledMs,
+  };
+}
+
 /** Worked milliseconds across sessions, net of breaks. */
 export function netMsForLogs(
   logs: ClockEvent[],

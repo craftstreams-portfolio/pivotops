@@ -72,6 +72,29 @@ function getDayType(date: Date): DayType {
   return "weekday";
 }
 
+export interface ScheduleInput {
+  user_id?:   string;
+  start_time: string;
+  end_time:   string;
+}
+
+/**
+ * Rostered hours for a given day, or null when nothing was scheduled.
+ * Overtime is measured against this rather than a flat 8-hour weekday rule —
+ * a rostered 10-hour Saturday is 10 regular hours, not 10 hours of overtime.
+ */
+function scheduledHoursForDate(dateKey: string, schedules: ScheduleInput[]): number | null {
+  const rows = schedules.filter((s) => toYMD(new Date(s.start_time)) === dateKey);
+  if (rows.length === 0) return null;
+  let mins = 0;
+  for (const s of rows) {
+    const st = new Date(s.start_time).getTime();
+    const en = new Date(s.end_time).getTime();
+    if (en > st) mins += (en - st) / 60000;
+  }
+  return mins / 60;
+}
+
 function fatigueFromHours(totalHours: number): {
   level: FatigueLevel;
   score: number;
@@ -130,7 +153,9 @@ export function analyzeEmployeeFatigue(
   employeeName:  string,
   logs:          ClockLogInput[],
   referenceDate: Date = new Date(),
-  paidBreaks:    boolean = false
+  paidBreaks:      boolean = false,
+  schedules:       ScheduleInput[] = [],
+  overtimeEnabled: boolean = true
 ): XavierFatigueReport {
   const { start: weekStart, end: weekEnd } = getWeekBounds(referenceDate);
 
@@ -163,7 +188,9 @@ export function analyzeEmployeeFatigue(
       const dayType     = getDayType(dayDate);
       const totalMins   = daySessions.reduce((sum, s) => sum + s.durationMins, 0);
       const hoursWorked = totalMins / 60;
-      const isOvertime  = dayType !== "weekday" || hoursWorked > 8;
+      const scheduled   = scheduledHoursForDate(date, schedules);
+      // Beyond the roster, not beyond an assumed 8-hour weekday.
+      const isOvertime  = scheduled === null ? hoursWorked > 0 : hoursWorked > scheduled + 0.01;
 
       return {
         date,
@@ -183,11 +210,15 @@ export function analyzeEmployeeFatigue(
   let overtimeHours = 0;
 
   for (const day of dailySummaries as DailySummary[]) {
-    if (day.dayType === "weekday") {
-      regularHours  += Math.min(day.hoursWorked, 8);
-      overtimeHours += Math.max(0, day.hoursWorked - 8);
-    } else {
+    const scheduled = scheduledHoursForDate(day.date, schedules);
+    if (!overtimeEnabled) {
+      regularHours += day.hoursWorked;   // OT disabled for this tenant
+    } else if (scheduled === null) {
+      // Worked with nothing rostered — treat the whole session as overtime.
       overtimeHours += day.hoursWorked;
+    } else {
+      regularHours  += Math.min(day.hoursWorked, scheduled);
+      overtimeHours += Math.max(0, day.hoursWorked - scheduled);
     }
   }
 

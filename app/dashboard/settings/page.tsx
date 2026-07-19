@@ -10,7 +10,7 @@ interface WorkspaceSettings {
   notifications_enabled:boolean; ai_enabled:boolean; onboarding_automation:boolean;
   workflow_escalation:boolean; xavier_suggestions:boolean; xavier_auto_routing:boolean;
   xavier_memory:boolean; mfa_required:boolean; audit_logs_enabled:boolean;
-  geo_tagging_enabled:boolean; paid_breaks:boolean;
+  geo_tagging_enabled:boolean; paid_breaks:boolean; overtime_enabled:boolean;
 }
 
 const TIMEZONES=["Africa/Lagos","America/New_York","America/Chicago","America/Los_Angeles","Europe/London","Europe/Paris","Asia/Dubai","Asia/Kolkata","Australia/Sydney"];
@@ -66,7 +66,7 @@ export default function SettingsPage(){
         org_departments:["Recruitment","Operations","Compliance","HR","Finance"],
         notifications_enabled:true, ai_enabled:true, onboarding_automation:true,
         workflow_escalation:true, xavier_suggestions:true, xavier_auto_routing:true,
-        xavier_memory:true, mfa_required:false, audit_logs_enabled:true, geo_tagging_enabled:false, paid_breaks:false,
+        xavier_memory:true, mfa_required:false, audit_logs_enabled:true, geo_tagging_enabled:false, paid_breaks:false, overtime_enabled:true,
       };
       const {data:created}=await supabase.from("workspace_settings").insert(defaults).select().single();
       if(created){ setSettings(created as WorkspaceSettings); setDepts((created.org_departments??[]).join(", ")); }
@@ -121,6 +121,21 @@ export default function SettingsPage(){
       </Section>
 
       <Section icon={MapPin} title="Clocking & Geo Tagging">
+        <ToggleRow
+          label="Overtime Tracking"
+          sub="Overtime starts the moment a scheduled shift ends, on any day of the week. Turn off if this organisation does not track overtime."
+          value={settings.overtime_enabled}
+          onChange={v=>set("overtime_enabled",v)}
+        />
+        {settings.overtime_enabled&&(
+          <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-zinc-800/40 border border-zinc-700/50 text-xs text-zinc-400">
+            <Clock size={12} className="flex-shrink-0 mt-0.5"/>
+            <span>
+              Measured against each employee&apos;s rostered window in Schedules, so a rostered
+              weekend shift counts as regular hours. Time worked with no schedule is recorded as overtime.
+            </span>
+          </div>
+        )}
         <ToggleRow
           label="Paid Breaks"
           sub="On: break time counts toward worked hours and payroll totals. Off: breaks are deducted from the shift. Breaks are recorded either way."

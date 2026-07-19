@@ -5,7 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { buildSessions } from "@/lib/clocking/sessions";
 import {
   Loader2, Award, Clock, CalendarCheck, UserPlus, Star,
-  FileText, Plus, X, MessageSquarePlus,
+  FileText, Plus, X, MessageSquarePlus, AlertTriangle,
 } from "lucide-react";
 
 interface RecordRow {
@@ -20,7 +20,7 @@ interface RecordRow {
 interface TimelineItem {
   key: string;
   date: string;              // ISO, for sorting
-  icon: "engagement" | "hours" | "leave" | "spotlight" | "commendation" | "note" | "milestone";
+  icon: "engagement" | "hours" | "leave" | "spotlight" | "commendation" | "note" | "milestone" | "timesheet" | "overtime";
   title: string;
   detail?: string | null;
   accent: string;
@@ -34,6 +34,8 @@ const ICONS: Record<TimelineItem["icon"], any> = {
   commendation: Award,
   note:         FileText,
   milestone:    Star,
+  timesheet:    Clock,
+  overtime:     AlertTriangle,
 };
 
 const ACCENTS: Record<TimelineItem["icon"], string> = {
@@ -44,6 +46,8 @@ const ACCENTS: Record<TimelineItem["icon"], string> = {
   commendation: "text-amber-400 bg-amber-500/10 border-amber-500/20",
   note:         "text-zinc-400 bg-zinc-500/10 border-zinc-500/20",
   milestone:    "text-teal-400 bg-teal-500/10 border-teal-500/20",
+  timesheet:    "text-zinc-300 bg-white/5 border-white/10",
+  overtime:     "text-amber-400 bg-amber-500/10 border-amber-500/25",
 };
 
 const TYPE_LABEL: Record<string, string> = {
@@ -135,7 +139,11 @@ export default function EmployeeRecords({
       .eq("tenant_id", tenantId).eq("user_id", userId)
       .order("created_at", { ascending: false });
     for (const r of (recs ?? []) as RecordRow[]) {
-      const icon = (["commendation", "note", "milestone"].includes(r.kind) ? r.kind : "milestone") as TimelineItem["icon"];
+      // Overtime and shift records get their own treatment — collapsing them to
+      // "milestone" made the two indistinguishable in the ledger.
+      const icon = (["commendation", "note", "milestone", "timesheet", "overtime"].includes(r.kind)
+        ? r.kind
+        : "milestone") as TimelineItem["icon"];
       built.push({
         key: `rec-${r.id}`,
         date: r.created_at,
