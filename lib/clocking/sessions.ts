@@ -156,29 +156,94 @@ export function scheduledMsForDate(dateKey: string, schedules: ScheduleWindow[])
 }
 
 /**
- * Split a session into regular and overtime against that day's roster.
- * Overtime begins the moment the scheduled window is exhausted — the day of the
- * week is irrelevant, since agencies roster regular shifts on weekends too.
+ * The rostered window that governs a session: the one containing the clock-in,
+ * otherwise the last window that had already started when the shift began.
+ * Only ONE window applies — overlapping rosters never sum.
+ */
+export function applicableSchedule(
+  session: WorkSession,
+  schedules: ScheduleWindow[]
+): ScheduleWindow | null {
+  const start = new Date(session.in.timestamp).getTime();
+  const sorted = [...schedules].sort(
+    (a, b) => new Date(a.end_time).getTime() - new Date(b.end_time).getTime()
+  );
+  const containing = sorted.filter((s) => {
+    const st = new Date(s.start_time).getTime();
+    const en = new Date(s.end_time).getTime();
+    return start >= st && start <= en;
+  });
+  // Latest-ending containing window, so a shift extended by a second roster
+  // uses the later boundary rather than tripping OT at the earlier one.
+  if (containing.length) return containing[containing.length - 1];
+
+  const dateKey = ymd(new Date(session.in.timestamp));
+  const sameDay = sorted.filter((s) => ymd(new Date(s.start_time)) === dateKey);
+  return sameDay.length ? sameDay[sameDay.length - 1] : null;
+}
+
+/** Break milliseconds falling inside [from, to). */
+function breakMsWithin(session: WorkSession, from: number, to: number, now: number): number {
+  if (to <= from) return 0;
+  let ms = 0;
+  const sessionEnd = session.out ? new Date(session.out.timestamp).getTime() : now;
+  for (const b of session.breaks) {
+    const bs = new Date(b.start).getTime();
+    const be = b.end ? new Date(b.end).getTime() : sessionEnd;
+    ms += Math.max(0, Math.min(be, to) - Math.max(bs, from));
+  }
+  return ms;
+}
+
+/**
+ * Split a session into regular and overtime at the scheduled END TIME.
+ *
+ * Overtime is a wall-clock boundary, not an hours budget: the second the
+ * rostered end passes, regular time stops accruing and overtime starts — on any
+ * day of the week, since agencies roster regular shifts at weekends too. Work
+ * with no roster at all counts entirely as overtime.
  */
 export function splitSession(
   session: WorkSession,
   schedules: ScheduleWindow[],
-  overtimeEnabled: boolean = true
-): { regularMs: number; overtimeMs: number; scheduledMs: number | null } {
-  const dateKey = ymd(new Date(session.in.timestamp));
-  const scheduledMs = scheduledMsForDate(dateKey, schedules);
+  overtimeEnabled: boolean = true,
+  paidBreaks: boolean = false,
+  now: number = Date.now()
+): {
+  regularMs:   number;
+  overtimeMs:  number;
+  scheduleEnd: string | null;
+  otActive:    boolean;   // open shift currently past its rostered end
+} {
+  const start = new Date(session.in.timestamp).getTime();
+  const end   = session.out ? new Date(session.out.timestamp).getTime() : now;
 
   if (!overtimeEnabled) {
-    return { regularMs: session.netMs, overtimeMs: 0, scheduledMs };
+    return { regularMs: session.netMs, overtimeMs: 0, scheduleEnd: null, otActive: false };
   }
-  if (scheduledMs === null) {
-    // Worked with nothing rostered — all of it is beyond the schedule.
-    return { regularMs: 0, overtimeMs: session.netMs, scheduledMs: null };
+
+  const sched = applicableSchedule(session, schedules);
+  if (!sched) {
+    return { regularMs: 0, overtimeMs: session.netMs, scheduleEnd: null, otActive: !session.out };
   }
+
+  const boundary = new Date(sched.end_time).getTime();
+  const regEnd   = Math.min(end, boundary);
+  const otStart  = Math.max(start, boundary);
+
+  let regularMs  = Math.max(0, regEnd - start);
+  let overtimeMs = Math.max(0, end - otStart);
+
+  if (!paidBreaks) {
+    regularMs  = Math.max(0, regularMs  - breakMsWithin(session, start, regEnd, now));
+    overtimeMs = Math.max(0, overtimeMs - breakMsWithin(session, otStart, end, now));
+  }
+
   return {
-    regularMs:   Math.min(session.netMs, scheduledMs),
-    overtimeMs:  Math.max(0, session.netMs - scheduledMs),
-    scheduledMs,
+    regularMs,
+    overtimeMs,
+    scheduleEnd: sched.end_time,
+    otActive:    !session.out && end > boundary,
   };
 }
 

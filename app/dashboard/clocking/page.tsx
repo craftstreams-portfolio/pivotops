@@ -78,6 +78,25 @@ interface TimesheetCorrection {
 
 type Tab = "personal" | "schedules" | "timesheet" | "live";
 
+// Browser zone first, then a spread of common business zones. Deduped so the
+// local zone never appears twice.
+const TIMEZONE_OPTIONS: string[] = (() => {
+  const local = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const common = [
+    "Africa/Lagos", "Africa/Nairobi", "Africa/Johannesburg", "Africa/Cairo",
+    "Europe/London", "Europe/Dublin", "Europe/Paris", "Europe/Berlin", "Europe/Madrid",
+    "Europe/Warsaw", "Europe/Istanbul", "Europe/Moscow",
+    "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles",
+    "America/Toronto", "America/Mexico_City", "America/Sao_Paulo", "America/Bogota",
+    "Asia/Dubai", "Asia/Karachi", "Asia/Kolkata", "Asia/Dhaka", "Asia/Bangkok",
+    "Asia/Singapore", "Asia/Hong_Kong", "Asia/Shanghai", "Asia/Tokyo", "Asia/Seoul",
+    "Asia/Manila", "Asia/Jakarta",
+    "Australia/Perth", "Australia/Sydney", "Australia/Brisbane", "Pacific/Auckland",
+    "UTC",
+  ];
+  return [local, ...common.filter((z) => z !== local)];
+})();
+
 // ─────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────
@@ -532,8 +551,8 @@ function ClockingPageInner() {
         const built = buildSessions(mine as any, Date.now(), { paidBreaks });
         const done = [...built].reverse().find((s) => s.out);
         if (done) {
-          const { regularMs, overtimeMs, scheduledMs } =
-            splitSession(done, schedules as any, overtimeEnabled);
+          const { regularMs, overtimeMs, scheduleEnd } =
+            splitSession(done, schedules as any, overtimeEnabled, paidBreaks);
           const hrs = (ms: number) => (ms / 3600000).toFixed(1);
 
           await logEmployeeRecord({
@@ -554,9 +573,9 @@ function ClockingPageInner() {
               userId:    currentUser.id,
               kind:      "overtime",
               title:     `Overtime · ${hrs(overtimeMs)}h`,
-              detail:    scheduledMs === null
+              detail:    scheduleEnd === null
                 ? "Worked with no schedule rostered for this day."
-                : `Beyond the ${hrs(scheduledMs)}h rostered window.`,
+                : `Worked past the ${formatTime(scheduleEnd)} scheduled end.`,
               createdBy: currentUser.id,
             });
           }
@@ -739,6 +758,16 @@ function ClockingPageInner() {
   // Break-aware sessions. The old loop paired a CLOCK_IN with the very next log,
   // which a BREAK_START would hijack — leaving the session looking unclosed.
   const workSessions = buildSessions(myLogs as any, Date.now(), { paidBreaks });
+
+  // Live regular/overtime split for the shift in progress. `elapsed` already
+  // ticks every second, so this re-derives with it and flips the moment the
+  // rostered end time passes — no extra timer needed.
+  const openSession = workSessions.find((s) => s.open) ?? null;
+  const liveSplit = openSession
+    ? splitSession(openSession, schedules as any, overtimeEnabled, paidBreaks, Date.now())
+    : null;
+  const inOvertime = liveSplit?.otActive === true;
+  void elapsed; // tie this derivation to the ticking clock
   const sessions = workSessions.map((s) => ({
     in:  s.in  as unknown as ClockLog,
     out: (s.out ?? null) as unknown as ClockLog | null,
@@ -773,12 +802,14 @@ function ClockingPageInner() {
               ? "linear-gradient(135deg,rgba(255,255,255,0.07),rgba(255,255,255,0.02))"
               : onBreak
                 ? "linear-gradient(135deg,rgba(245,158,11,0.45),rgba(245,158,11,0.08))"
-                : "linear-gradient(135deg,rgba(16,185,129,0.45),rgba(16,185,129,0.08))",
+                : inOvertime
+                  ? "linear-gradient(135deg,rgba(251,146,60,0.5),rgba(251,146,60,0.08))"
+                  : "linear-gradient(135deg,rgba(16,185,129,0.45),rgba(16,185,129,0.08))",
           }}>
           <div className="relative rounded-[15px] bg-[#0c0e14]/95 backdrop-blur-sm p-6 overflow-hidden">
             {clockedIn && (
               <div className="pointer-events-none absolute -top-24 -right-16 w-56 h-56 rounded-full opacity-20 blur-3xl"
-                   style={{ background: `radial-gradient(circle,${onBreak ? "#F59E0B" : "#10B981"},transparent 70%)` }} />
+                   style={{ background: `radial-gradient(circle,${onBreak ? "#F59E0B" : inOvertime ? "#FB923C" : "#10B981"},transparent 70%)` }} />
             )}
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
 
@@ -800,16 +831,27 @@ function ClockingPageInner() {
                   {currentUser.role       && <span className="text-[11px] text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">{currentUser.role}</span>}
                 </div>
                 <div className={`mt-2 inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border
-                  ${clockedIn
-                    ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/25"
-                    : "bg-zinc-800 text-zinc-500 border-zinc-700"
+                  ${!clockedIn
+                    ? "bg-zinc-800 text-zinc-500 border-zinc-700"
+                    : onBreak
+                      ? "bg-amber-500/15 text-amber-400 border-amber-500/25"
+                      : inOvertime
+                        ? "bg-orange-500/15 text-orange-300 border-orange-500/30"
+                        : "bg-emerald-500/15 text-emerald-400 border-emerald-500/25"
                   }`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${clockedIn ? "bg-emerald-400 animate-pulse" : "bg-zinc-600"}`} />
+                  <span className={`w-1.5 h-1.5 rounded-full ${
+                    !clockedIn ? "bg-zinc-600"
+                      : onBreak ? "bg-amber-400"
+                      : inOvertime ? "bg-orange-400 animate-pulse"
+                      : "bg-emerald-400 animate-pulse"
+                  }`} />
                   {!clockedIn
                     ? "🔴 Offline"
                     : onBreak
                       ? `☕ On break · ${formatDuration(breakElapsed)}`
-                      : `🟢 Working · since ${clockInTime ? formatTime(clockInTime) : "—"}`
+                      : inOvertime
+                        ? `🟠 Overtime · since ${liveSplit?.scheduleEnd ? formatTime(liveSplit.scheduleEnd) : "—"}`
+                        : `🟢 Working · since ${clockInTime ? formatTime(clockInTime) : "—"}`
                   }
                 </div>
               </div>
@@ -819,16 +861,50 @@ function ClockingPageInner() {
             <div className="flex flex-col items-start md:items-end gap-3">
               <div className="flex flex-col items-start md:items-end gap-1">
                 <span className="flex items-center gap-1.5 text-[9px] font-mono uppercase tracking-[0.22em] text-zinc-600">
-                  <Timer size={11} className={clockedIn ? (onBreak ? "text-amber-400" : "text-emerald-400") : "text-zinc-700"} />
-                  {onBreak ? "Shift paused" : clockedIn ? "Elapsed" : "Not clocked in"}
+                  <Timer size={11} className={
+                    !clockedIn ? "text-zinc-700"
+                      : onBreak ? "text-amber-400"
+                      : inOvertime ? "text-orange-400"
+                      : "text-emerald-400"
+                  } />
+                  {onBreak ? "Shift paused"
+                    : inOvertime ? "Overtime running"
+                    : clockedIn ? "Elapsed"
+                    : "Not clocked in"}
                 </span>
                 <span className="text-[42px] leading-none font-mono font-bold tabular-nums tracking-tight"
                       style={{
-                        color: !clockedIn ? "#3F3F46" : onBreak ? "#FCD34D" : "#FFFFFF",
+                        color: !clockedIn ? "#3F3F46" : onBreak ? "#FCD34D" : inOvertime ? "#FB923C" : "#FFFFFF",
                         animation: clockedIn && !onBreak ? "pv-tick 2s ease-in-out infinite alternate" : "none",
                       }}>
                   {formatDuration(elapsed)}
                 </span>
+
+                {/* Regular and overtime shown apart, since they are stored apart. */}
+                {clockedIn && liveSplit && overtimeEnabled && (
+                  <div className="flex items-center gap-3 mt-1.5">
+                    <span className="flex items-center gap-1.5 text-[11px]">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                      <span className="text-zinc-500">Regular</span>
+                      <span className="font-mono tabular-nums text-zinc-300">
+                        {formatDuration(liveSplit.regularMs)}
+                      </span>
+                    </span>
+                    <span className={`flex items-center gap-1.5 text-[11px] ${inOvertime ? "" : "opacity-40"}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${inOvertime ? "bg-orange-400 animate-pulse" : "bg-zinc-700"}`} />
+                      <span className="text-zinc-500">Overtime</span>
+                      <span className={`font-mono tabular-nums ${inOvertime ? "text-orange-300" : "text-zinc-600"}`}>
+                        {formatDuration(liveSplit.overtimeMs)}
+                      </span>
+                    </span>
+                  </div>
+                )}
+
+                {clockedIn && liveSplit?.scheduleEnd && !inOvertime && (
+                  <p className="text-[10px] text-zinc-600 mt-1">
+                    Regular hours end {formatTime(liveSplit.scheduleEnd)}
+                  </p>
+                )}
               </div>
 
               {xavierReport && (
@@ -1376,12 +1452,21 @@ function ClockingPageInner() {
               </div>
               <div>
                 <label className="text-xs text-zinc-500 mb-1 block">Timezone</label>
-                <input
+                <select
                   value={newSchedule.timezone}
                   onChange={(e) => setNewSchedule((p) => ({ ...p, timezone: e.target.value }))}
                   className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5
-                             text-sm text-white outline-none focus:border-indigo-500 transition"
-                />
+                             text-sm text-white outline-none focus:border-indigo-500 transition cursor-pointer"
+                >
+                  {TIMEZONE_OPTIONS.map((tz) => (
+                    <option key={tz} value={tz}>
+                      {tz.replace(/_/g, " ")} ({zoneAbbr(tz)})
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-zinc-600 mt-1">
+                  The shift is rostered in this zone. Overtime is measured against it.
+                </p>
               </div>
               <div>
                 <label className="text-xs text-zinc-500 mb-1 block">Repeat</label>
