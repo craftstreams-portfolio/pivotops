@@ -13,7 +13,7 @@ import {
   Video, MessageSquare, LogOut, Plus,
 } from "lucide-react";
 import TeamInvitePanel from "@/app/dashboard/components/team/TeamInvitePanel";
-import { useSubscription } from "@/lib/paddle/gate";
+import { useSubscription } from "@/lib/billing/gate";
 import DashboardTour from "@/app/dashboard/components/team/DashboardTour";
 import { NotificationBell } from "@/lib/mentions/NotificationBell";
 import XavierIntro from "@/app/dashboard/components/team/XavierIntro";

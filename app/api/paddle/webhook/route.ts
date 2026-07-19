@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { upsertSubscription, getSubscriptionByPaddleId } from "@/lib/paddle/subscription";
+import { upsertSubscription, getSubscriptionByPaddleId } from "@/lib/billing/subscription";
 import { emailSubscriptionConfirmed, emailPaymentFailed, emailPlanUpgraded, emailPlanDowngraded } from "@/lib/email/dispatch";
-import { PLAN_FEATURES } from "@/lib/paddle/config";
-import type { PlanTier, BillingCycle } from "@/lib/paddle/config";
+import { PLAN_FEATURES } from "@/lib/billing/config";
+import type { PlanTier, BillingCycle } from "@/lib/billing/config";
 import { createClient } from "@supabase/supabase-js";
 
 const adminSupabase = createClient(

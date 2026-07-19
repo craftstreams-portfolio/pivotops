@@ -3,8 +3,8 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { useTenant } from "@/lib/hooks/useTenant";
-import { useSubscription } from "@/lib/paddle/gate";
-import { PLAN_FEATURES, PADDLE_CONFIG } from "@/lib/paddle/config";
+import { useSubscription } from "@/lib/billing/gate";
+import { PLAN_FEATURES, PADDLE_CONFIG } from "@/lib/billing/config";
 import { CheckCircle2, Loader2, AlertCircle, Zap, Shield, Building2 } from "lucide-react";
 
 const PLANS = [

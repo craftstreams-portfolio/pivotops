@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { Webhook } from "standardwebhooks";
-import { upsertSubscription } from "@/lib/paddle/subscription";
+import { upsertSubscription } from "@/lib/billing/subscription";
 import type { PlanTier, BillingCycle } from "@/lib/dodo/config";
 
 export const dynamic = "force-dynamic";

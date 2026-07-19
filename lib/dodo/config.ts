@@ -1,8 +1,8 @@
-import type { PlanTier, BillingCycle } from "@/lib/paddle/config";
+import type { PlanTier, BillingCycle } from "@/lib/billing/config";
 
 // Reuse the single source of truth for features/tiers from the existing config.
-export { PLAN_FEATURES, canAccessFeature } from "@/lib/paddle/config";
-export type { PlanTier, BillingCycle } from "@/lib/paddle/config";
+export { PLAN_FEATURES, canAccessFeature } from "@/lib/billing/config";
+export type { PlanTier, BillingCycle } from "@/lib/billing/config";
 
 export const DODO_CONFIG = {
   apiKey:        process.env.DODO_PAYMENTS_API_KEY ?? "",

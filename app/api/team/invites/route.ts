@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { TeamInviteSchema } from "@/lib/security/schemas";
-import { seatCapForPlan, planLabel, isSeatExempt } from "@/lib/paddle/config";
+import { seatCapForPlan, planLabel, isSeatExempt } from "@/lib/billing/config";
 import { sendEmail } from "@/lib/email";
 import { logAudit } from "@/lib/audit";
 

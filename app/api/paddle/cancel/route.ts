@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withSecurity } from "@/lib/auth/withSecurity";
-import { getSubscription, cancelSubscription } from "@/lib/paddle/subscription";
+import { getSubscription, cancelSubscription } from "@/lib/billing/subscription";
 
 export const POST = withSecurity(
   async (_req, ctx) => {

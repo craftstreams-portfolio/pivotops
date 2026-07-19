@@ -2,9 +2,9 @@
 
 import { ReactNode } from "react";
 import { Lock, Sparkles, Loader2 } from "lucide-react";
-import { useSubscription } from "@/lib/paddle/gate";
-import { PLAN_FEATURES } from "@/lib/paddle/config";
-import type { PlanTier } from "@/lib/paddle/config";
+import { useSubscription } from "@/lib/billing/gate";
+import { PLAN_FEATURES } from "@/lib/billing/config";
+import type { PlanTier } from "@/lib/billing/config";
 
 type GatedFeature = "compliance" | "complianceAdvanced" | "analytics" | "conference" | "clocking" | "tasks" | "showcase" | "spotlight" | "pivotsos" | "workflows" | "customIntegrations" | "prioritySupport";
 

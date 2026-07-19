@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withSecurity } from "@/lib/auth/withSecurity";
-import { getPriceId } from "@/lib/paddle/config";
-import type { PlanTier, BillingCycle } from "@/lib/paddle/config";
+import { getPriceId } from "@/lib/billing/config";
+import type { PlanTier, BillingCycle } from "@/lib/billing/config";
 import { z } from "zod";
 
 const CheckoutSchema = z.object({

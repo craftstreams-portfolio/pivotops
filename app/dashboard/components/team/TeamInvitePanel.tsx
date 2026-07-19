@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { isValidEmail } from "@/lib/validation";
 import { supabase } from "@/lib/supabase";
 import { X, Mail, Send, Copy, Check, Loader2, AlertCircle, Users } from "lucide-react";
-import { seatCapForPlan, planLabel, isSeatExempt } from "@/lib/paddle/config";
+import { seatCapForPlan, planLabel, isSeatExempt } from "@/lib/billing/config";
 
 const ROLES = [
   { value: "admin",     label: "Admin",     desc: "Full access - manage settings, billing, and all team members." },

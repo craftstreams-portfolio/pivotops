@@ -1,3 +1,12 @@
+/**
+ * Plan definitions, feature matrix and seat caps.
+ *
+ * This folder was called lib/paddle, which suggested Paddle handles the money.
+ * It does not - Dodo Payments processes payments via /api/dodo/webhook. What
+ * lives here is the plan/feature/seat matrix that gating reads. PADDLE_CONFIG
+ * and the PADDLE_* env vars keep their names deliberately: those are Paddle's
+ * own credentials and price ids, still used by the /api/paddle/* routes.
+ */
 export const PADDLE_CONFIG = {
   clientToken:  process.env.NEXT_PUBLIC_PADDLE_CLIENT_TOKEN ?? "",
   environment:  (process.env.NEXT_PUBLIC_PADDLE_ENV ?? "sandbox") as "sandbox" | "production",
