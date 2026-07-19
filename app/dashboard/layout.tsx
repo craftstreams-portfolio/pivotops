@@ -249,32 +249,55 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       <aside className={`fixed md:relative z-50 h-screen w-72 border-r border-zinc-800 bg-zinc-900 transition-transform duration-300 flex flex-col ${mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}`}>
 
-        <div className="flex h-20 items-center justify-between border-b border-zinc-800 px-5">
-          <div className="flex items-center gap-3 min-w-0">
-            <div style={{ flexShrink:0 }}><PivotLogo size={36} /></div>
-            <div className="min-w-0">
-              <h1 className="text-lg font-semibold text-white tracking-tight">PivotOps</h1>
-              <p className="text-[10px] text-zinc-500 tracking-wider uppercase">Autonomous Workforce OS</p>
-              {orgName && (
-                <div className="flex items-center gap-1.5 mt-1">
-                  <p className="text-xs text-emerald-400 font-medium truncate max-w-[140px]">{orgName}</p>
+        {/* Fixed-height brand row. Every line below is height-bounded and the
+            logo sits in a fixed box, so no combination of org name, job title or
+            tagline can push the mark out of position on one account and not
+            another — which is exactly what happened when a job title was set. */}
+        <div className="flex h-20 items-center justify-between gap-3 border-b border-zinc-800 px-5 overflow-hidden">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <div className="flex-shrink-0 flex items-center justify-center"
+                 style={{ width: 36, height: 36 }}>
+              <PivotLogo size={34} />
+            </div>
+
+            <div className="min-w-0 flex-1 leading-none">
+              <h1 className="text-[17px] font-semibold text-white tracking-tight leading-none truncate">
+                PivotOps
+              </h1>
+
+              {/* The tagline gives way to the tenant name — showing both plus a
+                  job title is what overflowed the row. */}
+              {orgName ? (
+                <div className="flex items-center gap-1.5 mt-[5px] min-w-0">
+                  <p className="text-xs text-emerald-400 font-medium truncate leading-none">
+                    {orgName}
+                  </p>
                   <button
                     onClick={() => setShowInvite(true)}
                     title="Invite teammates"
-                    className="flex-shrink-0 w-5 h-5 rounded-full bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 flex items-center justify-center transition"
+                    className="flex-shrink-0 w-[18px] h-[18px] rounded-full bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 flex items-center justify-center transition"
                   >
-                    <Plus size={11} />
+                    <Plus size={10} />
                   </button>
                 </div>
+              ) : (
+                <p className="text-[10px] text-zinc-500 tracking-wider uppercase mt-[5px] leading-none truncate">
+                  Autonomous Workforce OS
+                </p>
               )}
+
               {position && (
-                <p className="text-[10px] text-zinc-500 truncate max-w-[170px] mt-0.5">
+                <p className="text-[10px] text-zinc-500 truncate leading-none mt-[5px]">
                   {position}
                 </p>
               )}
             </div>
           </div>
-          <button className="md:hidden text-zinc-400 hover:text-white" onClick={() => setMobileOpen(false)}><X size={18} /></button>
+
+          <button className="md:hidden flex-shrink-0 text-zinc-400 hover:text-white"
+                  onClick={() => setMobileOpen(false)}>
+            <X size={18} />
+          </button>
         </div>
 
         <nav className="flex-1 space-y-1 overflow-y-auto p-4">
