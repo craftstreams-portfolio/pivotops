@@ -1,36 +1,6 @@
 import "server-only";
-
-import { createClient, RedisClientType } from "redis";
 import type { EventContext } from "./event.context";
-
-// ===============================
-// GLOBAL REDIS SINGLETON (SSR SAFE)
-// ===============================
-declare global {
-  // eslint-disable-next-line no-var
-  var __eventLoggerRedis: RedisClientType | undefined;
-}
-
-const redis: RedisClientType =
-  globalThis.__eventLoggerRedis ??
-  createClient({
-    url: process.env.REDIS_URL,
-  });
-
-// ===============================
-// SAFE CONNECT (NO DUPLICATES)
-// ===============================
-if (!globalThis.__eventLoggerRedis) {
-  redis.connect().catch((err: unknown) => {
-    console.error("❌ Redis connection failed:", err);
-  });
-
-  globalThis.__eventLoggerRedis = redis;
-}
-
-// ===============================
-// TRACE KEY
-// ===============================
+import { getRedisOrNull } from "./redis.lazy";
 const TRACE_KEY = "pivotops:event:trace";
 
 // ===============================
@@ -59,6 +29,8 @@ export async function logTrace(
       timestamp: Date.now(),
     };
 
+    const redis = await getRedisOrNull();
+    if (!redis) return;
     await redis.lPush(TRACE_KEY, JSON.stringify(entry));
   } catch (err: unknown) {
     console.error("❌ trace failed:", err);
@@ -72,6 +44,8 @@ export async function getEventTrace(
   eventId?: string
 ): Promise<TraceEntry[]> {
   try {
+    const redis = await getRedisOrNull();
+    if (!redis) return [];
     const items = await redis.lRange(TRACE_KEY, 0, 200);
 
     const parsed: TraceEntry[] = items

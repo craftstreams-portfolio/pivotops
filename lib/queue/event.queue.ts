@@ -1,4 +1,4 @@
-import { redis } from "../redis/client";
+import { getRedis } from "../redis/client";
 
 const QUEUE_KEY = "pivotops:event:queue";
 
@@ -19,7 +19,10 @@ type QueueEvent = {
 export async function enqueueEvent(event: {
   type: string;
   payload: any;
-}) {
+}): Promise<string | null> {
+  const redis = await getRedis();
+  if (!redis) return null;          // no queue configured
+
   const job: QueueEvent = {
     id: crypto.randomUUID(),
     type: String(event.type),
@@ -28,10 +31,9 @@ export async function enqueueEvent(event: {
     created_at: Date.now(),
   };
 
-  await redis.lpush(QUEUE_KEY, JSON.stringify(job));
-
-  console.log("📥 Event queued to Redis:", job.id);
-
+  // node-redis is camelCase; the previous lpush/rpop/llen calls would have
+  // thrown at runtime even with a live connection.
+  await redis.lPush(QUEUE_KEY, JSON.stringify(job));
   return job.id;
 }
 
@@ -39,19 +41,15 @@ export async function enqueueEvent(event: {
 // POP EVENT (WORKER USE ONLY)
 // ===============================
 export async function dequeueEvent(): Promise<QueueEvent | null> {
-  const data = await redis.rpop(QUEUE_KEY);
+  const redis = await getRedis();
+  if (!redis) return null;
 
+  const data = await redis.rPop(QUEUE_KEY);
   if (!data) return null;
-
   try {
-    const normalized =
-      typeof data === "string"
-        ? data
-        : data.toString();
-
-    return JSON.parse(normalized) as QueueEvent;
+    return JSON.parse(typeof data === "string" ? data : String(data)) as QueueEvent;
   } catch (err) {
-    console.error("❌ Failed to parse queue event:", err);
+    console.error("Failed to parse queue event:", err);
     return null;
   }
 }
@@ -60,10 +58,8 @@ export async function dequeueEvent(): Promise<QueueEvent | null> {
 // QUEUE SIZE (DEBUGGING)
 // ===============================
 export async function getQueueLength(): Promise<number> {
-  const len = await redis.llen(QUEUE_KEY);
-
-  if (typeof len === "string") return parseInt(len, 10);
-  if (typeof len === "number") return len;
-
-  return 0;
+  const redis = await getRedis();
+  if (!redis) return 0;
+  const len = await redis.lLen(QUEUE_KEY);
+  return typeof len === "number" ? len : parseInt(String(len), 10) || 0;
 }

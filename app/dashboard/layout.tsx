@@ -187,7 +187,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     });
   }, [router]);
 
-  useEffect(() => { fetch("/api/start-worker", { method:"POST" }).catch(() => {}); }, []);
+  // Removed: /api/start-worker requires an admin role, so every operator and
+  // recruiter hit a 403 on each page load. startWorker's setInterval loops
+  // cannot survive a serverless invocation anyway - if that orchestration is
+  // wanted it belongs in a cron job, not a fetch on mount.
 
   const resolvedGroups = useMemo(() => {
     const next = { ...openGroups };

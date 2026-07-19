@@ -1,20 +1,15 @@
-import { createClient } from "redis";
+import type { RedisClientType } from "redis";
+import { getRedisOrNull, redisConfigured } from "../events/redis.lazy";
 
-// ===============================
-// REDIS CLIENT SINGLETON
-// ===============================
-export const redis = createClient({
-  url: process.env.REDIS_URL,
-});
-
-let connected = false;
-
-export async function getRedis() {
-  if (!connected) {
-    await redis.connect();
-    connected = true;
-    console.log("⚡ Redis connected");
-  }
-
-  return redis;
+/**
+ * Optional Redis client.
+ *
+ * This used to call createClient() at module load, so importing it anywhere
+ * dialled Redis during build. It now shares the lazy connector and returns null
+ * when REDIS_URL is unset, letting callers degrade instead of throwing.
+ */
+export async function getRedis(): Promise<RedisClientType | null> {
+  return getRedisOrNull();
 }
+
+export { redisConfigured };

@@ -62,7 +62,9 @@ async function handleRetry(event: any) {
   };
 
   // requeue event (back to queue)
-  const { redis } = await import("../redis/client");
+  const { getRedis } = await import("../redis/client");
+  const redis = await getRedis();
+  if (!redis) return;               // no queue configured - drop the retry
 
-  await redis.lpush("pivotops:event:queue", JSON.stringify(updated));
+  await redis.lPush("pivotops:event:queue", JSON.stringify(updated));
 }
