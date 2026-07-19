@@ -1,3 +1,4 @@
+import { buildSessions } from "../clocking/sessions";
 /**
  * ============================================
  * XAVIER AI — Workforce Intelligence Engine
@@ -43,7 +44,7 @@ export interface XavierFatigueReport {
 export interface ClockLogInput {
   id:        string;
   user_id:   string;
-  type:      "CLOCK_IN" | "CLOCK_OUT";
+  type:      "CLOCK_IN" | "CLOCK_OUT" | "BREAK_START" | "BREAK_END";
   timestamp: string;
 }
 
@@ -128,7 +129,8 @@ export function analyzeEmployeeFatigue(
   employeeId:    string,
   employeeName:  string,
   logs:          ClockLogInput[],
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  paidBreaks:    boolean = false
 ): XavierFatigueReport {
   const { start: weekStart, end: weekEnd } = getWeekBounds(referenceDate);
 
@@ -139,56 +141,20 @@ export function analyzeEmployeeFatigue(
     })
     .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
-  const sessions: {
-    clockIn:      string;
-    clockOut:     string;
-    durationMins: number;
-    date:         string;
-  }[] = [];
-
-  let pendingIn: ClockLogInput | null = null;
-
-  for (const log of weekLogs) {
-    if (log.type === "CLOCK_IN") {
-      pendingIn = log;
-    } else if (log.type === "CLOCK_OUT" && pendingIn) {
-      const inTime  = new Date(pendingIn.timestamp);
-      const outTime = new Date(log.timestamp);
-      const mins    = (outTime.getTime() - inTime.getTime()) / 60000;
-      sessions.push({
-        clockIn:      pendingIn.timestamp,
-        clockOut:     log.timestamp,
-        durationMins: Math.round(mins),
-        date:         toYMD(inTime),
-      });
-      pendingIn = null;
-    }
-  }
-
-  let todayOpenMins = 0;
-  if (pendingIn) {
-    todayOpenMins = (Date.now() - new Date(pendingIn.timestamp).getTime()) / 60000;
-  }
+  // Sessions come from the shared builder so break time is subtracted and an
+  // open shift still counts up to now. Pairing here directly would treat a
+  // BREAK_START as the end of the shift.
+  const sessions = buildSessions(weekLogs as any, Date.now(), { paidBreaks }).map((s) => ({
+    clockIn:      s.in.timestamp,
+    clockOut:     s.out?.timestamp ?? new Date().toISOString(),
+    durationMins: Math.round(s.netMs / 60000),
+    date:         toYMD(new Date(s.in.timestamp)),
+  }));
 
   const byDate: Record<string, typeof sessions> = {};
-
   for (const s of sessions) {
     if (!byDate[s.date]) byDate[s.date] = [];
     byDate[s.date].push(s);
-  }
-
-  if (pendingIn) {
-    const todayKey = toYMD(new Date(pendingIn.timestamp));
-    if (!byDate[todayKey]) byDate[todayKey] = [];
-    byDate[todayKey] = byDate[todayKey].filter(
-      (s) => s.clockIn !== pendingIn!.timestamp
-    );
-    byDate[todayKey].push({
-      clockIn:      pendingIn.timestamp,
-      clockOut:     new Date().toISOString(),
-      durationMins: Math.round(todayOpenMins),
-      date:         todayKey,
-    });
   }
 
   const dailySummaries: DailySummary[] = Object.entries(byDate).map(

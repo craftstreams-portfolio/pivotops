@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
+import { buildSessions } from "@/lib/clocking/sessions";
 import {
   Loader2, Award, Clock, CalendarCheck, UserPlus, Star,
   FileText, Plus, X, MessageSquarePlus,
@@ -152,19 +153,20 @@ export default function EmployeeRecords({
       .eq("tenant_id", tenantId).eq("user_id", userId)
       .order("timestamp", { ascending: true });
 
+    // Hours come from the shared session builder so break time is excluded and
+    // a BREAK_START can't be mistaken for the end of a shift.
     const byMonth: Record<string, number> = {};
-    let openIn: Date | null = null;
-    for (const row of logs ?? []) {
-      const ts = new Date(row.timestamp);
-      if (row.type === "CLOCK_IN") {
-        openIn = ts;
-      } else if (row.type === "CLOCK_OUT" && openIn) {
-        const hrs = (ts.getTime() - openIn.getTime()) / 3600000;
-        if (hrs > 0 && hrs < 24) {          // ignore anomalies (forgotten clock-outs)
-          const k = monthKey(openIn);
-          byMonth[k] = (byMonth[k] ?? 0) + hrs;
-        }
-        openIn = null;
+    const { data: ws } = await supabase
+      .from("workspace_settings").select("paid_breaks")
+      .eq("tenant_id", tenantId).maybeSingle();
+    const paidBreaks = ws?.paid_breaks === true;
+
+    for (const s of buildSessions((logs ?? []) as any, Date.now(), { paidBreaks })) {
+      if (!s.out) continue;                 // ignore shifts still open
+      const hrs = s.netMs / 3600000;
+      if (hrs > 0 && hrs < 24) {            // ignore anomalies (forgotten clock-outs)
+        const k = monthKey(new Date(s.in.timestamp));
+        byMonth[k] = (byMonth[k] ?? 0) + hrs;
       }
     }
     const monthsSorted = Object.entries(byMonth)

@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
+import { buildSessions, getLiveStatus, type WorkSession } from "@/lib/clocking/sessions";
+import { startBreak, endBreak } from "@/lib/clocking/clocking.service";
 import { supabase } from "@/lib/supabase";
 import { logEmployeeRecord } from "@/lib/records/log";
 import { useTenant } from "@/lib/hooks/useTenant";
@@ -21,7 +23,7 @@ import {
 interface ClockLog {
   id:        string;
   user_id:   string;
-  type:      "CLOCK_IN" | "CLOCK_OUT";
+  type:      "CLOCK_IN" | "CLOCK_OUT" | "BREAK_START" | "BREAK_END";
   timestamp: string;
   tenant_id: string;
   timezone?: string | null;
@@ -73,7 +75,7 @@ interface TimesheetCorrection {
   manager_note:  string | null;
 }
 
-type Tab = "personal" | "schedules" | "timesheet";
+type Tab = "personal" | "schedules" | "timesheet" | "live";
 
 // ─────────────────────────────────────────
 // HELPERS
@@ -179,6 +181,25 @@ function ClockingPageInner() {
 
   const [currentUser,   setCurrentUser]   = useState<Profile | null>(null);
   const [clockedIn,     setClockedIn]     = useState(false);
+  // Tenant break policy. Paid breaks count toward worked hours; unpaid are deducted.
+  const [paidBreaks, setPaidBreaks] = useState(false);
+  useEffect(() => {
+    if (tenantLoading || !tenantId) return;
+    (async () => {
+      const { data } = await supabase
+        .from("workspace_settings")
+        .select("paid_breaks")
+        .eq("tenant_id", tenantId)
+        .maybeSingle();
+      setPaidBreaks(data?.paid_breaks === true);
+    })();
+  }, [tenantId, tenantLoading]);
+  const [onBreak,       setOnBreak]       = useState(false);
+  const [breakStart,    setBreakStart]    = useState<string | null>(null);
+  const [breakElapsed,  setBreakElapsed]  = useState(0);
+  const [liveRoster,    setLiveRoster]    = useState<{
+    user: Profile; status: "in" | "break"; since: string; netMs: number;
+  }[]>([]);
   const [clockInTime,   setClockInTime]   = useState<string | null>(null);
   const [elapsed,       setElapsed]       = useState(0);
   const [actionLoading, setActionLoading] = useState(false);
@@ -252,20 +273,36 @@ function ClockingPageInner() {
       const myLogs = logs
         .filter((l) => l.user_id === currentUser.id)
         .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      if (myLogs[0]?.type === "CLOCK_IN") {
+      // Break-aware: the most recent row may be a BREAK_START, which the old
+      // check read as "not clocked in" and wiped the running shift on refresh.
+      const live = getLiveStatus(myLogs as any, Date.now(), { paidBreaks });
+      if (live.status !== "out" && live.session) {
         setClockedIn(true);
-        setClockInTime(myLogs[0].timestamp);
-        setElapsed(Date.now() - new Date(myLogs[0].timestamp).getTime());
+        setClockInTime(live.session.in.timestamp);
+        setElapsed(Date.now() - new Date(live.session.in.timestamp).getTime());
+        setOnBreak(live.status === "break");
+        setBreakStart(live.breakStart);
+        setBreakElapsed(live.breakStart ? Date.now() - new Date(live.breakStart).getTime() : 0);
+      } else {
+        setClockedIn(false);
+        setOnBreak(false);
+        setBreakStart(null);
+        setBreakElapsed(0);
       }
       const report = analyzeEmployeeFatigue(
         currentUser.id,
         currentUser.full_name ?? currentUser.email ?? currentUser.id,
-        myLogs
+        myLogs,
+        new Date(),
+        paidBreaks
       );
       setXavierReport(report);
     };
     check();
-  }, [currentUser, tenantId, tenantLoading]);
+    // paidBreaks is a dep: it loads asynchronously, and without it the fatigue
+    // report and clock status would keep the values computed before the tenant
+    // policy arrived.
+  }, [currentUser, tenantId, tenantLoading, paidBreaks]);
 
   // ── Load schedules ─────────────────────
   const loadSchedules = useCallback(async () => {
@@ -309,13 +346,68 @@ function ClockingPageInner() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [clockedIn, clockInTime]);
 
+  // Tenant profiles, so the roster can show names rather than user ids.
+
+  const [rosterProfiles, setRosterProfiles] = useState<Record<string, Profile>>({});
+  useEffect(() => {
+    if (tenantLoading || !tenantId) return;
+    (async () => {
+      const { data } = await supabase
+        .from("profiles")
+        .select("id, full_name, email, department, position, role, avatar_url, timezone")
+        .eq("tenant_id", tenantId);
+      const map: Record<string, Profile> = {};
+      for (const p of (data ?? []) as any[]) map[p.id] = p as Profile;
+      setRosterProfiles(map);
+    })();
+  }, [tenantId, tenantLoading]);
+
+  // Who is on shift right now, derived from the same logs the realtime channel
+  // refreshes — so it updates the moment anyone clocks in, breaks, or leaves.
+  const [rosterTick, setRosterTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setRosterTick((n) => n + 1), 30000);
+    return () => clearInterval(id);
+  }, []);
+
+  const onShift = (() => {
+    void rosterTick; // re-derive elapsed times on the tick
+    const byUser: Record<string, any[]> = {};
+    for (const l of allLogs) {
+      if (!byUser[l.user_id]) byUser[l.user_id] = [];
+      byUser[l.user_id].push(l);
+    }
+    const rows: { userId: string; status: "in" | "break"; since: string; netMs: number; breakMs: number }[] = [];
+    for (const [userId, logs] of Object.entries(byUser)) {
+      const live = getLiveStatus(logs as any, Date.now(), { paidBreaks });
+      if (live.status === "out" || !live.session) continue;
+      rows.push({
+        userId,
+        status:  live.status,
+        since:   live.since ?? live.session.in.timestamp,
+        netMs:   live.session.netMs,
+        breakMs: live.session.breakMs,
+      });
+    }
+    return rows.sort((a, b) => new Date(a.since).getTime() - new Date(b.since).getTime());
+  })();
+
+  // Break timer ticks independently of the shift timer.
+  useEffect(() => {
+    if (!onBreak || !breakStart) return;
+    const id = setInterval(() => {
+      setBreakElapsed(Date.now() - new Date(breakStart).getTime());
+    }, 1000);
+    return () => clearInterval(id);
+  }, [onBreak, breakStart]);
+
   // ── Realtime ───────────────────────────
   useEffect(() => {
     if (tenantLoading || !currentUser) return;
     const ch = supabase
       .channel("clocking-live")
       .on("postgres_changes",
-        { event: "INSERT", schema: "public", table: "clocking_logs" },
+        { event: "*", schema: "public", table: "clocking_logs" },
         async () => { await loadLogs(); }
       )
       .subscribe();
@@ -365,6 +457,43 @@ function ClockingPageInner() {
     }
   };
 
+  // ── Break ──────────────────────────────
+  const handleToggleBreak = async () => {
+    if (!currentUser || actionLoading || !clockedIn) return;
+    setActionLoading(true);
+    try {
+      if (onBreak) {
+        const mins = breakStart
+          ? Math.round((Date.now() - new Date(breakStart).getTime()) / 60000)
+          : undefined;
+        await endBreak({
+          user_id: currentUser.id, tenant_id: tenantId,
+          timezone: currentUser.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+          breakMinutes: mins,
+        });
+        setOnBreak(false);
+        setBreakStart(null);
+        setBreakElapsed(0);
+        showToast("success", `▶️ Back on shift${mins ? ` · ${mins} min break` : ""}`);
+      } else {
+        const iso = new Date().toISOString();
+        await startBreak({
+          user_id: currentUser.id, tenant_id: tenantId,
+          timezone: currentUser.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+        });
+        setOnBreak(true);
+        setBreakStart(iso);
+        setBreakElapsed(0);
+        showToast("success", `☕ Break started at ${formatTime(iso)}`);
+      }
+      await loadLogs();
+    } catch (err) {
+      showToast("error", err instanceof Error ? err.message : String(err));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // ── Clock Out ──────────────────────────
   const handleClockOut = async () => {
     if (!currentUser || actionLoading) return;
@@ -382,6 +511,11 @@ function ClockingPageInner() {
       setClockedIn(false);
       setClockInTime(null);
       setElapsed(0);
+      // Clocking out while on break closes the break too — buildSessions seals
+      // the open break at the clock-out time, so no orphaned break is left.
+      setOnBreak(false);
+      setBreakStart(null);
+      setBreakElapsed(0);
       showToast("success", `👋 Clocked out${sessionMins ? ` · ${sessionMins} min session` : ""}`);
       await loadLogs();
     } catch (err) {
@@ -447,18 +581,22 @@ function ClockingPageInner() {
           .from("clocking_logs").select("*").eq("id", c.log_id).single();
 
         if (inLog) {
-          // The next log after this CLOCK_IN for the same user, if any.
+          // The session's CLOCK_OUT, if it exists. Filtering by type matters now
+          // that break rows share this table — "the next row" could be a
+          // BREAK_START, which would wrongly look like a missing clock-out and
+          // insert a duplicate.
           const { data: after } = await supabase
             .from("clocking_logs")
             .select("*")
             .eq("tenant_id", tenantId)
             .eq("user_id", inLog.user_id)
+            .eq("type", "CLOCK_OUT")
             .gt("timestamp", inLog.timestamp)
             .order("timestamp", { ascending: true })
             .limit(1);
           const nextLog = after?.[0];
 
-          if (nextLog && nextLog.type === "CLOCK_OUT") {
+          if (nextLog) {
             await supabase.from("clocking_logs")
               .update({ timestamp: c.proposed_time })
               .eq("id", nextLog.id);
@@ -545,18 +683,15 @@ function ClockingPageInner() {
   const weekDates = getWeekDates(new Date(calendarDate));
   const myLogs    = allLogs.filter((l) => l.user_id === currentUser.id);
 
-  // Build timesheet sessions
-  const sessions: { in: ClockLog; out: ClockLog | null }[] = [];
-  const sorted = [...myLogs].sort((a, b) =>
-    new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-  );
-  for (let i = 0; i < sorted.length; i++) {
-    if (sorted[i].type === "CLOCK_IN") {
-      const next = sorted[i + 1];
-      sessions.push({ in: sorted[i], out: next?.type === "CLOCK_OUT" ? next : null });
-      if (next?.type === "CLOCK_OUT") i++;
-    }
-  }
+  // Break-aware sessions. The old loop paired a CLOCK_IN with the very next log,
+  // which a BREAK_START would hijack — leaving the session looking unclosed.
+  const workSessions = buildSessions(myLogs as any, Date.now(), { paidBreaks });
+  const sessions = workSessions.map((s) => ({
+    in:  s.in  as unknown as ClockLog,
+    out: (s.out ?? null) as unknown as ClockLog | null,
+    breakMs: s.breakMs,
+    netMs:   s.netMs,
+  }));
 
   const todayStr = new Date().toLocaleDateString([], {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
@@ -566,14 +701,32 @@ function ClockingPageInner() {
     <>
       <ToastContainer toasts={toasts} />
 
-      <div className="p-4 md:p-6 max-w-4xl space-y-6">
+      <div className="relative p-4 md:p-6 max-w-4xl space-y-6">
+        <style>{`
+          @keyframes pv-tick { from { opacity: .55; } to { opacity: 1; } }
+          @keyframes pv-sweep { from { transform: translateX(-120%); } to { transform: translateX(240%); } }
+        `}</style>
+        <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden" aria-hidden>
+          <div className="absolute -top-32 left-1/4 w-[440px] h-[440px] rounded-full opacity-[0.10] blur-[110px]"
+               style={{ background: "radial-gradient(circle,#10B981 0%,transparent 70%)" }} />
+          <div className="absolute top-1/2 -right-24 w-[360px] h-[360px] rounded-full opacity-[0.07] blur-[110px]"
+               style={{ background: "radial-gradient(circle,#6366F1 0%,transparent 70%)" }} />
+        </div>
 
         {/* ── ZIRA-STYLE CLOCK WIDGET ── */}
-        <div className={`rounded-2xl border p-6 transition-all duration-500
-          ${clockedIn
-            ? "border-emerald-500/30 bg-gradient-to-br from-emerald-500/5 to-zinc-900"
-            : "border-zinc-800 bg-zinc-900"
-          }`}>
+        <div className="relative rounded-2xl p-[1px] transition-all duration-500 overflow-hidden"
+          style={{
+            background: !clockedIn
+              ? "linear-gradient(135deg,rgba(255,255,255,0.07),rgba(255,255,255,0.02))"
+              : onBreak
+                ? "linear-gradient(135deg,rgba(245,158,11,0.45),rgba(245,158,11,0.08))"
+                : "linear-gradient(135deg,rgba(16,185,129,0.45),rgba(16,185,129,0.08))",
+          }}>
+          <div className="relative rounded-[15px] bg-[#0c0e14]/95 backdrop-blur-sm p-6 overflow-hidden">
+            {clockedIn && (
+              <div className="pointer-events-none absolute -top-24 -right-16 w-56 h-56 rounded-full opacity-20 blur-3xl"
+                   style={{ background: `radial-gradient(circle,${onBreak ? "#F59E0B" : "#10B981"},transparent 70%)` }} />
+            )}
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
 
             {/* Identity */}
@@ -599,9 +752,11 @@ function ClockingPageInner() {
                     : "bg-zinc-800 text-zinc-500 border-zinc-700"
                   }`}>
                   <span className={`w-1.5 h-1.5 rounded-full ${clockedIn ? "bg-emerald-400 animate-pulse" : "bg-zinc-600"}`} />
-                  {clockedIn
-                    ? `🟢 Working · since ${clockInTime ? formatTime(clockInTime) : "—"}`
-                    : "🔴 Offline"
+                  {!clockedIn
+                    ? "🔴 Offline"
+                    : onBreak
+                      ? `☕ On break · ${formatDuration(breakElapsed)}`
+                      : `🟢 Working · since ${clockInTime ? formatTime(clockInTime) : "—"}`
                   }
                 </div>
               </div>
@@ -609,10 +764,16 @@ function ClockingPageInner() {
 
             {/* Timer + Action */}
             <div className="flex flex-col items-start md:items-end gap-3">
-              <div className="flex items-center gap-2">
-                <Timer size={15} className={clockedIn ? "text-emerald-400" : "text-zinc-700"} />
-                <span className={`text-4xl font-mono font-bold tracking-widest
-                  ${clockedIn ? "text-white" : "text-zinc-700"}`}>
+              <div className="flex flex-col items-start md:items-end gap-1">
+                <span className="flex items-center gap-1.5 text-[9px] font-mono uppercase tracking-[0.22em] text-zinc-600">
+                  <Timer size={11} className={clockedIn ? (onBreak ? "text-amber-400" : "text-emerald-400") : "text-zinc-700"} />
+                  {onBreak ? "Shift paused" : clockedIn ? "Elapsed" : "Not clocked in"}
+                </span>
+                <span className="text-[42px] leading-none font-mono font-bold tabular-nums tracking-tight"
+                      style={{
+                        color: !clockedIn ? "#3F3F46" : onBreak ? "#FCD34D" : "#FFFFFF",
+                        animation: clockedIn && !onBreak ? "pv-tick 2s ease-in-out infinite alternate" : "none",
+                      }}>
                   {formatDuration(elapsed)}
                 </span>
               </div>
@@ -631,20 +792,38 @@ function ClockingPageInner() {
                 </p>
               )}
 
-              <button
-                onClick={clockedIn ? handleClockOut : handleClockIn}
-                disabled={actionLoading}
-                className={`flex items-center gap-2 px-8 py-3.5 rounded-xl font-semibold
-                            text-sm transition-all disabled:opacity-50 shadow-lg
-                  ${clockedIn
-                    ? "bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30"
-                    : "bg-emerald-500 hover:bg-emerald-400 text-black shadow-emerald-500/20"
-                  }`}>
-                {clockedIn
-                  ? <><LogOut size={16} />{actionLoading ? "Clocking out..." : "Clock Out"}</>
-                  : <><LogIn  size={16} />{actionLoading ? "Clocking in..."  : "Clock In" }</>
-                }
-              </button>
+              <div className="flex items-center gap-2">
+                {clockedIn && (
+                  <button
+                    onClick={handleToggleBreak}
+                    disabled={actionLoading}
+                    className={`flex items-center gap-2 px-5 py-3.5 rounded-xl font-semibold
+                                text-sm transition-all disabled:opacity-50 border
+                      ${onBreak
+                        ? "bg-amber-500 hover:bg-amber-400 text-[#231A04] border-amber-400"
+                        : "bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border-amber-500/30"
+                      }`}>
+                    {onBreak
+                      ? <>▶️ {actionLoading ? "…" : `End break · ${formatDuration(breakElapsed)}`}</>
+                      : <>☕ {actionLoading ? "…" : "Break"}</>
+                    }
+                  </button>
+                )}
+                <button
+                  onClick={clockedIn ? handleClockOut : handleClockIn}
+                  disabled={actionLoading}
+                  className={`flex items-center gap-2 px-8 py-3.5 rounded-xl font-semibold
+                              text-sm transition-all disabled:opacity-50 shadow-lg
+                    ${clockedIn
+                      ? "bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30"
+                      : "bg-emerald-500 hover:bg-emerald-400 text-black shadow-emerald-500/20"
+                    }`}>
+                  {clockedIn
+                    ? <><LogOut size={16} />{actionLoading ? "Clocking out..." : "Clock Out"}</>
+                    : <><LogIn  size={16} />{actionLoading ? "Clocking in..."  : "Clock In" }</>
+                  }
+                </button>
+              </div>
 
               <p className="text-[10px] text-zinc-600">{todayStr}</p>
             </div>
@@ -652,30 +831,35 @@ function ClockingPageInner() {
 
           {/* Xavier insight strip */}
           {xavierReport && fatigueStyle && (
-            <div className={`mt-4 flex items-center gap-3 px-4 py-2.5 rounded-xl border ${fatigueStyle.badge}`}>
-              <Brain size={13} className={fatigueStyle.text} />
-              <p className={`text-xs ${fatigueStyle.text}`}>{xavierReport.recommendation}</p>
+            <div className={`relative mt-5 flex items-center gap-3 px-4 py-3 rounded-xl border ${fatigueStyle.badge}`}>
+              <Brain size={14} className={fatigueStyle.text} />
+              <p className={`text-xs leading-relaxed ${fatigueStyle.text}`}>{xavierReport.recommendation}</p>
             </div>
           )}
+          </div>
         </div>
 
         {/* ── PROFILE TABS ── */}
-        <div className="rounded-2xl border border-zinc-800 bg-zinc-900 overflow-hidden">
+        <div className="rounded-2xl border border-white/[0.06] bg-[#0c0e14]/80 backdrop-blur-sm overflow-hidden">
 
           {/* Tab bar */}
-          <div className="flex border-b border-zinc-800">
+          <div className="flex border-b border-white/[0.06] overflow-x-auto">
             {([
               { id: "personal",  label: "Personal Data", icon: User     },
               { id: "schedules", label: "Schedules",     icon: Calendar },
               { id: "timesheet", label: "Timesheet",     icon: FileText },
+              ...((currentUser.role === "admin" || currentUser.role === "manager")
+                ? [{ id: "live" as Tab, label: `On shift (${onShift.length})`, icon: Clock }]
+                : []),
             ] as { id: Tab; label: string; icon: React.ElementType }[]).map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
                 onClick={() => setActiveTab(id)}
-                className={`flex items-center gap-2 px-5 py-3.5 text-sm font-medium transition border-b-2
+                className={`flex items-center gap-2 px-5 py-3.5 text-sm font-medium transition-all border-b-2
+                            whitespace-nowrap flex-shrink-0
                   ${activeTab === id
-                    ? "border-indigo-500 text-white bg-indigo-500/5"
-                    : "border-transparent text-zinc-500 hover:text-zinc-300"
+                    ? "border-emerald-500 text-white bg-white/[0.03]"
+                    : "border-transparent text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.02]"
                   }`}
               >
                 <Icon size={14} />
@@ -683,6 +867,77 @@ function ClockingPageInner() {
               </button>
             ))}
           </div>
+
+          {/* ── ON SHIFT NOW (managers) ── */}
+          {activeTab === "live" && (currentUser.role === "admin" || currentUser.role === "manager") && (
+            <div className="p-6 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-zinc-400">
+                  {onShift.length === 0
+                    ? "Nobody is on shift right now."
+                    : `${onShift.length} on shift · ${onShift.filter((r) => r.status === "break").length} on break`}
+                </p>
+                <span className="flex items-center gap-1.5 text-[11px] text-emerald-400">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Live
+                </span>
+              </div>
+
+              {onShift.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-zinc-800 p-10 text-center">
+                  <Clock size={24} className="text-zinc-700 mx-auto mb-2" />
+                  <p className="text-zinc-600 text-sm">Clock-ins will appear here as they happen.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {onShift.map((r) => {
+                    const p = rosterProfiles[r.userId];
+                    const name = p?.full_name ?? p?.email ?? r.userId;
+                    const mins = Math.floor((Date.now() - new Date(r.since).getTime()) / 60000);
+                    return (
+                      <div key={r.userId}
+                        className={`flex items-center justify-between gap-3 rounded-xl border p-3.5 transition
+                          ${r.status === "break"
+                            ? "border-amber-500/25 bg-amber-500/[0.04]"
+                            : "border-emerald-500/20 bg-emerald-500/[0.03]"}`}>
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold
+                                          flex-shrink-0 overflow-hidden
+                            ${r.status === "break" ? "bg-amber-500/20 text-amber-300" : "bg-emerald-500/20 text-emerald-300"}`}>
+                            {p?.avatar_url
+                              ? <img src={p.avatar_url} alt="" className="w-full h-full object-cover" />
+                              : getInitials(p?.full_name ?? null, p?.email ?? null)}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-white text-sm font-medium truncate">{name}</p>
+                            <p className="text-[11px] text-zinc-500 truncate">
+                              {p?.position ?? p?.department ?? "—"}
+                              {r.breakMs > 0 && ` · ${Math.round(r.breakMs / 60000)}m on break this shift`}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <span className={`inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full border
+                            ${r.status === "break"
+                              ? "bg-amber-500/15 text-amber-400 border-amber-500/25"
+                              : "bg-emerald-500/15 text-emerald-400 border-emerald-500/25"}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${r.status === "break" ? "bg-amber-400" : "bg-emerald-400 animate-pulse"}`} />
+                            {r.status === "break" ? "On break" : "Working"}
+                          </span>
+                          <p className="text-[10px] text-zinc-600 mt-1">
+                            {r.status === "break" ? "since" : "worked"}{" "}
+                            {r.status === "break"
+                              ? `${mins}m`
+                              : formatDuration(r.netMs)}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* ── PERSONAL DATA TAB ── */}
           {activeTab === "personal" && (
@@ -900,10 +1155,9 @@ function ClockingPageInner() {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {[...sessions].reverse().map(({ in: inLog, out: outLog }) => {
-                    const dur = outLog
-                      ? new Date(outLog.timestamp).getTime() - new Date(inLog.timestamp).getTime()
-                      : null;
+                  {[...sessions].reverse().map(({ in: inLog, out: outLog, breakMs, netMs }) => {
+                    // Net of breaks, so a row agrees with the weekly total.
+                    const dur = outLog ? netMs : null;
                     return (
                       <div key={inLog.id}
                         className="flex items-center justify-between gap-4 rounded-xl border
@@ -914,6 +1168,11 @@ function ClockingPageInner() {
                           <p className="text-xs text-zinc-500">
                             {formatTime(inLog.timestamp)} → {outLog ? formatTime(outLog.timestamp) : "Active"}
                           </p>
+                          {breakMs > 0 && (
+                            <p className={`text-[11px] ${paidBreaks ? "text-emerald-400/80" : "text-amber-400/80"}`}>
+                              ☕ {Math.round(breakMs / 60000)}m break {paidBreaks ? "(paid)" : "deducted"}
+                            </p>
+                          )}
                           {inLog.timezone && (
                             <p className="text-[10px] text-zinc-700">{inLog.timezone}</p>
                           )}

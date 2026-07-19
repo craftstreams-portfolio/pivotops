@@ -62,6 +62,48 @@ export async function clockOut(payload: {
   return data;
 }
 
+export async function startBreak(payload: {
+  user_id:   string;
+  tenant_id: string;
+  timezone?: string;
+}) {
+  const { data, error } = await supabase
+    .from("clocking_logs")
+    .insert({
+      user_id:   payload.user_id,
+      tenant_id: payload.tenant_id,
+      type:      "BREAK_START",
+      timestamp: new Date().toISOString(),
+      timezone:  payload.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+    })
+    .select()
+    .single();
+  if (error) throw new Error(error.message ?? JSON.stringify(error));
+  return data;
+}
+
+export async function endBreak(payload: {
+  user_id:        string;
+  tenant_id:      string;
+  timezone?:      string;
+  breakMinutes?:  number;
+}) {
+  const { data, error } = await supabase
+    .from("clocking_logs")
+    .insert({
+      user_id:   payload.user_id,
+      tenant_id: payload.tenant_id,
+      type:      "BREAK_END",
+      timestamp: new Date().toISOString(),
+      timezone:  payload.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+      metadata:  payload.breakMinutes ? { break_minutes: payload.breakMinutes } : null,
+    })
+    .select()
+    .single();
+  if (error) throw new Error(error.message ?? JSON.stringify(error));
+  return data;
+}
+
 export async function getClockingLogs(tenantId: string, limit = 50) {
   const { data, error } = await supabase
     .from("clocking_logs")
