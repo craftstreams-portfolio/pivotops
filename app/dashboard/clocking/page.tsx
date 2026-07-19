@@ -752,6 +752,23 @@ function ClockingPageInner() {
     ? (FATIGUE_STYLES[xavierReport.fatigueLevel] ?? FATIGUE_STYLES.optimal)
     : null;
 
+  // Schedules are stored as UTC instants but belong to the zone they were
+  // rostered in. Rendering them in the viewer's zone means a Lagos manager sees
+  // a New York shift shifted by five hours, so both the time and the calendar
+  // day are resolved against the schedule's own zone.
+  const viewerZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+  const schedTime = (iso: string, tz?: string | null) =>
+    formatInZone(iso, tz || viewerZone, { hour: "numeric", minute: "2-digit" });
+
+  const schedDayKey = (iso: string, tz?: string | null) =>
+    formatInZone(iso, tz || viewerZone, { year: "numeric", month: "2-digit", day: "2-digit" });
+
+  const dayKeyLocal = (d: Date) =>
+    formatInZone(d.toISOString(), viewerZone, { year: "numeric", month: "2-digit", day: "2-digit" });
+
+  const isForeignZone = (tz?: string | null) => !!tz && tz !== viewerZone;
+
   const weekDates = getWeekDates(new Date(calendarDate));
   const myLogs    = allLogs.filter((l) => l.user_id === currentUser.id);
 
@@ -1172,7 +1189,11 @@ function ClockingPageInner() {
                 ))}
                 {weekDates.map((date) => {
                   const isToday      = isSameDay(date, new Date());
-                  const daySchedules = schedules.filter((s) => isSameDay(new Date(s.start_time), date));
+                  // Bucket by the schedule's own zone, so the time shown and the
+                  // day it appears on always agree.
+                  const daySchedules = schedules.filter(
+                    (s) => schedDayKey(s.start_time, s.timezone) === dayKeyLocal(date)
+                  );
                   return (
                     <div
                       key={date.toISOString()}
@@ -1199,9 +1220,15 @@ function ClockingPageInner() {
                             color: s.color ?? "#6366f1",
                             border: `1px solid ${s.color ?? "#6366f1"}44`,
                           }}
-                          title={`${s.title} · ${formatTime(s.start_time)}–${formatTime(s.end_time)} · Click to remove`}
+                          title={
+                            `${s.title} · ${schedTime(s.start_time, s.timezone)}–${schedTime(s.end_time, s.timezone)} ${zoneAbbr(s.timezone)}` +
+                            (isForeignZone(s.timezone)
+                              ? ` · ${formatTime(s.start_time)}–${formatTime(s.end_time)} your time`
+                              : "") +
+                            " · Click to remove"
+                          }
                         >
-                          {formatTime(s.start_time)} {s.title}
+                          {schedTime(s.start_time, s.timezone)} {s.title}
                         </div>
                       ))}
                     </div>
@@ -1232,7 +1259,13 @@ function ClockingPageInner() {
                             <div className="min-w-0">
                               <p className="text-sm text-white font-medium truncate">{s.title}</p>
                               <p className="text-xs text-zinc-500">
-                                {formatDate(s.start_time)} · {formatTime(s.start_time)}–{formatTime(s.end_time)}
+                                {formatDate(s.start_time)} · {schedTime(s.start_time, s.timezone)}–{schedTime(s.end_time, s.timezone)}
+                            <span className="text-zinc-600"> {zoneAbbr(s.timezone)}</span>
+                            {isForeignZone(s.timezone) && (
+                              <span className="block text-[10px] text-amber-400/70 mt-0.5">
+                                {formatTime(s.start_time)}–{formatTime(s.end_time)} your time ({zoneAbbr(viewerZone)})
+                              </span>
+                            )}
                               </p>
                             </div>
                           </div>
