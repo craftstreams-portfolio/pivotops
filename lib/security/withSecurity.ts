@@ -55,7 +55,7 @@ export function withSecurity<T = unknown>(
     const routeKey = `${ip}:${req.nextUrl.pathname}`;
 
     // ── 1. RATE LIMIT ──────────────────────────────
-    const rl = checkRateLimit(routeKey, rateLimit);
+    const rl = await checkRateLimit(routeKey, rateLimit);
     if (!rl.allowed) {
       logger.warn("Rate limit exceeded", { ip, path: req.nextUrl.pathname });
       return NextResponse.json(
