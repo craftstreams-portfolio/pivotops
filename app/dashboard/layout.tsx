@@ -152,18 +152,46 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const tourTargets = useRef<Record<string, HTMLElement | null>>({});
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) { router.replace("/login"); return; }
-      // Candidates belong in the candidate portal, not the owner dashboard.
+    // Hard deadline: show the app after 3 s regardless of session state.
+    // Without this, Edge (and Safari) can hang here forever because getSession()
+    // returns null immediately after a redirect before the cookie is available,
+    // which sent the user back to /login in a silent infinite loop.
+    const deadline = setTimeout(() => setAppReady(true), 3000);
+
+    const init = async () => {
+      // getSession() reads from the local cookie — fast but unreliable on Edge
+      // immediately after a redirect. Fall back to getUser() which always does
+      // a server round-trip and is accurate in every browser.
+      let { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          // getUser confirms the session is valid — refresh getSession now that
+          // the cookie has had a moment to settle.
+          const refreshed = await supabase.auth.getSession();
+          session = refreshed.data.session;
+        }
+      }
+
+      if (!session) {
+        clearTimeout(deadline);
+        router.replace("/login");
+        return;
+      }
+
       if (session.user.user_metadata?.role === "candidate") {
+        clearTimeout(deadline);
         router.replace("/candidate/portal");
         return;
       }
+
       const email = session.user.email ?? "";
       setUserEmail(email);
       setUserInitial((session.user.user_metadata?.full_name?.[0] ?? email[0] ?? "P").toUpperCase());
       setUserId(session.user.id);
-      supabase.from("profiles").select("org_name, tenant_id, org_size, full_name, position").eq("id", session.user.id).maybeSingle()
+
+      supabase.from("profiles").select("org_name, tenant_id, org_size, full_name, position")
+        .eq("id", session.user.id).maybeSingle()
         .then(({ data }) => {
           if (data) {
             setOrgName(data.org_name ?? "");
@@ -171,20 +199,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             setOrgSize(data.org_size ?? "");
             setUserName((data as any).full_name ?? "");
             setPosition((data as any).position ?? "");
-            // Profiles created by the signup trigger don't carry org_name.
-            // Fall back to the tenant's own name so invited users see it.
             if (data.tenant_id && !data.org_name) {
               supabase.from("tenants").select("org_name").eq("id", data.tenant_id).maybeSingle()
                 .then(({ data: tnt }) => { if (tnt?.org_name) setOrgName(tnt.org_name); });
             }
             if (data.tenant_id) {
-              supabase.from("xavier_notifications").select("id", { count:"exact" }).eq("read", false).eq("tenant_id", data.tenant_id)
+              supabase.from("xavier_notifications").select("id", { count:"exact" })
+                .eq("read", false).eq("tenant_id", data.tenant_id)
                 .then(({ count }) => setNotifCount(count ?? 0));
             }
           }
         });
-      setTimeout(() => setAppReady(true), 900);
-    });
+
+      clearTimeout(deadline);
+      setTimeout(() => setAppReady(true), 300);
+    };
+
+    init();
   }, [router]);
 
   // Removed: /api/start-worker requires an admin role, so every operator and
