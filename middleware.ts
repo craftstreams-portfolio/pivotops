@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { createServerClient } from "@supabase/ssr";
 
 const isDev = process.env.NODE_ENV === "development";
 
-// Rate limit store (edge-compatible, resets on cold start)
+// ── Rate limit store (edge-compatible, resets on cold start) ────────────────
 const rateLimitMap = new Map<string, { count: number; reset: number }>();
 
 function getRateLimit(ip: string, limit: number, windowMs: number): boolean {
@@ -25,13 +26,22 @@ const PUBLIC_RATE_LIMITED = [
   "/api/public/tenant-lookup",
 ];
 
+// ── Routes that require a valid session ─────────────────────────────────────
+// Checked server-side in middleware so no browser can bypass the gate.
+const PROTECTED_PREFIXES = [
+  "/dashboard",
+  "/onboarding",
+  "/tasks",
+  "/workforce",
+  "/replay",
+];
+
 function applySecurityHeaders(res: NextResponse): NextResponse {
   res.headers.set("X-Frame-Options", "DENY");
   res.headers.set("X-Content-Type-Options", "nosniff");
   res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   res.headers.set("Permissions-Policy", "camera=(self), microphone=(self), geolocation=(), payment=()");
 
-  // HSTS only in production — breaks localhost in dev
   if (!isDev) {
     res.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
   }
@@ -39,7 +49,6 @@ function applySecurityHeaders(res: NextResponse): NextResponse {
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
   res.headers.set("X-XSS-Protection", "1; mode=block");
 
-  // CSP: allow unsafe-eval in dev (React needs it), block in production
   const scriptSrc = isDev
     ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com"
     : "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com";
@@ -64,7 +73,7 @@ function applySecurityHeaders(res: NextResponse): NextResponse {
   return res;
 }
 
-export function middleware(req: NextRequest) {
+export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // Static assets — pass through immediately
@@ -76,7 +85,7 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Rate limit public endpoints (100 req/min per IP)
+  // Rate limit public endpoints
   const isRateLimited = PUBLIC_RATE_LIMITED.some(p => pathname.startsWith(p));
   if (isRateLimited) {
     const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
@@ -85,12 +94,51 @@ export function middleware(req: NextRequest) {
     if (!getRateLimit(ip, 100, 60_000)) {
       return new NextResponse("Too many requests", {
         status: 429,
-        headers: {
-          "Retry-After": "60",
-          "X-Content-Type-Options": "nosniff",
-        }
+        headers: { "Retry-After": "60", "X-Content-Type-Options": "nosniff" },
       });
     }
+  }
+
+  // ── Server-side auth gate ────────────────────────────────────────────────
+  // Runs before the page renders — no browser behaviour can bypass this.
+  // Uses @supabase/ssr so the session cookie is read from the request headers
+  // the same way on every browser including Edge.
+  const isProtected = PROTECTED_PREFIXES.some(p => pathname.startsWith(p));
+  if (isProtected) {
+    const res = NextResponse.next();
+
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() { return req.cookies.getAll(); },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              res.cookies.set(name, value, options)
+            );
+          },
+        },
+      }
+    );
+
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      const loginUrl = req.nextUrl.clone();
+      loginUrl.pathname = "/login";
+      loginUrl.searchParams.set("redirect", pathname);
+      return NextResponse.redirect(loginUrl);
+    }
+
+    // Candidates belong in their own portal, not the owner dashboard.
+    if (pathname.startsWith("/dashboard") && user.user_metadata?.role === "candidate") {
+      const portalUrl = req.nextUrl.clone();
+      portalUrl.pathname = "/candidate/portal";
+      return NextResponse.redirect(portalUrl);
+    }
+
+    return applySecurityHeaders(res);
   }
 
   return applySecurityHeaders(NextResponse.next());
