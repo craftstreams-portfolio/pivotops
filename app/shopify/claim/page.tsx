@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -31,6 +31,40 @@ function ClaimForm() {
   const [fullName, setFullName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [needsOrgName, setNeedsOrgName] = useState(false);
+
+  // Returning here after clicking the email confirmation link - Supabase
+  // establishes a session automatically. If one already exists, skip the
+  // signup form and go straight to provisioning, rather than asking the
+  // merchant to fill in an account that already exists.
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.access_token && shop) {
+        setNeedsOrgName(true); // still need company name, ask for just that
+      }
+      setCheckingSession(false);
+    });
+  }, [shop]);
+
+  async function finishClaim(token: string) {
+    if (!orgName.trim()) { setError("Please enter your company name."); return; }
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/shopify/claim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ shop, orgName: orgName.trim(), fullName: fullName.trim() }),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Failed to connect your store.");
+      router.replace("/dashboard");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setLoading(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -43,10 +77,17 @@ function ClaimForm() {
 
     setLoading(true);
     try {
+      // Explicit emailRedirectTo so the confirmation link returns here with
+      // the shop param intact, instead of falling back to the global Site URL
+      // (the bare landing page) with an unhandled Supabase ?code= param.
+      const redirectTarget = `${window.location.origin}/shopify/claim?shop=${encodeURIComponent(shop)}`;
       const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
         email: email.trim(),
         password,
-        options: { data: { full_name: fullName.trim() } },
+        options: {
+          data: { full_name: fullName.trim() },
+          emailRedirectTo: redirectTarget,
+        },
       });
       if (signUpErr) throw new Error(signUpErr.message);
 
@@ -75,6 +116,10 @@ function ClaimForm() {
     }
   }
 
+  const boxStyle: React.CSSProperties = { background: "#12141C", border: "1px solid #23262F", borderRadius: 12, padding: "10px 14px", marginBottom: 20, fontSize: 13, color: "#C9E8E2" };
+  const inputStyle: React.CSSProperties = { background: "#12141C", border: "1px solid #23262F", borderRadius: 10, padding: "11px 14px", color: "#fff", fontSize: 14 };
+  const buttonStyle: React.CSSProperties = { background: "#00BFA6", color: "#04211E", fontWeight: 600, border: "none", borderRadius: 10, padding: "12px 0", fontSize: 14, marginTop: 8 };
+
   return (
     <div style={{ minHeight: "100vh", background: "#06070D", display: "flex", alignItems: "center", justifyContent: "center", padding: 24, fontFamily: "system-ui,sans-serif" }}>
       <div style={{ width: "100%", maxWidth: 420 }}>
@@ -83,33 +128,48 @@ function ClaimForm() {
           <p style={{ color: "#8A8F9A", fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", marginTop: 4 }}>Connect your Shopify store</p>
         </div>
 
-        {shop && (
-          <div style={{ background: "#12141C", border: "1px solid #23262F", borderRadius: 12, padding: "10px 14px", marginBottom: 20, fontSize: 13, color: "#C9E8E2" }}>
+        {shop && !checkingSession && (
+          <div style={boxStyle}>
             Connecting <strong style={{ color: "#00BFA6" }}>{shop}</strong>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <input placeholder="Your name" value={fullName} onChange={(e) => setFullName(e.target.value)}
-            style={{ background: "#12141C", border: "1px solid #23262F", borderRadius: 10, padding: "11px 14px", color: "#fff", fontSize: 14 }} />
-          <input placeholder="Company name" value={orgName} onChange={(e) => setOrgName(e.target.value)}
-            style={{ background: "#12141C", border: "1px solid #23262F", borderRadius: 10, padding: "11px 14px", color: "#fff", fontSize: 14 }} />
-          <input type="email" placeholder="Email address" value={email} onChange={(e) => setEmail(e.target.value)}
-            style={{ background: "#12141C", border: "1px solid #23262F", borderRadius: 10, padding: "11px 14px", color: "#fff", fontSize: 14 }} />
-          <input type="password" placeholder="Password (min 8 characters)" value={password} onChange={(e) => setPassword(e.target.value)}
-            style={{ background: "#12141C", border: "1px solid #23262F", borderRadius: 10, padding: "11px 14px", color: "#fff", fontSize: 14 }} />
+        {checkingSession ? (
+          <p style={{ color: "#8A8F9A", fontSize: 14, textAlign: "center" }}>Checking your account…</p>
 
-          {error && <p style={{ color: "#FF5F56", fontSize: 13 }}>{error}</p>}
+        ) : needsOrgName ? (
+          // Returned here after clicking the email confirmation link — a
+          // session already exists, just need the company name to finish.
+          <form onSubmit={(e) => { e.preventDefault(); supabase.auth.getSession().then(({ data: { session } }) => { if (session?.access_token) finishClaim(session.access_token); }); }}
+            style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <p style={{ color: "#8A8F9A", fontSize: 13, marginBottom: -4 }}>Email confirmed. One more step:</p>
+            <input placeholder="Company name" value={orgName} onChange={(e) => setOrgName(e.target.value)} style={inputStyle} autoFocus />
+            {error && <p style={{ color: "#FF5F56", fontSize: 13 }}>{error}</p>}
+            <button type="submit" disabled={loading} style={{ ...buttonStyle, cursor: loading ? "default" : "pointer", opacity: loading ? 0.6 : 1 }}>
+              {loading ? "Connecting..." : "Finish connecting store"}
+            </button>
+          </form>
 
-          <button type="submit" disabled={loading}
-            style={{ background: "#00BFA6", color: "#04211E", fontWeight: 600, border: "none", borderRadius: 10, padding: "12px 0", fontSize: 14, cursor: loading ? "default" : "pointer", opacity: loading ? 0.6 : 1, marginTop: 8 }}>
-            {loading ? "Connecting..." : "Create account & connect store"}
-          </button>
-        </form>
+        ) : (
+          <>
+            <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <input placeholder="Your name" value={fullName} onChange={(e) => setFullName(e.target.value)} style={inputStyle} />
+              <input placeholder="Company name" value={orgName} onChange={(e) => setOrgName(e.target.value)} style={inputStyle} />
+              <input type="email" placeholder="Email address" value={email} onChange={(e) => setEmail(e.target.value)} style={inputStyle} />
+              <input type="password" placeholder="Password (min 8 characters)" value={password} onChange={(e) => setPassword(e.target.value)} style={inputStyle} />
 
-        <p style={{ color: "#5A606B", fontSize: 12, textAlign: "center", marginTop: 20 }}>
-          Already have a PivotOps account? Sign in first, then reinstall from Shopify to link it.
-        </p>
+              {error && <p style={{ color: "#FF5F56", fontSize: 13 }}>{error}</p>}
+
+              <button type="submit" disabled={loading} style={{ ...buttonStyle, cursor: loading ? "default" : "pointer", opacity: loading ? 0.6 : 1 }}>
+                {loading ? "Connecting..." : "Create account & connect store"}
+              </button>
+            </form>
+
+            <p style={{ color: "#5A606B", fontSize: 12, textAlign: "center", marginTop: 20 }}>
+              Already have a PivotOps account? Sign in first, then reinstall from Shopify to link it.
+            </p>
+          </>
+        )}
       </div>
     </div>
   );
