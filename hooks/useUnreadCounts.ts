@@ -35,7 +35,11 @@ export function useUnreadCounts(userId: string | null) {
     fetch();
 
     // Refresh on new messages
-    const ch = supabase.channel("unread-watch")
+    // Unique per mount - this hook now runs in more than one place at once
+    // (the sidebar badge in layout.tsx and the Teams page's per-channel
+    // counts), and Supabase Realtime throws if two channels share a name
+    // and both try to attach postgres_changes listeners after subscribing.
+    const ch = supabase.channel(`unread-watch-${userId}-${Math.random().toString(36).slice(2, 8)}`)
       .on("postgres_changes", {
         event:  "INSERT",
         schema: "public",

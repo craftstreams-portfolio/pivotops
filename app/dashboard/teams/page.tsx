@@ -1104,6 +1104,7 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
         setDmChannels(dms);
         if (regular.length > 0 && !activeChannel) {
           setActiveChannel(regular[0] as Channel);
+          markRead(regular[0].id);
         }
         setLoading(false);
       });
@@ -1516,7 +1517,7 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
                 const dmP   = getDMOtherProfile(ch);
                 const dmSt  = dmP ? (presenceMap[dmP.id] ?? "OFFLINE") : "OFFLINE";
                 return (
-                  <button key={ch.id} onClick={() => setActiveChannel(ch as Channel)}
+                  <button key={ch.id} onClick={() => { setActiveChannel(ch as Channel); markRead(ch.id); }}
                     className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg mx-0.5
                                 transition text-left
                       ${activeChannel?.id === ch.id
