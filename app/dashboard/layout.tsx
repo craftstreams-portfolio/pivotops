@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
+import { useUnreadCounts } from "@/hooks/useUnreadCounts";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -126,6 +127,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [userInitial, setUserInitial] = useState("P");
   const [userId,      setUserId]      = useState("");
   const [notifCount,  setNotifCount]  = useState(0);
+
+  // Total unread messages across every channel, shown as a badge on the
+  // Pivot Teams nav group so an unread message is visible before opening
+  // Team Chat at all - reuses the same hook the Teams page itself uses, so
+  // the two numbers can never disagree.
+  const { counts: teamsUnread } = useUnreadCounts(userId || null);
+  const totalTeamsUnread = Object.values(teamsUnread).reduce((sum, n) => sum + n, 0);
   const [openGroups,  setOpenGroups]  = useState<Record<string,boolean>>({
     "Workforce Operations": true,
     "Pivot Teams":          true,
@@ -345,7 +353,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   <button onClick={() => toggleGroup(item.label)}
                     ref={(el) => { tourTargets.current[`nav-${item.label}`] = el; }}
                     className={`flex w-full items-center justify-between rounded-xl border px-4 py-2.5 transition-colors ${hasActiveChild ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400" : "border-transparent text-zinc-300 hover:bg-zinc-800"}`}>
-                    <div className="flex items-center gap-3"><Icon size={16} /><span className="text-sm font-medium">{item.label}</span></div>
+                    <div className="flex items-center gap-3">
+                      <Icon size={16} />
+                      <span className="text-sm font-medium">{item.label}</span>
+                      {item.label === "Pivot Teams" && totalTeamsUnread > 0 && (
+                        <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500
+                                         flex items-center justify-center text-[10px] font-bold text-white">
+                          {totalTeamsUnread > 99 ? "99+" : totalTeamsUnread}
+                        </span>
+                      )}
+                    </div>
                     {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                   </button>
                   {expanded && (
@@ -357,7 +374,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                           <Link key={child.href} href={child.href} onClick={() => setMobileOpen(false)}
                             className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${active ? "bg-emerald-500/10 text-emerald-400" : "text-zinc-400 hover:bg-zinc-800 hover:text-white"}`}>
                             {ChildIcon && <ChildIcon size={14} />}
-                            <span>{child.label}</span>
+                            <span className="flex-1">{child.label}</span>
+                            {child.href === "/dashboard/teams" && totalTeamsUnread > 0 && (
+                              <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500
+                                               flex items-center justify-center text-[10px] font-bold text-white">
+                                {totalTeamsUnread > 99 ? "99+" : totalTeamsUnread}
+                              </span>
+                            )}
                             {isLocked(child.href) && <Lock size={11} className="ml-auto text-zinc-600" />}
                           </Link>
                         );

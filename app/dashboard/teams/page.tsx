@@ -20,6 +20,7 @@ import {
 import { useMentionInput }           from "@/lib/mentions/mention.hooks";
 import { MentionInput, MentionText } from "@/lib/mentions/MentionInput";
 import { NotificationBell }          from "@/lib/mentions/NotificationBell";
+import { IconTooltip }               from "@/lib/ui/IconTooltip";
 import XavierAvatar                  from "@/app/dashboard/components/team/XavierAvatar";
 import ReportAIContent               from "@/app/dashboard/components/ai/ReportAIContent";
 import {
@@ -1613,64 +1614,71 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
                 </div>
               )}
 
-              <div className="flex items-center gap-1.5 flex-shrink-0">
-                <button
-                  onClick={() => setRightPanel(rightPanel === "queue" ? null : "queue")}
-                  className={`relative w-8 h-8 rounded-lg flex items-center justify-center transition
-                    ${rightPanel === "queue"
-                      ? "bg-[#00BFA6]/20"
-                      : "hover:bg-zinc-800"}`}>
-                  {/* Queue: teal tray with a white envelope dropping in */}
-                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    {/* tray / inbox (teal) */}
-                    <path d="M3 13l2.5 0a2 2 0 0 1 1.9 1.4l.2 .6a2 2 0 0 0 1.9 1.4h4.8a2 2 0 0 0 1.9-1.4l.2-.6a2 2 0 0 1 1.9-1.4H21"
-                      stroke="#00BFA6" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                    <path d="M4.5 13.5 5.8 19a2 2 0 0 0 1.95 1.5h8.5A2 2 0 0 0 18.2 19l1.3-5.5"
-                      stroke="#00BFA6" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                    {/* envelope (white) */}
-                    <rect x="8" y="3.2" width="8" height="6" rx="1" fill="#ffffff" />
-                    <path d="M8.3 4 12 6.6 15.7 4" stroke="#04211E" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-                    {/* small down-arrow, envelope into tray */}
-                    <path d="M12 9.4v2.2M12 11.6l-1.1-1.1M12 11.6l1.1-1.1"
-                      stroke="#ffffff" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                  {queueCount > 0 && (
-                    <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500
-                                     flex items-center justify-center text-[9px] font-bold text-white">
-                      {queueCount > 9 ? "9+" : queueCount}
-                    </span>
-                  )}
-                </button>
-                <button
-                  onClick={() => setRightPanel(rightPanel === "members" ? null : "members")}
-                  className={`w-8 h-8 rounded-lg flex items-center justify-center transition
-                    ${rightPanel === "members"
-                      ? "bg-indigo-500/20 text-indigo-400"
-                      : "hover:bg-zinc-800 text-zinc-500"}`}>
-                  <Users size={15} />
-                </button>
-                <button
-                  onClick={() => setRightPanel(rightPanel === "pinned" ? null : "pinned")}
-                  title="Pinned messages"
-                  className={`relative w-8 h-8 rounded-lg flex items-center justify-center transition
-                    ${rightPanel === "pinned"
-                      ? "bg-amber-500/20 text-amber-400"
-                      : "hover:bg-zinc-800 text-zinc-500"}`}>
-                  <Pin size={14} />
-                  {pinnedMsgs.length > 0 && (
-                    <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-500
-                                     flex items-center justify-center text-[9px] font-bold text-black">
-                      {pinnedMsgs.length > 9 ? "9+" : pinnedMsgs.length}
-                    </span>
-                  )}
-                </button>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <IconTooltip label="Queue">
+                  <button
+                    onClick={() => setRightPanel(rightPanel === "queue" ? null : "queue")}
+                    className={`relative w-9 h-9 rounded-lg flex items-center justify-center transition
+                      ${rightPanel === "queue"
+                        ? "bg-[#00BFA6]/20"
+                        : "hover:bg-zinc-800"}`}>
+                    {/* Queue: teal tray with a white envelope dropping in */}
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      {/* tray / inbox (teal) */}
+                      <path d="M3 13l2.5 0a2 2 0 0 1 1.9 1.4l.2 .6a2 2 0 0 0 1.9 1.4h4.8a2 2 0 0 0 1.9-1.4l.2-.6a2 2 0 0 1 1.9-1.4H21"
+                        stroke="#00BFA6" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M4.5 13.5 5.8 19a2 2 0 0 0 1.95 1.5h8.5A2 2 0 0 0 18.2 19l1.3-5.5"
+                        stroke="#00BFA6" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                      {/* envelope (white) */}
+                      <rect x="8" y="3.2" width="8" height="6" rx="1" fill="#ffffff" />
+                      <path d="M8.3 4 12 6.6 15.7 4" stroke="#04211E" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                      {/* small down-arrow, envelope into tray */}
+                      <path d="M12 9.4v2.2M12 11.6l-1.1-1.1M12 11.6l1.1-1.1"
+                        stroke="#ffffff" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    {queueCount > 0 && (
+                      <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500
+                                       flex items-center justify-center text-[9px] font-bold text-white">
+                        {queueCount > 9 ? "9+" : queueCount}
+                      </span>
+                    )}
+                  </button>
+                </IconTooltip>
+                <IconTooltip label="Members">
+                  <button
+                    onClick={() => setRightPanel(rightPanel === "members" ? null : "members")}
+                    className={`w-9 h-9 rounded-lg flex items-center justify-center transition
+                      ${rightPanel === "members"
+                        ? "bg-indigo-500/20 text-indigo-400"
+                        : "hover:bg-zinc-800 text-zinc-500"}`}>
+                    <Users size={19} />
+                  </button>
+                </IconTooltip>
+                <IconTooltip label="Pinned messages">
+                  <button
+                    onClick={() => setRightPanel(rightPanel === "pinned" ? null : "pinned")}
+                    className={`relative w-9 h-9 rounded-lg flex items-center justify-center transition
+                      ${rightPanel === "pinned"
+                        ? "bg-amber-500/20 text-amber-400"
+                        : "hover:bg-zinc-800 text-zinc-500"}`}>
+                    <Pin size={18} />
+                    {pinnedMsgs.length > 0 && (
+                      <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-500
+                                       flex items-center justify-center text-[9px] font-bold text-black">
+                        {pinnedMsgs.length > 9 ? "9+" : pinnedMsgs.length}
+                      </span>
+                    )}
+                  </button>
+                </IconTooltip>
 
                 <div className="relative">
-                  <button
-                    onClick={() => setShowChanMenu((v) => !v)}
-                    className="w-8 h-8 rounded-lg hover:bg-zinc-800 flex items-center justify-center transition">
-                    <MoreHorizontal size={14} className="text-zinc-500" />
-                  </button>
+                  <IconTooltip label="More options">
+                    <button
+                      onClick={() => setShowChanMenu((v) => !v)}
+                      className="w-9 h-9 rounded-lg hover:bg-zinc-800 flex items-center justify-center transition">
+                      <MoreHorizontal size={17} className="text-zinc-500" />
+                    </button>
+                  </IconTooltip>
                   {showChanMenu && (
                     <>
                       <div className="fixed inset-0 z-30" onClick={() => setShowChanMenu(false)} />
