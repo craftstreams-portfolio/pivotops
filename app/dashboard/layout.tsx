@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
-import { useUnreadCounts } from "@/hooks/useUnreadCounts";
+import { UnreadCountsProvider, useUnreadCountsContext } from "@/lib/chat/UnreadCountsContext";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -116,6 +116,23 @@ const navItems: NavItem[] = [
   { label:"Settings", href:"/dashboard/settings", icon:Settings },
 ];
 
+/**
+ * Reads from UnreadCountsContext. Must only ever be rendered as a JSX
+ * descendant of <UnreadCountsProvider> - defined in this file for
+ * convenience, but React context is about tree position, not file scope.
+ */
+function TeamsUnreadBadge() {
+  const { counts } = useUnreadCountsContext();
+  const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
+  if (total === 0) return null;
+  return (
+    <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500
+                     flex items-center justify-center text-[10px] font-bold text-white">
+      {total > 99 ? "99+" : total}
+    </span>
+  );
+}
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router   = useRouter();
@@ -127,13 +144,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [userInitial, setUserInitial] = useState("P");
   const [userId,      setUserId]      = useState("");
   const [notifCount,  setNotifCount]  = useState(0);
-
-  // Total unread messages across every channel, shown as a badge on the
-  // Pivot Teams nav group so an unread message is visible before opening
-  // Team Chat at all - reuses the same hook the Teams page itself uses, so
-  // the two numbers can never disagree.
-  const { counts: teamsUnread } = useUnreadCounts(userId || null);
-  const totalTeamsUnread = Object.values(teamsUnread).reduce((sum, n) => sum + n, 0);
   const [openGroups,  setOpenGroups]  = useState<Record<string,boolean>>({
     "Workforce Operations": true,
     "Pivot Teams":          true,
@@ -283,6 +293,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   return (
+    <UnreadCountsProvider userId={userId || null}>
     <div className="flex min-h-screen overflow-hidden bg-zinc-950 text-white">
 
       {mobileOpen && (
@@ -356,12 +367,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     <div className="flex items-center gap-3">
                       <Icon size={16} />
                       <span className="text-sm font-medium">{item.label}</span>
-                      {item.label === "Pivot Teams" && totalTeamsUnread > 0 && (
-                        <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500
-                                         flex items-center justify-center text-[10px] font-bold text-white">
-                          {totalTeamsUnread > 99 ? "99+" : totalTeamsUnread}
-                        </span>
-                      )}
+                      {item.label === "Pivot Teams" && <TeamsUnreadBadge />}
                     </div>
                     {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                   </button>
@@ -375,12 +381,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                             className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${active ? "bg-emerald-500/10 text-emerald-400" : "text-zinc-400 hover:bg-zinc-800 hover:text-white"}`}>
                             {ChildIcon && <ChildIcon size={14} />}
                             <span className="flex-1">{child.label}</span>
-                            {child.href === "/dashboard/teams" && totalTeamsUnread > 0 && (
-                              <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500
-                                               flex items-center justify-center text-[10px] font-bold text-white">
-                                {totalTeamsUnread > 99 ? "99+" : totalTeamsUnread}
-                              </span>
-                            )}
+                            {child.href === "/dashboard/teams" && <TeamsUnreadBadge />}
                             {isLocked(child.href) && <Lock size={11} className="ml-auto text-zinc-600" />}
                           </Link>
                         );
@@ -496,5 +497,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       />
       <DashboardTour targets={tourTargets.current} />
     </div>
+    </UnreadCountsProvider>
   );
 }

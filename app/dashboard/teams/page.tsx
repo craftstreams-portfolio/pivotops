@@ -1,6 +1,6 @@
 "use client";
 import { safeGetUserMedia } from "@/lib/media/safeGetUserMedia";
-import { useUnreadCounts } from "@/hooks/useUnreadCounts";
+import { useUnreadCountsContext } from "@/lib/chat/UnreadCountsContext";
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { supabase }          from "@/lib/supabase";
@@ -1003,7 +1003,10 @@ function QueuePanel({
 export default function ChatPage() {  const { tenantId, loading: tenantLoading } = useTenant();
 
   const [currentUser,    setCurrentUser]    = useState<Profile | null>(null);
-  const { counts: unreadCounts, markRead } = useUnreadCounts(currentUser?.id ?? null);
+  // Shared with the sidebar badge via context - same subscription, same
+  // state, so the two can never disagree the way two independent
+  // useUnreadCounts() instances did.
+  const { counts: unreadCounts, markRead } = useUnreadCountsContext();
   const [channels,       setChannels]       = useState<Channel[]>([]);
   const [dmChannels,     setDmChannels]     = useState<any[]>([]);
   const [activeChannel,  setActiveChannel]  = useState<Channel | null>(null);
