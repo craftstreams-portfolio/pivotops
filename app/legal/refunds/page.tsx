@@ -1,9 +1,11 @@
 import { Metadata } from "next";
+import { buildMetadata } from "@/lib/seo/config";
 
-export const metadata: Metadata = {
-  title: "Refund Policy — PivotOps",
+export const metadata: Metadata = buildMetadata({
+  title: "Refund Policy",
   description: "Refund and cancellation policy for PivotOps by Craftstreams.",
-};
+  path: "/legal/refunds",
+});
 
 export default function RefundPolicyPage() {
   const updated = "12 July 2026";

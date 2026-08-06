@@ -1,9 +1,11 @@
 import { Metadata } from "next";
+import { buildMetadata } from "@/lib/seo/config";
 
-export const metadata: Metadata = {
-  title: "Privacy Policy — PivotOps",
+export const metadata: Metadata = buildMetadata({
+  title: "Privacy Policy",
   description: "Privacy Policy for PivotOps workforce operations platform by Craftstreams.",
-};
+  path: "/legal/privacy",
+});
 
 export default function PrivacyPolicyPage() {
   const updated = "22 June 2026";

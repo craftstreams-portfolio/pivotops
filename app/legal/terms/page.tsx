@@ -1,9 +1,11 @@
 import { Metadata } from "next";
+import { buildMetadata } from "@/lib/seo/config";
 
-export const metadata: Metadata = {
-  title: "Terms of Use — PivotOps",
+export const metadata: Metadata = buildMetadata({
+  title: "Terms of Use",
   description: "Enterprise Terms of Use for PivotOps workforce operations platform.",
-};
+  path: "/legal/terms",
+});
 
 export default function TermsOfUsePage() {
   const updated = "22 June 2026";

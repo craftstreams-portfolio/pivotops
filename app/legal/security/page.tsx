@@ -1,9 +1,11 @@
 import { Metadata } from "next";
+import { buildMetadata } from "@/lib/seo/config";
 
-export const metadata: Metadata = {
-  title: "Security — PivotOps",
+export const metadata: Metadata = buildMetadata({
+  title: "Security",
   description: "How PivotOps protects your data: multi-tenant isolation, encryption, access control, and application security.",
-};
+  path: "/legal/security",
+});
 
 export default function SecurityPage() {
   const updated = "7 July 2026";

@@ -1,7 +1,11 @@
-export const metadata = {
+import type { Metadata } from "next";
+import { buildMetadata } from "@/lib/seo/config";
+
+export const metadata = buildMetadata({
   title: "Privacy Policy — PivotOps for SHOPLINE",
   description: "How PivotOps collects, uses, and protects data when integrated with a SHOPLINE store.",
-};
+  path: "/legal/shopline-privacy",
+});
 
 export default function ShoplinePrivacyPage() {
   return (

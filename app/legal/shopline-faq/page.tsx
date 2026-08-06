@@ -1,7 +1,11 @@
-export const metadata = {
+import type { Metadata } from "next";
+import { buildMetadata } from "@/lib/seo/config";
+
+export const metadata = buildMetadata({
   title: "FAQ — PivotOps for SHOPLINE",
   description: "Frequently asked questions about installing and using PivotOps with your SHOPLINE store.",
-};
+  path: "/legal/shopline-faq",
+});
 
 const faqs = [
   {
