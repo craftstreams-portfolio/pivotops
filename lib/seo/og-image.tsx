@@ -12,7 +12,7 @@ import { ImageResponse } from "next/og";
 
 export const OG_SIZE = { width: 1200, height: 630 };
 
-export function renderOgImage(title: string, subtitle?: string) {
+export function renderOgImage(title: string, subtitle?: string, detail?: string) {
   return new ImageResponse(
     (
       <div
@@ -51,6 +51,11 @@ export function renderOgImage(title: string, subtitle?: string) {
           {subtitle && (
             <div style={{ fontSize: 26, color: "#00BFA6", fontWeight: 500 }}>
               {subtitle}
+            </div>
+          )}
+          {detail && (
+            <div style={{ fontSize: 22, color: "#C9E8E2", fontWeight: 400 }}>
+              {detail}
             </div>
           )}
         </div>

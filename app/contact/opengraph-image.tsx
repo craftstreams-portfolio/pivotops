@@ -6,5 +6,5 @@ export const size = OG_SIZE;
 export const contentType = "image/png";
 
 export default async function Image() {
-  return renderOgImage("Contact Us", "Get in touch with the PivotOps team");
+  return renderOgImage("Contact Us", "Get in touch with the PivotOps team", "inquiries@pivotops.app");
 }
