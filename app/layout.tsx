@@ -20,6 +20,9 @@ export const metadata: Metadata = {
   formatDetection: { telephone: false },
   generator: "Next.js",
   category: "Business Software",
+  verification: {
+    google: "UQdyFywpxKi7N17q8oUlSvAoMCm8vGtmf8J3TyTON7I",
+  },
 };
 
 export const viewport = {
