@@ -1,0 +1,423 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
+import {
+  User, Mail, Lock, Eye, EyeOff,
+  CheckCircle2, AlertCircle, Brain, Loader2,
+} from "lucide-react";
+
+
+
+const inputCls = "w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white placeholder-zinc-600 outline-none focus:border-zinc-600 transition";
+
+interface Toast { type: "success" | "error" | "info"; message: string; }
+
+async function withRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 400): Promise<T> {
+  for (let i = 0; i < retries; i++) {
+    try { return await fn(); }
+    catch (err) {
+      if (i === retries - 1) throw err;
+      await new Promise(r => setTimeout(r, delayMs * Math.pow(2, i)));
+    }
+  }
+  throw new Error("Max retries exceeded");
+}
+
+function RegisterForm({ candidateId, tenantId }: { candidateId: string; tenantId: string }) {
+  const [step,           setStep]           = useState<1 | 2>(1);
+  const [loading,        setLoading]        = useState(false);
+  const [toast,          setToast]          = useState<Toast | null>(null);
+  const [showPass,       setShowPass]       = useState(false);
+  const [showConf,       setShowConf]       = useState(false);
+  const [emailVerifying, setEmailVerifying] = useState(false);
+  const [agreed,         setAgreed]         = useState(false);
+
+  const [fullName, setFullName] = useState("");
+  const [email,    setEmail]    = useState("");
+  const [password, setPassword] = useState("");
+  const [confirm,  setConfirm]  = useState("");
+
+  const [ssn4,    setSsn4]    = useState("");
+  const [city,    setCity]    = useState("");
+  const [state,   setState]   = useState("");
+  const [country, setCountry] = useState("United States");
+
+  const showToast = (type: Toast["type"], message: string, duration = 6000) => {
+    setToast({ type, message });
+    setTimeout(() => setToast(null), duration);
+  };
+
+  useEffect(() => {
+    if (!candidateId) return;
+    supabase.from("candidates")
+      .select("status")
+      .eq("id", candidateId)
+      .eq("tenant_id", tenantId)
+      .single()
+      .then(({ data }) => {
+        if (data?.status === "registered") {
+          showToast("info", "You already have an account. Redirecting to login...", 3000);
+          setTimeout(() => {
+            window.location.href = `/candidate/login?candidateId=${candidateId}&tenantId=${tenantId}`;
+          }, 2000);
+        }
+      });
+  }, [candidateId, tenantId]);
+
+  const step1Valid =
+    fullName.trim().length >= 2 &&
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) &&
+    password.length >= 8 &&
+    password === confirm &&
+    agreed;
+
+  const handleCreate = async () => {
+    if (!step1Valid) { showToast("error", "Please complete all fields correctly."); return; }
+    setLoading(true);
+
+    try {
+      const { data: authData, error: authErr } = await supabase.auth.signUp({
+        email: email.trim().toLowerCase(),
+        password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/candidate/verify?candidateId=${candidateId}&tenantId=${tenantId}`,
+          data: {
+            full_name:    fullName.trim(),
+            role:         "candidate",
+            candidate_id: candidateId,
+            tenant_id:    tenantId,
+          },
+        },
+      });
+
+      if (authErr) {
+        const msg = authErr.message.toLowerCase();
+        if (msg.includes("already registered") || msg.includes("already exists") || msg.includes("user already")) {
+          showToast("info", "Account already exists. Redirecting to login...", 3000);
+          setTimeout(() => {
+            window.location.href = `/candidate/login?candidateId=${candidateId}&tenantId=${tenantId}`;
+          }, 2000);
+          return;
+        }
+        throw new Error(authErr.message);
+      }
+
+      const userId = authData.user?.id;
+      if (!userId) throw new Error("Account creation failed — no user ID returned.");
+
+      // Create the candidate account + link the candidate row via service-role.
+      // The registering candidate has no active session yet, so a client insert
+      // can't satisfy the ca_self_insert RLS check; do it server-side.
+      const regRes = await fetch("/api/candidate/register", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          authUserId:  userId,
+          candidateId: candidateId || null,
+          tenantId,
+          fullName:    fullName.trim(),
+          email:       email.trim().toLowerCase(),
+          ssn4:        ssn4.trim()    || null,
+          city:        city.trim()    || null,
+          state:       state.trim()   || null,
+          country:     country.trim() || "United States",
+        }),
+      });
+      if (!regRes.ok) {
+        const regErr = await regRes.json().catch(() => ({}));
+        throw new Error(regErr?.error || "Account setup failed.");
+      }
+      return;
+
+      // Fallback — should not reach here
+      showToast("success", "Account created! Check your email to verify.", 5000);
+
+    } catch (err) {
+      console.error("Registration error:", err);
+      showToast("error", err instanceof Error ? err.message : "Registration failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!candidateId) return (
+    <div className="min-h-screen bg-[#080810] flex items-center justify-center p-4">
+      <div className="text-center space-y-3 max-w-sm">
+        <AlertCircle size={36} className="text-red-400 mx-auto" />
+        <p className="text-white font-semibold">Invalid Registration Link</p>
+        <p className="text-zinc-400 text-sm">This link is missing a candidate ID. Please use the invite link sent by the recruitment team.</p>
+      </div>
+    </div>
+  );
+
+  if (emailVerifying) return (
+    <div className="min-h-screen bg-[#080810] flex items-center justify-center p-4">
+      <div className="text-center space-y-5 max-w-sm w-full">
+        <div className="w-16 h-16 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center mx-auto">
+          <span className="text-3xl">📧</span>
+        </div>
+        <div>
+          <h2 className="text-xl font-bold text-white">Check your email</h2>
+          <p className="text-zinc-400 text-sm mt-2 leading-relaxed">
+            We sent a verification link to <span className="text-white font-medium">{email}</span>.
+            Click the link to activate your account and access your portal.
+          </p>
+        </div>
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4 text-left space-y-2">
+          <p className="text-xs text-zinc-500 font-medium">What to do next:</p>
+          <div className="flex items-center gap-2 text-xs text-zinc-400">
+            <span className="w-5 h-5 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-[10px] font-bold flex-shrink-0">1</span>
+            Open the email from PivotOps
+          </div>
+          <div className="flex items-center gap-2 text-xs text-zinc-400">
+            <span className="w-5 h-5 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-[10px] font-bold flex-shrink-0">2</span>
+            Click the verification link
+          </div>
+          <div className="flex items-center gap-2 text-xs text-zinc-400">
+            <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-[10px] font-bold flex-shrink-0">3</span>
+            You will be taken straight to your portal
+          </div>
+        </div>
+        <p className="text-xs text-zinc-600">
+          {"Didn't receive it? "}
+          <button onClick={() => setEmailVerifying(false)} className="text-indigo-400 hover:text-indigo-300 transition">
+            Go back and try again
+          </button>
+        </p>
+      </div>
+    </div>
+  );
+
+  const toastColors = {
+    success: "bg-emerald-500/15 border-emerald-500/30 text-emerald-300",
+    error:   "bg-red-500/15 border-red-500/30 text-red-300",
+    info:    "bg-blue-500/15 border-blue-500/30 text-blue-300",
+  };
+
+  return (
+    <div className="min-h-screen bg-[#080810] py-10 px-4">
+      <div className="w-full max-w-md mx-auto space-y-6">
+
+        <div className="text-center space-y-2">
+          <div className="flex items-center justify-center gap-2 text-xs text-indigo-400">
+            <Brain size={14} />
+            <span className="font-semibold uppercase tracking-wider">PivotOps · Candidate Portal</span>
+          </div>
+          <h1 className="text-2xl font-bold text-white">Create Your Account</h1>
+          <p className="text-zinc-400 text-sm">Set up your account to submit your compliance credentials.</p>
+        </div>
+
+        {toast && (
+          <div className={`flex items-start gap-3 px-4 py-3 rounded-xl border text-sm ${toastColors[toast.type]}`}>
+            {toast.type === "success"
+              ? <CheckCircle2 size={15} className="flex-shrink-0 mt-0.5" />
+              : <AlertCircle  size={15} className="flex-shrink-0 mt-0.5" />}
+            <span>{toast.message}</span>
+          </div>
+        )}
+
+        <div className="flex gap-2">
+          {[1, 2].map(s => (
+            <div key={s} className={`flex-1 h-1 rounded-full transition-colors ${step >= s ? "bg-indigo-500" : "bg-zinc-800"}`} />
+          ))}
+        </div>
+
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6 space-y-4">
+
+          {step === 1 && (
+            <>
+              <h2 className="text-sm font-semibold text-white">Account Details</h2>
+
+              <div>
+                <label className="flex items-center gap-2 text-xs text-zinc-500 mb-1.5">
+                  <User size={11} /> Full Name *
+                </label>
+                <input value={fullName} onChange={e => setFullName(e.target.value)}
+                  placeholder="Jane Smith" className={inputCls} />
+              </div>
+
+              <div>
+                <label className="flex items-center gap-2 text-xs text-zinc-500 mb-1.5">
+                  <Mail size={11} /> Email Address *
+                </label>
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                  placeholder="jane@email.com" className={inputCls} />
+              </div>
+
+              <div>
+                <label className="flex items-center gap-2 text-xs text-zinc-500 mb-1.5">
+                  <Lock size={11} /> Password * (min 8 characters)
+                </label>
+                <div className="relative">
+                  <input type={showPass ? "text" : "password"} value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    placeholder="Create a strong password" className={inputCls + " pr-10"} />
+                  <button type="button" onClick={() => setShowPass(o => !o)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-600 hover:text-zinc-400">
+                    {showPass ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                </div>
+                {password.length > 0 && (
+                  <div className="mt-1.5 h-1 bg-zinc-800 rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full transition-all ${
+                      password.length >= 12 ? "bg-emerald-500 w-full" :
+                      password.length >= 8  ? "bg-amber-500 w-2/3"   : "bg-red-500 w-1/3"}`} />
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="flex items-center gap-2 text-xs text-zinc-500 mb-1.5">
+                  <Lock size={11} /> Confirm Password *
+                </label>
+                <div className="relative">
+                  <input type={showConf ? "text" : "password"} value={confirm}
+                    onChange={e => setConfirm(e.target.value)}
+                    placeholder="Repeat your password" className={inputCls + " pr-10"} />
+                  <button type="button" onClick={() => setShowConf(o => !o)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-600 hover:text-zinc-400">
+                    {showConf ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                </div>
+                {confirm.length > 0 && password !== confirm && (
+                  <p className="text-xs text-red-400 mt-1">Passwords do not match</p>
+                )}
+              </div>
+
+              <label className={`flex items-start gap-3 px-4 py-3.5 rounded-xl border cursor-pointer transition select-none ${
+                agreed ? "border-emerald-500/40 bg-emerald-500/5" : "border-zinc-700 bg-zinc-800/40 hover:border-zinc-600"
+              }`}>
+                <input
+                  type="checkbox"
+                  checked={agreed}
+                  onChange={e => setAgreed(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 accent-emerald-500 cursor-pointer flex-shrink-0"
+                />
+                <span className="text-xs text-zinc-400 leading-relaxed">
+                  I have read and agree to the PivotOps{" "}
+                  <a href="/legal/terms" target="_blank" rel="noopener noreferrer"
+                    onClick={e => e.stopPropagation()}
+                    className="text-indigo-400 hover:text-indigo-300 underline underline-offset-2">
+                    Terms of Use
+                  </a>
+                  {" "}and{" "}
+                  <a href="/legal/privacy" target="_blank" rel="noopener noreferrer"
+                    onClick={e => e.stopPropagation()}
+                    className="text-indigo-400 hover:text-indigo-300 underline underline-offset-2">
+                    Privacy Policy
+                  </a>
+                  . I understand how my data will be collected and used.
+                </span>
+              </label>
+
+              <label className={`flex items-start gap-3 px-4 py-3.5 rounded-xl border cursor-pointer transition select-none ${agreed ? "border-emerald-500/40 bg-emerald-500/5" : "border-zinc-700 bg-zinc-800/40 hover:border-zinc-600"}`}>
+                <input
+                  type="checkbox"
+                  checked={agreed}
+                  onChange={e => setAgreed(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 accent-emerald-500 cursor-pointer flex-shrink-0"
+                />
+                <span className="text-xs text-zinc-400 leading-relaxed">
+                  I have read and agree to the PivotOps{" "}
+                  <a href="/legal/terms" target="_blank" rel="noopener noreferrer"
+                    onClick={e => e.stopPropagation()}
+                    className="text-indigo-400 hover:text-indigo-300 underline underline-offset-2">
+                    Terms of Use
+                  </a>
+                  {" "}and{" "}
+                  <a href="/legal/privacy" target="_blank" rel="noopener noreferrer"
+                    onClick={e => e.stopPropagation()}
+                    className="text-indigo-400 hover:text-indigo-300 underline underline-offset-2">
+                    Privacy Policy
+                  </a>
+                  . I understand how my data will be collected and used.
+                </span>
+              </label>
+
+              <button onClick={() => setStep(2)} disabled={!step1Valid}
+                className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold disabled:opacity-40 transition">
+                Continue
+              </button>
+            </>
+          )}
+
+          {step === 2 && (
+            <>
+              <h2 className="text-sm font-semibold text-white">Profile Information</h2>
+              <p className="text-xs text-zinc-500">Optional — helps pre-fill your credential form.</p>
+
+              <div>
+                <label className="text-xs text-zinc-500 mb-1.5 block">Last 4 digits of SSN</label>
+                <input value={ssn4}
+                  onChange={e => setSsn4(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                  placeholder="e.g. 4521" maxLength={4} className={inputCls} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-zinc-500 mb-1.5 block">City</label>
+                  <input value={city} onChange={e => setCity(e.target.value)}
+                    placeholder="New York" className={inputCls} />
+                </div>
+                <div>
+                  <label className="text-xs text-zinc-500 mb-1.5 block">State</label>
+                  <input value={state} onChange={e => setState(e.target.value)}
+                    placeholder="NY" className={inputCls} />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs text-zinc-500 mb-1.5 block">Country</label>
+                <input value={country} onChange={e => setCountry(e.target.value)}
+                  placeholder="United States" className={inputCls} />
+              </div>
+
+              <div className="flex gap-3">
+                <button onClick={() => setStep(1)}
+                  className="flex-1 py-3 rounded-xl border border-zinc-700 text-sm text-zinc-400 hover:text-white transition">
+                  Back
+                </button>
+                <button onClick={handleCreate} disabled={loading}
+                  className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold disabled:opacity-50 transition">
+                  {loading ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
+                  {loading ? "Creating..." : "Create Account"}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+
+        <p className="text-center text-xs text-zinc-700">
+          {"Already have an account? "}
+          <a href={`/candidate/login?candidateId=${candidateId}&tenantId=${tenantId}`}
+            className="text-indigo-400 hover:text-indigo-300 transition">Sign in</a>
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function ParamsReader() {
+  const [candidateId, setCandidateId] = useState("");
+  const [tenantId,    setTenantId]    = useState("default");
+  const [ready,       setReady]       = useState(false);
+
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    setCandidateId(p.get("candidateId") ?? "");
+    setTenantId(p.get("tenantId") ?? "default");
+    setReady(true);
+  }, []);
+
+  if (!ready) return (
+    <div className="min-h-screen bg-[#080810] flex items-center justify-center">
+      <Loader2 size={24} className="animate-spin text-zinc-500" />
+    </div>
+  );
+  return <RegisterForm candidateId={candidateId} tenantId={tenantId} />;
+}
+
+export default function Page() {
+  return <ParamsReader />;
+}
