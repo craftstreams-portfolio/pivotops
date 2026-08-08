@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import FloatingReactions from "@/app/dashboard/components/voice/FloatingReactions";
 import { supabase } from "@/lib/supabase";
+import { TimeItPanel } from "@/app/dashboard/components/voice/TimeItPanel";
 
 /* ────────────────────────────────────────────────────────────────────────
    TYPES
@@ -271,6 +272,7 @@ export default function HuddlesPage() {
   const [profiles, setProfiles] = useState<Record<string, Profile>>({});
   const [levels, setLevels] = useState<Record<string, number>>({});
   const [myMuted, setMyMuted] = useState(true);
+  const [showTimeIt, setShowTimeIt] = useState(false);
   const [myHandRaised, setMyHandRaised] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [summary, setSummary] = useState<{ duration: number; count: number; reason: string } | null>(null);
@@ -1275,6 +1277,25 @@ export default function HuddlesPage() {
               </span>
             </span>
           </button>
+          <button
+            onClick={() => setShowTimeIt((v) => !v)}
+            title="Time It"
+            className="group flex flex-col items-center gap-1.5 transition-transform hover:-translate-y-[2px]"
+          >
+            <span className="rounded-full flex items-center justify-center text-lg transition-all"
+                  style={{
+                    width: 52, height: 52,
+                    background: showTimeIt ? "rgba(0,191,166,0.18)" : "rgba(255,255,255,0.05)",
+                    border: showTimeIt ? "1px solid rgba(0,191,166,0.5)" : "1px solid rgba(255,255,255,0.12)",
+                  }}>
+              ⏱️
+            </span>
+            <span className="text-[10px] transition-colors"
+                  style={{ color: showTimeIt ? "#00BFA6" : undefined }}>
+              <span className={showTimeIt ? "" : "text-zinc-500 group-hover:text-zinc-300"}>Time It</span>
+            </span>
+          </button>
+
           <div className="relative">
             <details className="group">
               <summary className="list-none cursor-pointer flex flex-col items-center gap-1.5
@@ -1300,6 +1321,15 @@ export default function HuddlesPage() {
           </div>
         </div>
       </div>
+
+      {showTimeIt && activeRoom && (
+        <TimeItPanel
+          roomId={activeRoom.id}
+          isHost={isHost}
+          participants={participants.map((p) => ({ user_id: p.user_id, full_name: (p as any).full_name, email: (p as any).email }))}
+          onClose={() => setShowTimeIt(false)}
+        />
+      )}
     </div>
   );
 }
