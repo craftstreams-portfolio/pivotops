@@ -1326,7 +1326,7 @@ export default function HuddlesPage() {
         <TimeItPanel
           roomId={activeRoom.id}
           isHost={isHost}
-          participants={participants.map((p) => ({ user_id: p.user_id, full_name: (p as any).full_name, email: (p as any).email }))}
+          participants={participants.map((p) => ({ user_id: p.user_id, full_name: displayName(profiles[p.user_id], "Participant"), email: profiles[p.user_id]?.email }))}
           onClose={() => setShowTimeIt(false)}
         />
       )}

@@ -192,6 +192,14 @@ export async function checkAndAdvance(roomId: string, tenantId: string): Promise
   }
   if (state.remaining_seconds <= 0) {
     updates.status = "expired";
+    // Must persist remaining_seconds=0 here - computeRemaining() only
+    // live-projects elapsed time while status is "running", so once expired
+    // the raw column would otherwise sit at its last written value (the
+    // original duration, since nothing else updates it while ticking down
+    // naturally). Without this, extendTimer() reads that stale large number
+    // and adds the extension on top of it - a +30s grant became 1:30
+    // instead of 0:30 because it was really "stale ~60s" + 30s.
+    updates.remaining_seconds = 0;
     await logEvent(admin, tenantId, roomId, state.current_speaker_id, "timer_expired");
 
     if (state.auto_mute && state.current_speaker_id) {
