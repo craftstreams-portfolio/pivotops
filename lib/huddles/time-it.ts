@@ -217,3 +217,138 @@ export async function checkAndAdvance(roomId: string, tenantId: string): Promise
 
   return { ...state, ...updates } as TimerState;
 }
+// ─────────────────────────────────────────────────────────────────
+// AGENDA MODE (Phase 2). Reuses meeting_timer_state's existing
+// start/pause/resume/expire machinery is NOT reused here directly -
+// agenda items are simpler (no per-speaker mute), so they get their
+// own lighter functions operating on meeting_agenda_items plus the
+// active_agenda_item_id pointer on meeting_timer_state.
+// ─────────────────────────────────────────────────────────────────
+
+export interface AgendaItem {
+  id: string;
+  title: string;
+  description: string | null;
+  owner_id: string | null;
+  duration_seconds: number;
+  remaining_seconds: number;
+  status: "upcoming" | "active" | "completed" | "skipped";
+  sort_order: number;
+  started_at: string | null;
+}
+
+function computeAgendaRemaining(row: any): number {
+  if (row.status !== "active" || !row.started_at) return row.remaining_seconds;
+  const elapsed = Math.floor((Date.now() - new Date(row.started_at).getTime()) / 1000);
+  return Math.max(0, row.remaining_seconds - elapsed);
+}
+
+export async function getAgenda(roomId: string): Promise<AgendaItem[]> {
+  const admin = getAdmin();
+  const { data } = await admin.from("meeting_agenda_items")
+    .select("*").eq("room_id", roomId).order("sort_order", { ascending: true });
+  return (data ?? []).map((r) => ({ ...r, remaining_seconds: computeAgendaRemaining(r) }));
+}
+
+export async function addAgendaItem(params: {
+  roomId: string; tenantId: string; hostId: string;
+  title: string; description?: string; ownerId?: string; durationSeconds: number;
+}): Promise<AgendaItem> {
+  const admin = getAdmin();
+  const { data: existing } = await admin.from("meeting_agenda_items")
+    .select("sort_order").eq("room_id", params.roomId).order("sort_order", { ascending: false }).limit(1);
+  const nextOrder = (existing?.[0]?.sort_order ?? -1) + 1;
+
+  const { data, error } = await admin.from("meeting_agenda_items").insert({
+    room_id: params.roomId, tenant_id: params.tenantId,
+    title: params.title, description: params.description ?? null,
+    owner_id: params.ownerId ?? null, duration_seconds: params.durationSeconds,
+    remaining_seconds: params.durationSeconds, status: "upcoming",
+    sort_order: nextOrder, created_by: params.hostId,
+  }).select().single();
+  if (error) throw new Error(error.message);
+
+  await logEvent(admin, params.tenantId, params.roomId, null, "agenda_item_added", { title: params.title });
+  return { ...data, remaining_seconds: params.durationSeconds };
+}
+
+export async function startAgendaItem(roomId: string, tenantId: string, itemId: string): Promise<AgendaItem> {
+  const admin = getAdmin();
+  const now = new Date().toISOString();
+
+  // Only one agenda item active at a time - close out whatever was running.
+  await admin.from("meeting_agenda_items")
+    .update({ status: "completed", updated_at: now })
+    .eq("room_id", roomId).eq("status", "active");
+
+  const { data, error } = await admin.from("meeting_agenda_items")
+    .update({ status: "active", started_at: now, updated_at: now })
+    .eq("id", itemId).select().single();
+  if (error) throw new Error(error.message);
+
+  await admin.from("meeting_timer_state")
+    .upsert({ room_id: roomId, tenant_id: tenantId, mode: "agenda", status: "running", active_agenda_item_id: itemId, updated_at: now }, { onConflict: "room_id" });
+
+  await logEvent(admin, tenantId, roomId, null, "agenda_started", { item_id: itemId, title: data.title });
+  return { ...data, remaining_seconds: data.duration_seconds };
+}
+
+export async function completeAgendaItem(roomId: string, tenantId: string, itemId: string): Promise<void> {
+  const admin = getAdmin();
+  await admin.from("meeting_agenda_items")
+    .update({ status: "completed", updated_at: new Date().toISOString() })
+    .eq("id", itemId);
+  await admin.from("meeting_timer_state")
+    .update({ active_agenda_item_id: null, status: "idle" })
+    .eq("room_id", roomId);
+  await logEvent(admin, tenantId, roomId, null, "agenda_completed", { item_id: itemId });
+}
+
+export async function skipAgendaItem(roomId: string, tenantId: string, itemId: string): Promise<void> {
+  const admin = getAdmin();
+  await admin.from("meeting_agenda_items")
+    .update({ status: "skipped", updated_at: new Date().toISOString() })
+    .eq("id", itemId);
+  await admin.from("meeting_timer_state")
+    .update({ active_agenda_item_id: null, status: "idle" })
+    .eq("room_id", roomId);
+  await logEvent(admin, tenantId, roomId, null, "agenda_item_skipped", { item_id: itemId });
+}
+
+export async function extendAgendaItem(roomId: string, tenantId: string, itemId: string, extraSeconds: number): Promise<AgendaItem> {
+  const admin = getAdmin();
+  const { data: current } = await admin.from("meeting_agenda_items").select("*").eq("id", itemId).single();
+  const remaining = computeAgendaRemaining(current);
+
+  const { data, error } = await admin.from("meeting_agenda_items")
+    .update({
+      remaining_seconds: remaining + extraSeconds,
+      duration_seconds: current.duration_seconds + extraSeconds,
+      started_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", itemId).select().single();
+  if (error) throw new Error(error.message);
+
+  await logEvent(admin, tenantId, roomId, null, "agenda_extended", { item_id: itemId, extra_seconds: extraSeconds });
+  return { ...data, remaining_seconds: remaining + extraSeconds };
+}
+
+/** Same pattern as checkAndAdvance - client-polled, since no worker exists. */
+export async function checkAgendaAdvance(roomId: string, tenantId: string): Promise<AgendaItem | null> {
+  const admin = getAdmin();
+  const { data: active } = await admin.from("meeting_agenda_items")
+    .select("*").eq("room_id", roomId).eq("status", "active").maybeSingle();
+  if (!active) return null;
+
+  const remaining = computeAgendaRemaining(active);
+  if (remaining <= 0 && active.status === "active") {
+    // Agenda item time expired - unlike Speaker Mode there's no auto-mute;
+    // it just flags as needing host attention (spec section 16: host sees
+    // AGENDA TIME EXPIRED with Continue/End Item/Add Time options). We
+    // surface this via remaining_seconds=0 while status stays "active" -
+    // the UI reads that combination as expired, host decides what's next.
+    await logEvent(admin, tenantId, roomId, null, "agenda_item_expired", { item_id: active.id });
+  }
+  return { ...active, remaining_seconds: remaining };
+}

@@ -48,6 +48,15 @@ async function authedFetch(path: string, body?: unknown) {
   });
 }
 
+interface AgendaItem {
+  id: string;
+  title: string;
+  description: string | null;
+  duration_seconds: number;
+  remaining_seconds: number;
+  status: "upcoming" | "active" | "completed" | "skipped";
+}
+
 export function TimeItPanel({
   roomId, isHost, participants, onClose,
 }: {
@@ -61,6 +70,10 @@ export function TimeItPanel({
   const [duration, setDuration] = useState(300);
   const [autoMute, setAutoMute] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [panelMode, setPanelMode] = useState<"speaker" | "agenda">("speaker");
+  const [agenda, setAgenda] = useState<AgendaItem[]>([]);
+  const [newTitle, setNewTitle] = useState("");
+  const [newDuration, setNewDuration] = useState(300);
   const warned60Ref = useRef(false);
   const warned30Ref = useRef(false);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -112,6 +125,22 @@ export function TimeItPanel({
     return () => { cancelled = true; clearInterval(iv); };
   }, [roomId]);
 
+  useEffect(() => {
+    if (panelMode !== "agenda") return;
+    let cancelled = false;
+    const pollAgenda = async () => {
+      try {
+        await authedFetch("/api/huddles/time-it/agenda/tick", { roomId });
+        const res = await authedFetch(`/api/huddles/time-it/agenda/list?roomId=${roomId}`);
+        const data = await res.json();
+        if (!cancelled) setAgenda(data.items ?? []);
+      } catch {}
+    };
+    pollAgenda();
+    const iv = setInterval(pollAgenda, 1500);
+    return () => { cancelled = true; clearInterval(iv); };
+  }, [roomId, panelMode]);
+
   const speakerName = (id: string | null) => {
     if (!id) return "";
     const p = participants.find((x) => x.user_id === id);
@@ -133,6 +162,34 @@ export function TimeItPanel({
   async function handleResume() { setBusy(true); await authedFetch("/api/huddles/time-it/resume", { roomId }); setBusy(false); }
   async function handleSkip()   { setBusy(true); await authedFetch("/api/huddles/time-it/skip",   { roomId }); setBusy(false); }
   async function handleEnd()    { setBusy(true); await authedFetch("/api/huddles/time-it/end",    { roomId }); setBusy(false); }
+  async function handleAddAgendaItem() {
+    if (!newTitle.trim()) return;
+    setBusy(true);
+    await authedFetch("/api/huddles/time-it/agenda/add", { roomId, title: newTitle.trim(), durationSeconds: newDuration });
+    setNewTitle("");
+    setBusy(false);
+  }
+  async function handleStartAgendaItem(itemId: string) {
+    setBusy(true);
+    await authedFetch("/api/huddles/time-it/agenda/start", { roomId, itemId });
+    setBusy(false);
+  }
+  async function handleCompleteAgendaItem(itemId: string) {
+    setBusy(true);
+    await authedFetch("/api/huddles/time-it/agenda/complete", { roomId, itemId });
+    setBusy(false);
+  }
+  async function handleSkipAgendaItem(itemId: string) {
+    setBusy(true);
+    await authedFetch("/api/huddles/time-it/agenda/skip", { roomId, itemId });
+    setBusy(false);
+  }
+  async function handleExtendAgendaItem(itemId: string, extra: number) {
+    setBusy(true);
+    await authedFetch("/api/huddles/time-it/agenda/extend", { roomId, itemId, extraSeconds: extra });
+    setBusy(false);
+  }
+
   async function handleExtend(extra: number) {
     setBusy(true);
     await authedFetch("/api/huddles/time-it/extend", { roomId, extraSeconds: extra });
@@ -150,7 +207,92 @@ export function TimeItPanel({
       </div>
 
       <div className="p-4 space-y-4">
-        {!state || state.status === "idle" ? (
+        <div className="flex gap-1.5 p-1 bg-white/5 rounded-lg">
+          {(["speaker", "agenda"] as const).map((m) => (
+            <button key={m} onClick={() => setPanelMode(m)}
+              className={`flex-1 text-[10px] py-1.5 rounded-md capitalize transition ${
+                panelMode === m ? "bg-[#00BFA6]/20 text-[#00BFA6]" : "text-zinc-500"
+              }`}>
+              {m}
+            </button>
+          ))}
+        </div>
+
+        {panelMode === "agenda" ? (
+          <div className="space-y-2.5">
+            {agenda.filter((a) => a.status === "active").map((item) => {
+              const critical = item.remaining_seconds <= 30;
+              const expired = item.remaining_seconds <= 0;
+              return (
+                <div key={item.id} className="rounded-xl border border-[#00BFA6]/30 bg-[#00BFA6]/[0.06] p-3">
+                  <p className="text-[10px] text-[#00BFA6] uppercase tracking-wider mb-0.5">Active</p>
+                  <p className="text-sm text-white font-medium mb-1.5">{item.title}</p>
+                  <p className="font-mono font-bold text-2xl tabular-nums"
+                     style={{ color: expired ? "#EF4444" : critical ? "#F59E0B" : "#FFFFFF" }}>
+                    {expired ? "TIME UP" : fmt(item.remaining_seconds)}
+                  </p>
+                  {isHost && (
+                    <div className="flex gap-1.5 mt-2">
+                      {expired ? (
+                        <>
+                          <button onClick={() => handleExtendAgendaItem(item.id, 120)} disabled={busy} className="flex-1 py-1.5 rounded-lg bg-[#00BFA6]/15 border border-[#00BFA6]/40 text-[11px] text-[#00BFA6]">+2m</button>
+                          <button onClick={() => handleCompleteAgendaItem(item.id)} disabled={busy} className="flex-1 py-1.5 rounded-lg border border-white/10 text-[11px] text-zinc-300">End item</button>
+                        </>
+                      ) : (
+                        <>
+                          <button onClick={() => handleCompleteAgendaItem(item.id)} disabled={busy} className="flex-1 py-1.5 rounded-lg border border-white/10 text-[11px] text-zinc-300">Complete</button>
+                          <button onClick={() => handleSkipAgendaItem(item.id)} disabled={busy} className="flex-1 py-1.5 rounded-lg border border-white/10 text-[11px] text-zinc-300">Skip</button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            <div className="space-y-1.5">
+              {agenda.filter((a) => a.status === "upcoming").map((item) => (
+                <div key={item.id} className="flex items-center justify-between rounded-lg border border-white/10 px-2.5 py-2">
+                  <div className="min-w-0">
+                    <p className="text-[11px] text-zinc-300 truncate">{item.title}</p>
+                    <p className="text-[9px] text-zinc-600">{fmt(item.duration_seconds)}</p>
+                  </div>
+                  {isHost && !agenda.some((a) => a.status === "active") && (
+                    <button onClick={() => handleStartAgendaItem(item.id)} disabled={busy}
+                      className="text-[10px] text-[#00BFA6] px-2 py-1 rounded-md border border-[#00BFA6]/30 flex-shrink-0">
+                      Start
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {isHost && (
+              <div className="space-y-1.5 pt-2 border-t border-white/[0.06]">
+                <input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="Agenda item title…"
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-2 text-xs text-white" />
+                <div className="flex gap-1.5">
+                  {[180, 300, 600, 900].map((s) => (
+                    <button key={s} onClick={() => setNewDuration(s)}
+                      className={`flex-1 text-[10px] py-1.5 rounded-lg border transition ${
+                        newDuration === s ? "bg-[#00BFA6]/20 border-[#00BFA6]/50 text-[#00BFA6]" : "border-white/10 text-zinc-400"
+                      }`}>
+                      {s / 60}m
+                    </button>
+                  ))}
+                </div>
+                <button onClick={handleAddAgendaItem} disabled={!newTitle.trim() || busy}
+                  className="w-full py-2 rounded-lg bg-[#00BFA6] text-[#04211E] text-xs font-semibold disabled:opacity-40">
+                  Add to agenda
+                </button>
+              </div>
+            )}
+
+            {agenda.length === 0 && !isHost && (
+              <p className="text-xs text-zinc-500 text-center py-4">No agenda set yet.</p>
+            )}
+          </div>
+        ) : !state || state.status === "idle" ? (
           isHost ? (
             <div className="space-y-3">
               <select value={selectedSpeaker} onChange={(e) => setSelectedSpeaker(e.target.value)}
