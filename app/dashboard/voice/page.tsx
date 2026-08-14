@@ -273,6 +273,42 @@ export default function HuddlesPage() {
   const [levels, setLevels] = useState<Record<string, number>>({});
   const [myMuted, setMyMuted] = useState(true);
   const [showTimeIt, setShowTimeIt] = useState(false);
+
+  // Watches MY OWN participant row for a remote mute (Time It auto-mute, or
+  // any future host-mute feature). is_muted on other rows is display-only -
+  // it just swaps an icon (see the participant grid render) - nothing was
+  // listening for it changing on YOUR OWN row and actually cutting your
+  // mic, which is why Time It's DB write silenced everyone's screen but not
+  // the speaker's real audio. This makes a remote mute actually mute.
+  useEffect(() => {
+    if (!me || !myParticipantIdRef.current) return;
+    const ch = supabase
+      .channel(`self-mute-watch-${myParticipantIdRef.current}`)
+      .on("postgres_changes", {
+        event: "UPDATE", schema: "public", table: "voice_room_participants",
+        filter: `id=eq.${myParticipantIdRef.current}`,
+      }, (payload: any) => {
+        const remoteMuted = payload.new?.is_muted === true;
+        // Only react when the row's value actually differs from what we
+        // already believe locally - avoids re-triggering setMuted for our
+        // own toggleMute() writes, which already handle the local engine
+        // call themselves. Handles both directions: Time It auto-muting on
+        // expiry, and a host extension unmuting afterward (spec section 11
+        // - an extension after auto-mute must restore speaking permission,
+        // which needs the same real local-audio reaction as the mute did).
+        if (remoteMuted && !myMutedRef.current) {
+          setMyMuted(true);
+          myMutedRef.current = true;
+          engineRef.current?.setMuted(true);
+        } else if (!remoteMuted && myMutedRef.current) {
+          setMyMuted(false);
+          myMutedRef.current = false;
+          engineRef.current?.setMuted(false);
+        }
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [me, activeRoom?.id]);
   const [myHandRaised, setMyHandRaised] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [summary, setSummary] = useState<{ duration: number; count: number; reason: string } | null>(null);

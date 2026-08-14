@@ -296,10 +296,11 @@ export function TimeItPanel({
           isHost ? (
             <div className="space-y-3">
               <select value={selectedSpeaker} onChange={(e) => setSelectedSpeaker(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-2 text-xs text-white">
-                <option value="">Select speaker…</option>
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-2 text-xs text-white"
+                style={{ colorScheme: "dark" }}>
+                <option value="" style={{ color: "#000" }}>Select speaker…</option>
                 {participants.map((p) => (
-                  <option key={p.user_id} value={p.user_id}>{p.full_name ?? p.email}</option>
+                  <option key={p.user_id} value={p.user_id} style={{ color: "#000" }}>{p.full_name ?? p.email}</option>
                 ))}
               </select>
               <div className="flex gap-1.5">
