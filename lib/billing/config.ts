@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Plan definitions, feature matrix and seat caps.
  *
  * This folder was called lib/paddle, which suggested Paddle handles the money.
@@ -35,7 +35,7 @@ export const PLAN_FEATURES: Record<PlanTier, {
   name:           string;
   maxRecruiters:  number;
   compliance:         boolean;   // document tracking / candidate portal
-  complianceAdvanced: boolean;   // Compliance Status (advanced) — Professional+
+  complianceAdvanced: boolean;   // Compliance Status (advanced) â€” Professional+
   analytics:      boolean;
   conference:     boolean;
   clocking:       boolean;
@@ -74,7 +74,7 @@ export const PLAN_FEATURES: Record<PlanTier, {
 };
 
 /**
- * Seats included in a plan. This is the ONLY definition — the invite route and
+ * Seats included in a plan. This is the ONLY definition â€” the invite route and
  * the team panel both read it, so the server cap and the UI counter can never
  * disagree. Seats were previously derived from tenants.org_size, the team-size
  * range picked at signup, which meant a Starter tenant who selected "50+" got
@@ -86,8 +86,9 @@ export const PLAN_FEATURES: Record<PlanTier, {
  * bypasses billing, so it should never grow without a reason recorded beside it.
  */
 export const SEAT_EXEMPT_TENANTS: readonly string[] = [
-  "pivotops-demo-mr2eh9yo",     // PivotOps Demo - SHOPLINE reviewer workspace
-  "byc-staffing-inc-mqsjpn1q",  // BYC Staffing INC - shopline-review@pivotops.app
+  "pivotops-demo-mr2eh9yo",                   // PivotOps Demo - SHOPLINE reviewer workspace
+  "byc-staffing-inc-mqsjpn1q",                // BYC Staffing INC - shopline-review@pivotops.app
+  "craftstreams-technologies-limi-msyo7kya",  // Craftstreams Technologies - internal company profile (unlimited)
 ];
 
 export function isSeatExempt(tenantId: string | null | undefined): boolean {
@@ -111,3 +112,4 @@ export function getPriceId(plan: Exclude<PlanTier,"free">, cycle: BillingCycle):
 export function canAccessFeature(plan: PlanTier, feature: keyof typeof PLAN_FEATURES["enterprise"]): boolean {
   return PLAN_FEATURES[plan][feature] as boolean;
 }
+
