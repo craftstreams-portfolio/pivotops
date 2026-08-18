@@ -1,4 +1,4 @@
-import { getApiAuth, unauthorized } from "@/lib/auth/apiAuth";
+﻿import { getApiAuth, unauthorized } from "@/lib/auth/apiAuth";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
@@ -15,8 +15,8 @@ function getAdmin() {
 }
 
 /**
- * The tenant's paid tier. `subscriptions` is authoritative — it is what every
- * feature gate in the app reads — with tenants.plan as a fallback for rows
+ * The tenant's paid tier. `subscriptions` is authoritative â€” it is what every
+ * feature gate in the app reads â€” with tenants.plan as a fallback for rows
  * predating the subscriptions table.
  */
 async function resolvePlan(admin: ReturnType<typeof getAdmin>, tenantId: string): Promise<string> {
@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
     }
 
     const plan = await resolvePlan(admin, tenantId);
-    const cap  = isSeatExempt(tenantId) ? Number.MAX_SAFE_INTEGER : seatCapForPlan(plan);
+    const cap  = isSeatExempt(tenantId) ? 999999 : seatCapForPlan(plan);
     const emailNorm = email.trim().toLowerCase();
 
     const { data: reserveResult, error: reserveErr } = await admin.rpc("reserve_team_invite_seat", {
