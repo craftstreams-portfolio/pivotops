@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
@@ -49,11 +49,23 @@ export async function POST(req: NextRequest) {
 
     // 1) Tenant (fires provision_free_subscription trigger -> 7-day trial)
     const { error: tenantErr } = await admin.from("tenants").insert({
-      id: tid, slug: tid, name: orgName, org_name: orgName, org_industry: industry,
-      org_size: teamSize, org_country: country,
-      owner_id: userId, owner_email: userEmail,
-      apply_link: applyLinkUrl, tenant_slug: tid,
-      created_at: now, updated_at: now,
+      id:         tid,
+      slug:       tid,
+      name:       orgName,
+      plan:       "trial",
+      status:     "active",
+      apply_link: applyLinkUrl,
+      owner_profile_id: userId,
+      settings: {
+        org_name:     orgName,
+        org_industry: industry,
+        org_size:     teamSize,
+        org_country:  country,
+        owner_email:  userEmail,
+        admin_name:   adminName,
+      },
+      created_at: now,
+      updated_at: now,
     });
     if (tenantErr) {
       console.error("[create-tenant] tenant insert", tenantErr);

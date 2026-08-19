@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -6,7 +6,7 @@ import CookieConsent from "@/app/components/CookieConsent";
 import WaitlistModal  from "@/app/components/WaitlistModal";
 import { trackEvent } from "@/app/components/Analytics";
 
-// ── Logo ─────────────────────────────────────────────────────────────────────
+// â”€â”€ Logo â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function PivotOpsLogo({ size = 40 }: { size?: number }) {
   return (
     <svg width={size} height={Math.round(size * 0.87)} viewBox="0 0 100 87" xmlns="http://www.w3.org/2000/svg">
@@ -26,7 +26,7 @@ function PivotOpsLogo({ size = 40 }: { size?: number }) {
   );
 }
 
-// ── Compression bar ───────────────────────────────────────────────────────────
+// â”€â”€ Compression bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function CompressionBar() {
   return (
     <div className="w-full rounded-2xl border border-zinc-800 bg-zinc-950/60 p-6 md:p-8">
@@ -60,7 +60,7 @@ function CompressionBar() {
   );
 }
 
-// ── Before / After ────────────────────────────────────────────────────────────
+// â”€â”€ Before / After â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function BeforeAfter() {
   const rows = [
     { before: "Job posted. 6 people notified. Nobody owns it.", after: "Auto-assigned to the right recruiter within 60 seconds." },
@@ -94,7 +94,7 @@ function BeforeAfter() {
   );
 }
 
-// ── Cost savings ──────────────────────────────────────────────────────────────
+// â”€â”€ Cost savings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function CostSavings() {
   const tools = [
     { name: "ATS / CRM",      range: "$12,000 - $20,000/yr" },
@@ -144,7 +144,7 @@ function CostSavings() {
   );
 }
 
-// ── Pricing ───────────────────────────────────────────────────────────────────
+// â”€â”€ Pricing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const TIERS = [
   {
     name: "Starter", sub: "Up to 5 recruiters", monthly: 1500, highlight: false,
@@ -211,7 +211,7 @@ function PricingSection({ onJoinWaitlist }: { onJoinWaitlist: () => void }) {
   );
 }
 
-// ── Xavier chat widget ────────────────────────────────────────────────────────
+// â”€â”€ Xavier chat widget â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const SUGGESTED = [
   "What does PivotOps actually do?",
   "Which plan is right for me?",
@@ -236,7 +236,7 @@ Pricing:
 
 When helping choose a plan: ask how many recruiters, if they need compliance tracking, if multi-location.`;
 
-// Scripted landing-page advisor — no LLM, no API cost. Matches prospect intent
+// Scripted landing-page advisor â€” no LLM, no API cost. Matches prospect intent
 // to canned answers drawn from the real FAQ/pricing copy on this page.
 function askXavier(messages: { role: string; content: string }[]): string {
   const q = (messages[messages.length - 1]?.content || "").toLowerCase();
@@ -247,56 +247,56 @@ function askXavier(messages: { role: string; content: string }[]): string {
   const num = q.match(/(\d+)\s*(recruiter|user|seat|people|staff|person|employee)/);
   if (num) {
     const n = parseInt(num[1], 10);
-    if (n <= 5)  return `Got it — a team of ${n} is a perfect fit for Starter ($1,500/mo). You'd get the full recruitment engine, my candidate scoring, interview routing, and the compliance portal. Honestly it's plenty to run a lean, fast desk. Want me to run through everything that's included?`;
-    if (n <= 20) return `Nice — for around ${n} recruiters I'd point you at Professional ($2,500/mo). It's everything in Starter, plus deeper compliance tracking, analytics dashboards, clock in/out with geolocation, and onboarding that kicks off automatically the moment someone's hired. Want the full rundown?`;
-    return `At ${n} you're operating at real scale, so Enterprise ($6,000/mo) is the one — multi-location support, API access and custom integrations, granular access controls with a full audit trail, and a dedicated implementation. Happy to connect you with the team if you'd like to talk specifics.`;
+    if (n <= 5)  return `Got it â€” a team of ${n} is a perfect fit for Starter ($1,500/mo). You'd get the full recruitment engine, my candidate scoring, interview routing, and the compliance portal. Honestly it's plenty to run a lean, fast desk. Want me to run through everything that's included?`;
+    if (n <= 20) return `Nice â€” for around ${n} recruiters I'd point you at Professional ($2,500/mo). It's everything in Starter, plus deeper compliance tracking, analytics dashboards, clock in/out with geolocation, and onboarding that kicks off automatically the moment someone's hired. Want the full rundown?`;
+    return `At ${n} you're operating at real scale, so Enterprise ($6,000/mo) is the one â€” multi-location support, API access and custom integrations, granular access controls with a full audit trail, and a dedicated implementation. Happy to connect you with the team if you'd like to talk specifics.`;
   }
 
   if (has("price","pricing","cost","how much","how many","plan","tier","pay","expensive","afford"))
     return pick([
       "Happy to break it down! Three tiers, kept simple: Starter's $1,500/mo for small teams (up to 5 recruiters), Professional's $2,500/mo as you scale to 20, and Enterprise runs $6,000/mo for multi-location or compliance-heavy operations. Annual billing knocks the price down too. How many recruiters are you working with? I'll point you to the right one.",
-      "Sure thing. We run three plans — Starter ($1,500/mo, up to 5 recruiters), Professional ($2,500/mo, 5–20), and Enterprise ($6,000/mo for the bigger, multi-location setups). Every plan includes me, the full scoring engine. Tell me your team size and I'll recommend the best fit.",
+      "Sure thing. We run three plans â€” Starter ($1,500/mo, up to 5 recruiters), Professional ($2,500/mo, 5â€“20), and Enterprise ($6,000/mo for the bigger, multi-location setups). Every plan includes me, the full scoring engine. Tell me your team size and I'll recommend the best fit.",
     ]);
 
   if (has("compliance","credential","document","license","audit","certif"))
-    return "This is one of my favourite parts, honestly. Compliance isn't bolted on — it's built in. Candidates upload their credentials through a secure portal, your team reviews them, and if something's missing or rejected, the system nudges the candidate to re-upload automatically. Everything's tenant-isolated with full audit logging, and Enterprise even includes a compliance review before you go live. No more chasing documents over email.";
+    return "This is one of my favourite parts, honestly. Compliance isn't bolted on â€” it's built in. Candidates upload their credentials through a secure portal, your team reviews them, and if something's missing or rejected, the system nudges the candidate to re-upload automatically. Everything's tenant-isolated with full audit logging, and Enterprise even includes a compliance review before you go live. No more chasing documents over email.";
 
   if (has("score","scoring","xavier","ai ","candidate","applicant","rank","shortlist"))
     return pick([
-      "That's me! The moment someone applies, I score them 0 to 100 against what you're actually hiring for — no waiting on a human to get to the pile. Strong candidates get routed straight to interview, and the ones who aren't a fit get a polite, branded decline automatically. You spend your time on the people worth talking to.",
-      "Ah, this is the core of it. Every applicant gets scored 0–100 against your role criteria the second they apply — so your first-pass decisions happen instantly instead of sitting in someone's inbox. Good fits get fast-tracked to interview; the rest get handled gracefully. Want to see how the scoring reads a real resume?",
+      "That's me! The moment someone applies, I score them 0 to 100 against what you're actually hiring for â€” no waiting on a human to get to the pile. Strong candidates get routed straight to interview, and the ones who aren't a fit get a polite, branded decline automatically. You spend your time on the people worth talking to.",
+      "Ah, this is the core of it. Every applicant gets scored 0â€“100 against your role criteria the second they apply â€” so your first-pass decisions happen instantly instead of sitting in someone's inbox. Good fits get fast-tracked to interview; the rest get handled gracefully. Want to see how the scoring reads a real resume?",
     ]);
 
   if (has("ats","bullhorn","workday","replace","migrate","existing tool","integrat"))
-    return "Good question — and the honest answer is I'm not here to replace your ATS. Tools like Bullhorn or Workday store your data; I run the daily rhythm on top of it. Who owns a role right now, what happens the instant an application lands, how decisions actually get made — that's the messy operational layer that usually lives in spreadsheets and WhatsApp threads. I turn that into one clean system.";
+    return "Good question â€” and the honest answer is I'm not here to replace your ATS. Tools like Bullhorn or Workday store your data; I run the daily rhythm on top of it. Who owns a role right now, what happens the instant an application lands, how decisions actually get made â€” that's the messy operational layer that usually lives in spreadsheets and WhatsApp threads. I turn that into one clean system.";
 
   if (has("who","fit","right for","for me","industry","staffing","healthcare","retail"))
-    return "I'm built for staffing agencies and workforce-heavy teams — everything from healthcare staffing to retail and merchant operations. Whether you're a handful of people or a multi-location operation feeling the daily sting of slow hiring, that's exactly who I help. Tell me a bit about your team and I'll help you size it up.";
+    return "I'm built for staffing agencies and workforce-heavy teams â€” everything from healthcare staffing to retail and merchant operations. Whether you're a handful of people or a multi-location operation feeling the daily sting of slow hiring, that's exactly who I help. Tell me a bit about your team and I'll help you size it up.";
 
   if (has("setup","implement","onboard","how long","time to","get started","begin","launch"))
     return "No rollout phase at all. Onboarding is automated - connect your pipeline and the workflow is live the same day, mapped to how you already hire. Want to get started? I can point you to signup.";
 
   if (has("result","roi","outcome","time to hire","faster","speed","72","hours","quick"))
-    return "Here's the number that matters: most teams take 14 to 30 days from application to interview. The goal with PivotOps is to compress that to a 72-hour window — intake through interview scheduling — and we measure it against your own pipeline from week one, so it's real, not a marketing line.";
+    return "Here's the number that matters: most teams take 14 to 30 days from application to interview. The goal with PivotOps is to compress that to a 72-hour window â€” intake through interview scheduling â€” and we measure it against your own pipeline from week one, so it's real, not a marketing line.";
 
   if (has("secure","security","private","privacy","gdpr","safe","data"))
-    return "Absolutely — I take this seriously. Your data is tenant-isolated (your info never touches another company's), with compliance document tracking and full audit logging baked in. Enterprise plans also get a compliance review before rollout. Anything specific on the security side you want me to dig into?";
+    return "Absolutely â€” I take this seriously. Your data is tenant-isolated (your info never touches another company's), with compliance document tracking and full audit logging baked in. Enterprise plans also get a compliance review before rollout. Anything specific on the security side you want me to dig into?";
 
   if (has("what","do","does","about","platform","pivotops","explain","tell me"))
-    return "So in a sentence: I run the whole journey from job opening to working employee. Application intake, scoring every candidate 0–100, routing interviews, onboarding, task management, compliance, attendance — all in one place, instead of five disconnected tools duct-taped together. Anything in there you'd like me to zoom in on?";
+    return "So in a sentence: I run the whole journey from job opening to working employee. Application intake, scoring every candidate 0â€“100, routing interviews, onboarding, task management, compliance, attendance â€” all in one place, instead of five disconnected tools duct-taped together. Anything in there you'd like me to zoom in on?";
 
   if (has("hi","hello","hey","yo","sup","good morning","good afternoon","greetings"))
     return pick([
-      "Hey there! I'm Xavier — the AI that runs hiring inside PivotOps. Ask me anything: what we do, pricing, or I can recommend a plan based on your team size. What's on your mind?",
-      "Hi! Great to meet you. I'm Xavier — I handle candidate scoring and the day-to-day hiring rhythm here. Want to know how it works, what it costs, or which plan fits your team? Just ask.",
+      "Hey there! I'm Xavier â€” the AI that runs hiring inside PivotOps. Ask me anything: what we do, pricing, or I can recommend a plan based on your team size. What's on your mind?",
+      "Hi! Great to meet you. I'm Xavier â€” I handle candidate scoring and the day-to-day hiring rhythm here. Want to know how it works, what it costs, or which plan fits your team? Just ask.",
     ]);
 
   if (has("help","not sure","confused","options"))
     return "Happy to help you find your footing! I'm best with questions about how the scoring works, pricing and plans, compliance, or getting set up. What are you trying to figure out?";
 
   return pick([
-    "Hmm, I want to give you a straight answer on that — I'm sharpest on how PivotOps scores candidates, pricing, compliance, and getting set up. Which of those is closest to what you're after? Or if you'd rather just see it in action, I can point you to a free trial.",
-    "Good question — that one's probably best answered by actually seeing it work. Want me to point you to signup for a free trial, or I can tell you about pricing, scoring, or compliance right here?",
+    "Hmm, I want to give you a straight answer on that â€” I'm sharpest on how PivotOps scores candidates, pricing, compliance, and getting set up. Which of those is closest to what you're after? Or if you'd rather just see it in action, I can point you to a free trial.",
+    "Good question â€” that one's probably best answered by actually seeing it work. Want me to point you to signup for a free trial, or I can tell you about pricing, scoring, or compliance right here?",
   ]);
 }
 
@@ -371,7 +371,7 @@ function XavierChat({ onJoinWaitlist }: { onJoinWaitlist: () => void }) {
       </div>
       <div className="text-left">
         <p className="text-white text-xs font-bold leading-tight">Ask Xavier</p>
-        <p className="text-[10px] leading-tight" style={{ color: "#00BFA6" }}>AI advisor · online</p>
+        <p className="text-[10px] leading-tight" style={{ color: "#00BFA6" }}>AI advisor Â· online</p>
       </div>
       <span className="w-2 h-2 rounded-full animate-pulse ml-1" style={{ background: "#00BFA6" }} />
     </button>
@@ -392,7 +392,7 @@ function XavierChat({ onJoinWaitlist }: { onJoinWaitlist: () => void }) {
           </div>
           <div>
             <p className="text-sm font-semibold text-white">Xavier AI</p>
-            <p className="text-[10px]" style={{ color: "#00BFA6" }}>PivotOps advisor · online</p>
+            <p className="text-[10px]" style={{ color: "#00BFA6" }}>PivotOps advisor Â· online</p>
           </div>
         </div>
         <button onClick={() => setOpen(false)} className="text-zinc-600 hover:text-white transition text-xl leading-none w-7 h-7 flex items-center justify-center">x</button>
@@ -476,7 +476,7 @@ function XavierChat({ onJoinWaitlist }: { onJoinWaitlist: () => void }) {
   );
 }
 
-// ── FAQ ───────────────────────────────────────────────────────────────────────
+// â”€â”€ FAQ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const FAQS = [
   { q: "What does PivotOps actually do?", a: "PivotOps automates the entire path from a job opening to a working employee: intake, AI scoring, interview routing, onboarding, task routing, compliance tracking, and attendance - running as one system instead of five disconnected tools." },
   { q: "Is this an ATS replacement?", a: "No. PivotOps is the coordination and decision-routing layer that ATS software was never built for - the part your team currently runs over WhatsApp and spreadsheets. It sits on top of what you already have." },
@@ -506,7 +506,7 @@ function FAQAccordion() {
   );
 }
 
-// ── Page ──────────────────────────────────────────────────────────────────────
+// â”€â”€ Page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export default function HomeClient() {
   const router = useRouter();
   const [waitlistOpen, setWaitlistOpen] = useState(false);
@@ -725,14 +725,14 @@ export default function HomeClient() {
             <p>2024-2026 Craftstreams. PivotOps is a trademark of Craftstreams. All rights reserved.</p>
             <div className="flex items-center gap-4">
               <a href="/legal/terms" className="hover:text-zinc-400 transition">Terms of Use</a>
-              <span>·</span>
+              <span>Â·</span>
               <a href="/legal/privacy" className="hover:text-zinc-400 transition">Privacy Policy</a>
-              <span>·</span>
+              <span>Â·</span>
               <a href="/legal/security" className="hover:text-zinc-400 transition">Security</a>
               <a href="/contact" className="hover:text-zinc-400 transition">Contact</a>
-              <span>·</span>
+              <span>Â·</span>
               <a href="/legal/refunds" className="hover:text-zinc-400 transition">Refund Policy</a>
-              <span>·</span>
+              <span>Â·</span>
               <button onClick={() => { localStorage.removeItem("pivotops_cookie_consent"); window.location.reload(); }}
                 className="hover:text-zinc-400 transition">Cookie Settings</button>
             </div>

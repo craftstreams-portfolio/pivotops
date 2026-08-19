@@ -208,6 +208,14 @@ export async function checkAndAdvance(roomId: string, tenantId: string): Promise
         .eq("room_id", roomId).eq("user_id", state.current_speaker_id);
       await logEvent(admin, tenantId, roomId, state.current_speaker_id, "speaker_muted", { reason: "time_it_expired" });
     }
+
+    // Auto-advance to the next queued speaker, if any (spec section 7).
+    // Uses the room's own host (voice_rooms.created_by) as the acting host
+    // for this system-triggered transition, not the expired speaker.
+    const { data: room } = await admin.from("voice_rooms").select("created_by").eq("id", roomId).maybeSingle();
+    if (room?.created_by) {
+      await advanceQueue(roomId, tenantId, room.created_by, "completed");
+    }
   }
 
   if (Object.keys(updates).length > 0) {
@@ -351,4 +359,100 @@ export async function checkAgendaAdvance(roomId: string, tenantId: string): Prom
     await logEvent(admin, tenantId, roomId, null, "agenda_item_expired", { item_id: active.id });
   }
   return { ...active, remaining_seconds: remaining };
+}
+
+// ─────────────────────────────────────────────────────────────────
+// SPEAKER QUEUE (uses speaker_time_allocations, already created in
+// Phase 1 but unused until now - no schema change needed).
+// ─────────────────────────────────────────────────────────────────
+
+export interface QueuedSpeaker {
+  id: string;
+  participant_id: string;
+  display_name: string | null;
+  allocated_seconds: number;
+  status: "queued" | "active" | "completed" | "skipped";
+  sort_order: number;
+}
+
+export async function getSpeakerQueue(roomId: string): Promise<QueuedSpeaker[]> {
+  const admin = getAdmin();
+  const { data } = await admin.from("speaker_time_allocations")
+    .select("*").eq("room_id", roomId).order("sort_order", { ascending: true });
+  return data ?? [];
+}
+
+export async function assignSpeakers(params: {
+  roomId: string; tenantId: string; hostId: string;
+  assignments: { participantId: string; displayName: string; allocatedSeconds: number }[];
+}): Promise<QueuedSpeaker[]> {
+  const admin = getAdmin();
+  const { data: existing } = await admin.from("speaker_time_allocations")
+    .select("sort_order").eq("room_id", params.roomId).order("sort_order", { ascending: false }).limit(1);
+  let nextOrder = (existing?.[0]?.sort_order ?? -1) + 1;
+
+  const rows = params.assignments.map((a) => ({
+    room_id: params.roomId, tenant_id: params.tenantId,
+    participant_id: a.participantId, display_name: a.displayName,
+    allocated_seconds: a.allocatedSeconds, status: "queued", sort_order: nextOrder++,
+  }));
+
+  const { data, error } = await admin.from("speaker_time_allocations").insert(rows).select();
+  if (error) throw new Error(error.message);
+
+  await logEvent(admin, params.tenantId, params.roomId, null, "speakers_assigned", {
+    count: rows.length, names: params.assignments.map((a) => a.displayName),
+  });
+  return data ?? [];
+}
+
+/**
+ * Marks the current active allocation (if any) as completed/skipped, then
+ * promotes the next queued item and starts its timer - reuses startTimer
+ * so this goes through the exact same server-authoritative path as a
+ * manually started speaker. Called automatically on expiry (spec section 7:
+ * "optionally move automatically to next speaker") and on manual skip.
+ */
+export async function advanceQueue(
+  roomId: string, tenantId: string, hostId: string,
+  previousStatus: "completed" | "skipped" = "completed"
+): Promise<QueuedSpeaker | null> {
+  const admin = getAdmin();
+
+  const { data: activeItem } = await admin.from("speaker_time_allocations")
+    .select("*").eq("room_id", roomId).eq("status", "active").maybeSingle();
+  if (activeItem) {
+    await admin.from("speaker_time_allocations")
+      .update({ status: previousStatus, updated_at: new Date().toISOString() })
+      .eq("id", activeItem.id);
+  }
+
+  const { data: next } = await admin.from("speaker_time_allocations")
+    .select("*").eq("room_id", roomId).eq("status", "queued")
+    .order("sort_order", { ascending: true }).limit(1).maybeSingle();
+
+  if (!next) return null;
+
+  await admin.from("speaker_time_allocations")
+    .update({ status: "active", updated_at: new Date().toISOString() })
+    .eq("id", next.id);
+
+  const timerState = await getTimerState(roomId);
+  await startTimer({
+    roomId, tenantId, hostId,
+    speakerId: next.participant_id, speakerName: next.display_name ?? "",
+    durationSeconds: next.allocated_seconds,
+    autoMute: timerState?.auto_mute !== false,
+  });
+
+  return { ...next, status: "active" };
+}
+
+/** Who's up next in the queue - drives the hover-arrow preview on tiles. */
+export async function getNextQueued(roomId: string): Promise<QueuedSpeaker | null> {
+  const admin = getAdmin();
+  const { data } = await admin.from("speaker_time_allocations")
+    .select("*").eq("room_id", roomId).eq("status", "queued")
+    .order("sort_order", { ascending: true }).limit(1).maybeSingle();
+  return data ?? null;
 }
