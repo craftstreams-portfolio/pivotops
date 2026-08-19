@@ -738,6 +738,11 @@ export default function HomeClient() {
             </div>
           </div>
         </div>
+            <div className="flex justify-center pt-2">
+              <a href="https://saasbrowser.com/en/saas/1613929/pivotops" target="_blank" rel="noopener">
+                <img src="https://static-files.saasbrowser.com/saas-browser-badge-14.svg" alt="PivotOps - SaaS discovery platform" width="200" />
+              </a>
+            </div>
       </footer>
 
       {/* Xavier chat widget */}
