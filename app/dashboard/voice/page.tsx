@@ -1,13 +1,13 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import FloatingReactions from "@/app/dashboard/components/voice/FloatingReactions";
 import { supabase } from "@/lib/supabase";
 import { TimeItPanel } from "@/app/dashboard/components/voice/TimeItPanel";
 
-/* ────────────────────────────────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    TYPES
-──────────────────────────────────────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 interface VoiceRoom {
   id: string;
   tenant_id: string;
@@ -43,11 +43,11 @@ interface SignalMsg {
   payload: any;
 }
 
-/* ────────────────────────────────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    SELF-CONTAINED AUDIO-ONLY WEBRTC MESH
    (mirrors the architecture of lib's WebRTCEngine, trimmed to audio-only
    and inlined here so this page has zero cross-file import risk)
-──────────────────────────────────────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const ICE_SERVERS: RTCIceServer[] = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
@@ -103,7 +103,7 @@ class AudioMeshEngine {
       };
       tick();
     } catch {
-      /* AudioContext unsupported in this environment — spectrum stays flat */
+      /* AudioContext unsupported in this environment â€” spectrum stays flat */
     }
   }
 
@@ -210,9 +210,9 @@ class AudioMeshEngine {
   }
 }
 
-/* ────────────────────────────────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    PURPLE SPEAKING SPECTRUM
-──────────────────────────────────────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function Spectrum({ level, active }: { level: number; active: boolean }) {
   const bars = [0, 1, 2, 3, 4];
   const norm = Math.min(1, level / 130);
@@ -238,9 +238,9 @@ function Spectrum({ level, active }: { level: number; active: boolean }) {
   );
 }
 
-/* ────────────────────────────────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    HELPERS
-──────────────────────────────────────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function displayName(p: Profile | undefined, fallback: string) {
   if (!p) return fallback;
   return p.full_name || p.name || p.display_name || p.email?.split("@")[0] || fallback;
@@ -258,11 +258,11 @@ function formatDuration(seconds: number) {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-const EMOJIS = ["👍", "🎉", "😂", "❤️", "👏", "🔥", "😮", "✅", "🙌", "💡", "👀", "🤝"];
+const EMOJIS = ["ðŸ‘", "ðŸŽ‰", "ðŸ˜‚", "â¤ï¸", "ðŸ‘", "ðŸ”¥", "ðŸ˜®", "âœ…", "ðŸ™Œ", "ðŸ’¡", "ðŸ‘€", "ðŸ¤"];
 
-/* ────────────────────────────────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    PAGE
-──────────────────────────────────────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 export default function HuddlesPage() {
   const [me, setMe] = useState<{ id: string; tenantId: string } | null>(null);
   const [rooms, setRooms] = useState<VoiceRoom[]>([]);
@@ -321,6 +321,16 @@ export default function HuddlesPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
+  // Transfer-host / assign-speaker / idle-timeout
+  const [showAssignSpeaker, setShowAssignSpeaker] = useState(false);
+  const [transferBusyId, setTransferBusyId] = useState<string | null>(null);
+  const [idleWarning, setIdleWarning] = useState(false);
+  const [idleCountdown, setIdleCountdown] = useState(30);
+  const lastActivityRef = useRef<number>(Date.now());
+  const idleWarningRef = useRef(false);
+  const IDLE_WARN_MS = 4 * 60 * 1000;   // warn after 4 min idle
+  const IDLE_LEAVE_S = 30;              // auto-leave 30s after warning
+
   const engineRef = useRef<AudioMeshEngine | null>(null);
   const audioElsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
   const myParticipantIdRef = useRef<string | null>(null);
@@ -333,7 +343,7 @@ export default function HuddlesPage() {
   const roomChanRef = useRef<any>(null);
   const notifyChanRef = useRef<any>(null);
 
-  /* ── Bootstrap: current user + tenant ── */
+  /* â”€â”€ Bootstrap: current user + tenant â”€â”€ */
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getUser();
@@ -345,7 +355,7 @@ export default function HuddlesPage() {
     })();
   }, []);
 
-  /* ── Load active rooms list ── */
+  /* â”€â”€ Load active rooms list â”€â”€ */
   const loadRooms = useCallback(async () => {
     if (!me) return;
     const { data } = await supabase
@@ -374,7 +384,7 @@ export default function HuddlesPage() {
     if (me && !activeRoom) loadRooms();
   }, [me, activeRoom, loadRooms]);
 
-  /* ── Duration ticker while in a room ── */
+  /* â”€â”€ Duration ticker while in a room â”€â”€ */
   useEffect(() => {
     if (!activeRoom) return;
     const start = Date.now();
@@ -384,7 +394,7 @@ export default function HuddlesPage() {
     return () => clearInterval(iv);
   }, [activeRoom]);
 
-  /* ── Fetch profiles for any participant we don't have cached ── */
+  /* â”€â”€ Fetch profiles for any participant we don't have cached â”€â”€ */
   useEffect(() => {
     const missing = participants.map((p) => p.user_id).filter((id) => !profiles[id]);
     if (missing.length === 0) return;
@@ -398,7 +408,7 @@ export default function HuddlesPage() {
     })();
   }, [participants, profiles]);
 
-  /* ── Cleanup engine on unmount ── */
+  /* â”€â”€ Cleanup engine on unmount â”€â”€ */
   useEffect(() => {
     return () => {
       engineRef.current?.leave();
@@ -426,7 +436,7 @@ export default function HuddlesPage() {
     return () => window.clearInterval(timer);
   }, []);
 
-  /* ── Safety net: reconcile on a timer and when the tab regains focus.
+  /* â”€â”€ Safety net: reconcile on a timer and when the tab regains focus.
      Realtime can silently drop events on flaky networks or after sleep; without
      this a stale roster persists for the whole call. */
   useEffect(() => {
@@ -442,7 +452,7 @@ export default function HuddlesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRoom?.id]);
 
-  /* ── Authoritative participant refresh ──
+  /* â”€â”€ Authoritative participant refresh â”€â”€
      Patching local state from individual realtime events is fragile: one dropped
      or out-of-order event and the roster stays wrong until you rejoin. We re-read
      the room from the database on any change and dedupe by user_id, so the list
@@ -472,9 +482,9 @@ export default function HuddlesPage() {
     }
   }, []);
 
-  /* ── Live "who's speaking" across the tenant ──
+  /* â”€â”€ Live "who's speaking" across the tenant â”€â”€
      Speaking level only exists inside the audio mesh, so people in the lobby
-     can't compute it. In-call clients broadcast it instead — no DB writes. */
+     can't compute it. In-call clients broadcast it instead â€” no DB writes. */
   useEffect(() => {
     if (!me) return;
     const chan = supabase
@@ -530,7 +540,7 @@ export default function HuddlesPage() {
     return () => window.clearInterval(timer);
   }, [me, activeRoom, profiles]);
 
-  /* ── Announce a new huddle in #general ── */
+  /* â”€â”€ Announce a new huddle in #general â”€â”€ */
   async function announceHuddle(room: VoiceRoom) {
     if (!me) return;
     const { data: general } = await supabase
@@ -542,7 +552,7 @@ export default function HuddlesPage() {
     if (!general?.id) return;
 
     const myName = displayName(profiles[me.id], "A teammate");
-    const text = `🎙️ ${myName} started a huddle: "${room.name}" — join in.`;
+    const text = `ðŸŽ™ï¸ ${myName} started a huddle: "${room.name}" â€” join in.`;
 
     const { data: msg } = await supabase
       .from("messages")
@@ -576,7 +586,7 @@ export default function HuddlesPage() {
     }).catch(() => {});
   }
 
-  /* ── Join a room ── */
+  /* â”€â”€ Join a room â”€â”€ */
   async function joinRoom(room: VoiceRoom) {
     if (!me) return;
     setBusy(true);
@@ -584,7 +594,7 @@ export default function HuddlesPage() {
     try {
       // Clear any row this user already holds in the room. Without this a
       // refresh or reconnect leaves a second live row, so the person renders
-      // twice for everyone — the bug this replaces.
+      // twice for everyone â€” the bug this replaces.
       await supabase
         .from("voice_room_participants")
         .delete()
@@ -654,7 +664,7 @@ export default function HuddlesPage() {
     } catch (e: any) {
       // The participant row is written before the mic is requested, so a failure
       // here (mic busy, permission denied) would otherwise leave a ghost in the
-      // roster — someone everyone can see who was never actually in the call.
+      // roster â€” someone everyone can see who was never actually in the call.
       if (myParticipantIdRef.current) {
         await supabase
           .from("voice_room_participants")
@@ -673,7 +683,7 @@ export default function HuddlesPage() {
     }
   }
 
-  /* ── Create + join a new room ── */
+  /* â”€â”€ Create + join a new room â”€â”€ */
   async function createRoom() {
     if (!me || !newRoomName.trim()) return;
     setBusy(true);
@@ -695,7 +705,7 @@ export default function HuddlesPage() {
       setShowNewRoom(false);
       setNewRoomName("");
 
-      // Tell the team in #general. Fire-and-forget — a failed announcement must
+      // Tell the team in #general. Fire-and-forget â€” a failed announcement must
       // never stop the huddle starting.
       announceHuddle(room as VoiceRoom).catch(() => {});
 
@@ -706,7 +716,7 @@ export default function HuddlesPage() {
     }
   }
 
-  /* ── Realtime: participants + room status ── */
+  /* â”€â”€ Realtime: participants + room status â”€â”€ */
   function subscribeRoomChannels(roomId: string) {
     participantsChanRef.current = supabase
       .channel(`huddle-participants-${roomId}`)
@@ -731,7 +741,7 @@ export default function HuddlesPage() {
       )
       .subscribe((status: string) => {
         console.log("[huddle] participants channel:", status);
-        // On (re)connect, reconcile immediately — we may have missed events while down.
+        // On (re)connect, reconcile immediately â€” we may have missed events while down.
         if (status === "SUBSCRIBED") refreshParticipants(roomId);
       });
 
@@ -748,7 +758,11 @@ export default function HuddlesPage() {
               count: participants.length,
               reason: "ended",
             });
+            return;
           }
+          // Host transfer lands here â€” re-sync activeRoom so isHost recomputes
+          // for everyone, not just the person who clicked Transfer.
+          setActiveRoom((prev) => (prev ? { ...prev, created_by: updated.created_by } : prev));
         }
       )
       .subscribe();
@@ -767,10 +781,63 @@ export default function HuddlesPage() {
       .on("broadcast", { event: "invite-to-speak" }, ({ payload }: any) => {
         if (payload.userId === me?.id) {
           setMyHandRaised(false);
-          window.alert("The host invited you to speak — unmute when ready.");
+          window.alert("The host invited you to speak â€” unmute when ready.");
+        }
+      })
+      .on("broadcast", { event: "host-transferred" }, ({ payload }: any) => {
+        if (payload?.newHostId === me?.id) {
+          window.alert("You are now the host of this huddle.");
         }
       })
       .subscribe();
+  }
+
+  useEffect(() => {
+    if (!activeRoom) return;
+    const markActivity = () => {
+      lastActivityRef.current = Date.now();
+      if (idleWarningRef.current) {
+        idleWarningRef.current = false;
+        setIdleWarning(false);
+        setIdleCountdown(30);
+      }
+    };
+    window.addEventListener("mousemove", markActivity);
+    window.addEventListener("keydown", markActivity);
+    window.addEventListener("click", markActivity);
+    const checker = window.setInterval(() => {
+      const idleFor = Date.now() - lastActivityRef.current;
+      if (!idleWarningRef.current && idleFor >= IDLE_WARN_MS) {
+        idleWarningRef.current = true;
+        setIdleWarning(true);
+        setIdleCountdown(IDLE_LEAVE_S);
+      }
+    }, 5000);
+    return () => {
+      window.removeEventListener("mousemove", markActivity);
+      window.removeEventListener("keydown", markActivity);
+      window.removeEventListener("click", markActivity);
+      window.clearInterval(checker);
+    };
+  }, [activeRoom?.id]);
+
+  useEffect(() => {
+    if (!idleWarning) return;
+    if (idleCountdown <= 0) {
+      idleWarningRef.current = false;
+      setIdleWarning(false);
+      if (isHost) { endHuddle(); } else { leaveRoom(); }
+      return;
+    }
+    const t = window.setTimeout(() => setIdleCountdown((c) => c - 1), 1000);
+    return () => window.clearTimeout(t);
+  }, [idleWarning, idleCountdown]);
+
+  function stayInCall() {
+    lastActivityRef.current = Date.now();
+    idleWarningRef.current = false;
+    setIdleWarning(false);
+    setIdleCountdown(30);
   }
 
   function teardownChannels() {
@@ -782,7 +849,7 @@ export default function HuddlesPage() {
     });
   }
 
-  /* ── Leave (non-host) ── */
+  /* â”€â”€ Leave (non-host) â”€â”€ */
   async function leaveRoom() {
     if (myParticipantIdRef.current) {
       await supabase.from("voice_room_participants").delete().eq("id", myParticipantIdRef.current);
@@ -790,7 +857,7 @@ export default function HuddlesPage() {
     await finishCall(null, "left");
   }
 
-  /* ── End huddle (host only) ── */
+  /* â”€â”€ End huddle (host only) â”€â”€ */
   async function endHuddle() {
     if (!activeRoom || !me) return;
     const duration = elapsed;
@@ -813,7 +880,7 @@ export default function HuddlesPage() {
     await finishCall({ duration, count, reason: "ended" });
   }
 
-  /* ── Shared cleanup ── */
+  /* â”€â”€ Shared cleanup â”€â”€ */
   async function finishCall(
     explicitSummary: { duration: number; count: number; reason: string } | null,
     reasonOverride?: string
@@ -837,7 +904,7 @@ export default function HuddlesPage() {
     loadRooms();
   }
 
-  /* ── Self mute toggle ── */
+  /* â”€â”€ Self mute toggle â”€â”€ */
   function toggleMute() {
     const next = !myMuted;
     setMyMuted(next);
@@ -848,13 +915,13 @@ export default function HuddlesPage() {
     }
   }
 
-  /* ── Hand raise toggle ── */
+  /* â”€â”€ Hand raise toggle â”€â”€ */
   async function toggleHand() {
     const next = !myHandRaised;
     setMyHandRaised(next);
 
     // Update my own tile immediately. The grid renders from `participants`, so
-    // without this my hand only appeared once the realtime echo came back —
+    // without this my hand only appeared once the realtime echo came back â€”
     // which read as the feature not working at all.
     if (me) {
       setParticipants((prev) =>
@@ -881,7 +948,7 @@ export default function HuddlesPage() {
     }
   }
 
-  /* ── Send a reaction ── */
+  /* â”€â”€ Send a reaction â”€â”€ */
   function sendReaction(emoji: string) {
     if (!me) return;
     notifyChanRef.current?.send({ type: "broadcast", event: "reaction", payload: { userId: me.id, emoji } });
@@ -894,35 +961,79 @@ export default function HuddlesPage() {
     }), 1800);
   }
 
-  /* ── Host: invite a raised hand to speak ── */
+  /* â”€â”€ Host: invite a raised hand to speak â”€â”€ */
   function inviteToSpeak(userId: string) {
     notifyChanRef.current?.send({ type: "broadcast", event: "invite-to-speak", payload: { userId } });
     supabase.from("voice_room_participants").update({ hand_raised: false }).eq("room_id", activeRoom!.id).eq("user_id", userId);
   }
 
-  /* ── Host: remove a participant ── */
+  /* â”€â”€ Host: remove a participant â”€â”€ */
   async function removeParticipant(participantId: string) {
     await supabase.from("voice_room_participants").delete().eq("id", participantId);
+  }
+
+  /* â”€â”€ Host: transfer host role to another participant â”€â”€
+     Updates voice_rooms.created_by, which the room UPDATE handler above
+     picks up via realtime and re-syncs into activeRoom for everyone. */
+  async function transferHost(userId: string) {
+    if (!activeRoom || !me || userId === me.id) return;
+    setTransferBusyId(userId);
+    try {
+      const { error } = await supabase
+        .from("voice_rooms")
+        .update({ created_by: userId })
+        .eq("id", activeRoom.id);
+      if (error) throw error;
+
+      // Optimistic local update â€” do not wait for the realtime echo, which
+      // can lag on a slow connection and make the click feel like it failed.
+      setActiveRoom((prev) => (prev ? { ...prev, created_by: userId } : prev));
+
+      await supabase.from("audit_logs").insert({
+        tenant_id: me.tenantId,
+        user_id: me.id,
+        action: "huddle_host_transferred",
+        metadata: { room_id: activeRoom.id, new_host: userId },
+      });
+
+      notifyChanRef.current?.send({
+        type: "broadcast", event: "host-transferred",
+        payload: { newHostId: userId, newHostName: displayName(profiles[userId], "A teammate") },
+      });
+    } catch (e: any) {
+      setError(e.message ?? "Could not transfer host.");
+    } finally {
+      setTransferBusyId(null);
+    }
+  }
+
+  /* â”€â”€ Host: assign someone as active speaker regardless of hand-raise â”€â”€
+     Same signal as inviteToSpeak but usable on any participant, not just
+     those with a raised hand â€” the Assign Speaker panel calls this. */
+  function assignSpeaker(userId: string) {
+    if (!activeRoom) return;
+    notifyChanRef.current?.send({ type: "broadcast", event: "invite-to-speak", payload: { userId } });
+    supabase.from("voice_room_participants").update({ hand_raised: false }).eq("room_id", activeRoom.id).eq("user_id", userId);
   }
 
   const isHost = !!(activeRoom && me && activeRoom.created_by === me.id);
   const raisedHands = participants.filter((p) => p.hand_raised);
 
-  /* ────────────────────────────────────────────────────────────────────
+  /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
      RENDER: SUMMARY MODAL (always on top if present)
-  ──────────────────────────────────────────────────────────────────── */
+  â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   if (summary) {
     return (
       <div className="min-h-screen bg-zinc-950 flex items-center justify-center px-4">
         <div className="max-w-sm w-full rounded-2xl border border-zinc-800 bg-zinc-900/60 p-8 text-center">
           <div className="w-12 h-12 rounded-full bg-emerald-500/15 flex items-center justify-center mx-auto mb-4">
-            <span className="text-emerald-400 text-xl">✓</span>
+            <span className="text-emerald-400 text-xl">âœ“</span>
           </div>
           <h2 className="text-white font-semibold text-lg mb-1">
             {summary.reason === "removed" ? "You were removed from the huddle" : "Huddle ended"}
           </h2>
           <p className="text-zinc-400 text-sm mb-6">
-            Duration {formatDuration(summary.duration)} · {summary.count} participant{summary.count === 1 ? "" : "s"}
+            Duration {formatDuration(summary.duration)} Â· {summary.count} participant{summary.count === 1 ? "" : "s"}
           </p>
           <button
             onClick={() => setSummary(null)}
@@ -935,14 +1046,14 @@ export default function HuddlesPage() {
     );
   }
 
-  /* ────────────────────────────────────────────────────────────────────
+  /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
      RENDER: ROOM LIST
-  ──────────────────────────────────────────────────────────────────── */
+  â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   if (!activeRoom) {
     return (
       <div className="relative min-h-screen bg-[#08060f] px-6 py-10 overflow-hidden">
         <style>{`@keyframes pv-bar { from { transform: scaleY(0.45); } to { transform: scaleY(1.25); } } @keyframes pv-pop { 0% { transform: scale(0) rotate(-15deg); opacity: 0; } 60% { transform: scale(1.25) rotate(6deg); opacity: 1; } 100% { transform: scale(1) rotate(0deg); opacity: 1; } }`}</style>
-        {/* Ambient depth — a room you're waiting outside of */}
+        {/* Ambient depth â€” a room you're waiting outside of */}
         <div className="pointer-events-none absolute inset-0" aria-hidden>
           <div className="absolute -top-40 left-1/4 w-[520px] h-[520px] rounded-full opacity-[0.13] blur-[110px]"
                style={{ background: "radial-gradient(circle, #7C3AED 0%, transparent 70%)" }} />
@@ -999,7 +1110,7 @@ export default function HuddlesPage() {
                   onClick={createRoom}
                   className="bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-semibold px-4 py-2 rounded-xl transition text-sm"
                 >
-                  {busy ? "Starting…" : "Start"}
+                  {busy ? "Startingâ€¦" : "Start"}
                 </button>
               </div>
             </div>
@@ -1013,7 +1124,7 @@ export default function HuddlesPage() {
               <div className="relative mx-auto mb-5 w-14 h-14 rounded-2xl flex items-center justify-center"
                    style={{ background: "linear-gradient(135deg,rgba(124,58,237,0.18),rgba(124,58,237,0.05))",
                             border: "1px solid rgba(124,58,237,0.25)" }}>
-                <span className="text-xl">🎙️</span>
+                <span className="text-xl">ðŸŽ™ï¸</span>
                 <span className="absolute inset-0 rounded-2xl animate-ping opacity-20"
                       style={{ background: "rgba(124,58,237,0.4)", animationDuration: "3s" }} />
               </div>
@@ -1091,12 +1202,12 @@ export default function HuddlesPage() {
                     {/* join affordance */}
                     <div className="relative mt-4 pt-3.5 border-t border-white/[0.06] flex items-center justify-between">
                       <span className="text-[11px] text-zinc-500 group-hover:text-zinc-300 transition-colors">
-                        {busy ? "Connecting…" : "Tap to join"}
+                        {busy ? "Connectingâ€¦" : "Tap to join"}
                       </span>
                       <span className="w-7 h-7 rounded-full flex items-center justify-center transition-all duration-200
                                        group-hover:translate-x-0.5"
                             style={{ background: "rgba(124,58,237,0.16)", border: "1px solid rgba(124,58,237,0.3)" }}>
-                        <span className="text-purple-300 text-xs leading-none">→</span>
+                        <span className="text-purple-300 text-xs leading-none">â†’</span>
                       </span>
                     </div>
                   </div>
@@ -1109,9 +1220,9 @@ export default function HuddlesPage() {
     );
   }
 
-  /* ────────────────────────────────────────────────────────────────────
+  /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
      RENDER: ACTIVE ROOM
-  ──────────────────────────────────────────────────────────────────── */
+  â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   return (
     <div className="relative h-[calc(100vh-6rem)] bg-[#08060f] px-6 py-8 flex flex-col overflow-hidden">
       <style>{`@keyframes pv-bar { from { transform: scaleY(0.45); } to { transform: scaleY(1.25); } } @keyframes pv-pop { 0% { transform: scale(0) rotate(-15deg); opacity: 0; } 60% { transform: scale(1.25) rotate(6deg); opacity: 1; } 100% { transform: scale(1) rotate(0deg); opacity: 1; } }`}</style>
@@ -1136,7 +1247,7 @@ export default function HuddlesPage() {
                 <span className="relative w-2 h-2 rounded-full bg-purple-400" />
               </span>
               <span className="text-[10px] text-purple-300 font-bold uppercase tracking-[0.18em]">Live</span>
-              <span className="text-zinc-700">·</span>
+              <span className="text-zinc-700">Â·</span>
               <span className="text-[11px] text-zinc-500 font-mono tabular-nums">{formatDuration(elapsed)}</span>
             </div>
             <h1 className="text-white font-bold text-xl tracking-tight truncate">{activeRoom.name}</h1>
@@ -1149,7 +1260,7 @@ export default function HuddlesPage() {
                 className="relative rounded-xl px-3 py-2 text-sm font-medium transition-all hover:-translate-y-[1px]"
                 style={{ background: "rgba(245,158,11,0.14)", border: "1px solid rgba(245,158,11,0.35)", color: "#FCD34D" }}
               >
-                ✋ {raisedHands.length}
+                âœ‹ {raisedHands.length}
               </button>
             )}
             {isHost ? (
@@ -1177,7 +1288,7 @@ export default function HuddlesPage() {
           <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-3 mb-6 space-y-2">
             {raisedHands.map((p) => (
               <div key={p.id} className="flex items-center justify-between text-sm">
-                <span className="text-zinc-200">✋ {displayName(profiles[p.user_id], "Member")}</span>
+                <span className="text-zinc-200">âœ‹ {displayName(profiles[p.user_id], "Member")}</span>
                 <button
                   onClick={() => inviteToSpeak(p.user_id)}
                   className="text-emerald-400 hover:text-emerald-300 text-xs font-medium"
@@ -1215,7 +1326,7 @@ export default function HuddlesPage() {
                   </span>
                 )}
                 {/* Avatar + hand badge share a wrapper so the badge anchors to the
-                    avatar, not the grid cell — otherwise it drifts and clips. */}
+                    avatar, not the grid cell â€” otherwise it drifts and clips. */}
                 <div className="relative">
                   <div
                     className="w-16 h-16 rounded-full flex items-center justify-center text-white font-semibold text-sm"
@@ -1241,7 +1352,7 @@ export default function HuddlesPage() {
                       }}
                       title="Hand raised"
                     >
-                      ✋
+                      âœ‹
                     </span>
                   )}
                 </div>
@@ -1251,7 +1362,7 @@ export default function HuddlesPage() {
                 <div className="mt-2 flex items-center gap-2 h-4">
                   {(p.user_id === me?.id ? myMuted : p.is_muted) ? (
                     <span className="inline-flex items-center gap-1 text-[10px] text-zinc-500">
-                      <span className="text-[11px] leading-none">🔇</span> Muted
+                      <span className="text-[11px] leading-none">ðŸ”‡</span> Muted
                     </span>
                   ) : (
                     <Spectrum level={level} active={speaking} />
@@ -1264,7 +1375,7 @@ export default function HuddlesPage() {
                     className="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 transition w-6 h-6 rounded-full bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-red-400 text-xs"
                     title="Remove from huddle"
                   >
-                    ✕
+                    âœ•
                   </button>
                 )}
               </div>
@@ -1272,7 +1383,7 @@ export default function HuddlesPage() {
           })}
         </div>
 
-        {/* Control bar — pinned so a full participant grid can't push it off-screen */}
+        {/* Control bar â€” pinned so a full participant grid can't push it off-screen */}
         <div className="mt-6 flex-shrink-0 sticky bottom-0 flex items-center justify-center gap-3
                         py-5 bg-[#08060f]/90 backdrop-blur-xl border-t border-white/[0.06] gap-8">
           <button
@@ -1286,7 +1397,7 @@ export default function HuddlesPage() {
                     background: myMuted ? "rgba(220,38,38,0.16)" : "rgba(124,58,237,0.18)",
                     border: myMuted ? "1px solid rgba(220,38,38,0.45)" : "1px solid rgba(124,58,237,0.45)",
                   }}>
-              {myMuted ? "🔇" : "🎙️"}
+              {myMuted ? "ðŸ”‡" : "ðŸŽ™ï¸"}
             </span>
             <span className="text-[10px] text-zinc-500 group-hover:text-zinc-300 transition-colors">
               {myMuted ? "Unmute" : "Mute"}
@@ -1304,7 +1415,7 @@ export default function HuddlesPage() {
                     background: myHandRaised ? "rgba(245,158,11,0.9)" : "rgba(255,255,255,0.05)",
                     border: myHandRaised ? "1px solid #F59E0B" : "1px solid rgba(255,255,255,0.12)",
                   }}>
-              ✋
+              âœ‹
             </span>
             <span className="text-[10px] transition-colors"
                   style={{ color: myHandRaised ? "#FCD34D" : undefined }}>
@@ -1313,6 +1424,27 @@ export default function HuddlesPage() {
               </span>
             </span>
           </button>
+          {isHost && (
+            <button
+              onClick={() => setShowAssignSpeaker((v) => !v)}
+              title="Assign speaker"
+              className="group flex flex-col items-center gap-1.5 transition-transform hover:-translate-y-[2px]"
+            >
+              <span className="rounded-full flex items-center justify-center text-lg transition-all"
+                    style={{
+                      width: 52, height: 52,
+                      background: showAssignSpeaker ? "rgba(245,158,11,0.18)" : "rgba(255,255,255,0.05)",
+                      border: showAssignSpeaker ? "1px solid rgba(245,158,11,0.5)" : "1px solid rgba(255,255,255,0.12)",
+                    }}>
+                ðŸŽ¯
+              </span>
+              <span className="text-[10px] transition-colors"
+                    style={{ color: showAssignSpeaker ? "#FCD34D" : undefined }}>
+                <span className={showAssignSpeaker ? "" : "text-zinc-500 group-hover:text-zinc-300"}>Speaker</span>
+              </span>
+            </button>
+          )}
+
           <button
             onClick={() => setShowTimeIt((v) => !v)}
             title="Time It"
@@ -1324,7 +1456,7 @@ export default function HuddlesPage() {
                     background: showTimeIt ? "rgba(0,191,166,0.18)" : "rgba(255,255,255,0.05)",
                     border: showTimeIt ? "1px solid rgba(0,191,166,0.5)" : "1px solid rgba(255,255,255,0.12)",
                   }}>
-              ⏱️
+              â±ï¸
             </span>
             <span className="text-[10px] transition-colors"
                   style={{ color: showTimeIt ? "#00BFA6" : undefined }}>
@@ -1338,7 +1470,7 @@ export default function HuddlesPage() {
                                   transition-transform hover:-translate-y-[2px]">
                 <span className="rounded-full flex items-center justify-center text-lg"
                       style={{ width: 52, height: 52, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.12)" }}>
-                  😊
+                  ðŸ˜Š
                 </span>
                 <span className="text-[10px] text-zinc-500">React</span>
               </summary>
@@ -1366,6 +1498,73 @@ export default function HuddlesPage() {
           onClose={() => setShowTimeIt(false)}
         />
       )}
+
+      {/* â”€â”€ Assign Speaker panel (host only) â”€â”€ */}
+      {showAssignSpeaker && isHost && activeRoom && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
+             onClick={() => setShowAssignSpeaker(false)}>
+          <div className="w-full max-w-sm rounded-2xl border border-zinc-800 bg-zinc-900 p-5"
+               onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-white font-semibold text-sm">Assign speaker</h3>
+              <button onClick={() => setShowAssignSpeaker(false)}
+                      className="w-7 h-7 rounded-lg flex items-center justify-center text-zinc-500 hover:text-white hover:bg-zinc-800 transition">
+                âœ•
+              </button>
+            </div>
+            <p className="text-xs text-zinc-500 mb-4">
+              Invite anyone to unmute and speak, whether or not their hand is raised.
+            </p>
+            <div className="space-y-1.5 max-h-72 overflow-y-auto">
+              {participants.filter((p) => p.user_id !== me?.id).map((p) => (
+                <div key={p.id} className="flex items-center justify-between px-3 py-2 rounded-xl hover:bg-zinc-800/60 transition">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-[11px] font-semibold flex-shrink-0"
+                         style={{ background: "linear-gradient(135deg, #7C3AED, #5B21B6)" }}>
+                      {initials(displayName(profiles[p.user_id], "M"))}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs text-white truncate">{displayName(profiles[p.user_id], "Member")}</p>
+                      {p.hand_raised && <p className="text-[10px] text-amber-400">âœ‹ Hand raised</p>}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => assignSpeaker(p.user_id)}
+                    className="text-[11px] font-medium text-purple-300 hover:text-purple-200 px-2.5 py-1 rounded-lg hover:bg-purple-500/10 transition flex-shrink-0"
+                  >
+                    Invite to speak
+                  </button>
+                </div>
+              ))}
+              {participants.filter((p) => p.user_id !== me?.id).length === 0 && (
+                <p className="text-xs text-zinc-600 text-center py-6">No one else is in this huddle yet.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* â”€â”€ Idle-timeout popup â”€â”€ */}
+      {idleWarning && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
+          <div className="w-full max-w-xs rounded-2xl border border-zinc-800 bg-zinc-900 p-6 text-center">
+            <div className="w-11 h-11 rounded-full bg-amber-500/15 flex items-center justify-center mx-auto mb-3">
+              <span className="text-amber-400 text-lg">â±ï¸</span>
+            </div>
+            <h3 className="text-white font-semibold text-sm mb-1.5">Still there?</h3>
+            <p className="text-zinc-500 text-xs mb-5">
+              You have been inactive. Leaving in <span className="text-amber-400 font-semibold tabular-nums">{idleCountdown}s</span>.
+            </p>
+            <button
+              onClick={stayInCall}
+              className="w-full bg-white hover:bg-zinc-200 text-zinc-900 font-semibold py-2.5 rounded-xl transition text-sm"
+            >
+              I am still here
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
