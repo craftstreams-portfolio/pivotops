@@ -738,20 +738,7 @@ export default function HomeClient() {
             </div>
           </div>
         </div>
-            <div className="flex justify-center pt-2 px-4 w-full">
-              <a
-                href="https://saasbrowser.com/en/saas/1613929/pivotops"
-                target="_blank"
-                rel="noopener"
-                className="inline-block max-w-full"
-              >
-                <img
-                  src="https://static-files.saasbrowser.com/saas-browser-badge-14.svg"
-                  alt="PivotOps - SaaS discovery platform"
-                  className="w-[200px] max-w-full h-auto block"
-                />
-              </a>
-            </div>
+            {/* SaaS Browser badge temporarily hidden - URL returning 404, awaiting correct embed code */}
       </footer>
 
       {/* Xavier chat widget */}
