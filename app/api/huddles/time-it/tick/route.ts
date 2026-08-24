@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { checkAndAdvance } from "@/lib/huddles/time-it";
 
@@ -7,21 +7,22 @@ function getAdmin() {
 }
 
 /**
- * Polled every 1-2s by any client viewing an active Time It session. No
- * background worker checks expiration (see lib/huddles/time-it.ts header
- * comment) - this route is what actually advances warnings and expiry,
- * called from whichever client happens to be open. Idempotent: firing
- * warning/expiry logic twice does nothing extra, guarded by the
- * warning_60_fired/warning_30_fired/status flags in the DB row.
+ * Polled every 1-2s by any client viewing an active Time It session.
+ * roomType selects whether roomId refers to a voice_rooms (huddle) or
+ * meetings (conference) row - everything downstream (state table, agenda,
+ * queue) is already keyed by a generic room_id and needs no branching.
  */
 export async function POST(req: NextRequest) {
-  const { roomId } = await req.json();
+  const { roomId, roomType } = await req.json();
   if (!roomId) return NextResponse.json({ error: "roomId required." }, { status: 400 });
-
+  const type: "huddle" | "meeting" = roomType === "meeting" ? "meeting" : "huddle";
   const admin = getAdmin();
-  const { data: room } = await admin.from("voice_rooms").select("tenant_id").eq("id", roomId).maybeSingle();
-  if (!room) return NextResponse.json({ error: "Room not found." }, { status: 404 });
 
-  const state = await checkAndAdvance(roomId, room.tenant_id);
+  const { data: room } = type === "meeting"
+    ? await admin.from("meetings").select("tenant_id").eq("id", roomId).maybeSingle()
+    : await admin.from("voice_rooms").select("tenant_id").eq("id", roomId).maybeSingle();
+
+  if (!room) return NextResponse.json({ error: "Room not found." }, { status: 404 });
+  const state = await checkAndAdvance(roomId, room.tenant_id, type);
   return NextResponse.json({ state });
 }

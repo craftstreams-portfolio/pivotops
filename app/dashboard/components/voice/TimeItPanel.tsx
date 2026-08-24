@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
@@ -58,12 +58,13 @@ interface AgendaItem {
 }
 
 export function TimeItPanel({
-  roomId, isHost, participants, onClose,
+  roomId, isHost, participants, onClose, roomType = "huddle",
 }: {
   roomId: string;
   isHost: boolean;
   participants: Participant[];
   onClose: () => void;
+  roomType?: "huddle" | "meeting";
 }) {
   const [state, setState] = useState<TimerState | null>(null);
   const [selectedSpeaker, setSelectedSpeaker] = useState("");
@@ -79,7 +80,7 @@ export function TimeItPanel({
   const audioCtxRef = useRef<AudioContext | null>(null);
 
   // Simple, professional short chime - generated in-browser rather than
-  // bundling an audio asset. Single tone for 60s, double for 30s (spec §9).
+  // bundling an audio asset. Single tone for 60s, double for 30s (spec Â§9).
   function playChime(times: number) {
     try {
       const Ctx = window.AudioContext || (window as any).webkitAudioContext;
@@ -104,7 +105,7 @@ export function TimeItPanel({
     let cancelled = false;
     const poll = async () => {
       try {
-        const res = await authedFetch(`/api/huddles/time-it/tick`, { roomId });
+        const res = await authedFetch(`/api/huddles/time-it/tick`, { roomId, roomType });
         const data = await res.json();
         if (cancelled || !data.state) { if (!cancelled) setState(null); return; }
         setState(data.state);
@@ -153,15 +154,15 @@ export function TimeItPanel({
     warned60Ref.current = false; warned30Ref.current = false;
     const p = participants.find((x) => x.user_id === selectedSpeaker);
     await authedFetch("/api/huddles/time-it/start", {
-      roomId, speakerId: selectedSpeaker, speakerName: p?.full_name ?? p?.email ?? "",
+      roomId, roomType, speakerId: selectedSpeaker, speakerName: p?.full_name ?? p?.email ?? "",
       durationSeconds: duration, autoMute,
     });
     setBusy(false);
   }
-  async function handlePause()  { setBusy(true); await authedFetch("/api/huddles/time-it/pause",  { roomId }); setBusy(false); }
-  async function handleResume() { setBusy(true); await authedFetch("/api/huddles/time-it/resume", { roomId }); setBusy(false); }
-  async function handleSkip()   { setBusy(true); await authedFetch("/api/huddles/time-it/skip",   { roomId }); setBusy(false); }
-  async function handleEnd()    { setBusy(true); await authedFetch("/api/huddles/time-it/end",    { roomId }); setBusy(false); }
+  async function handlePause()  { setBusy(true); await authedFetch("/api/huddles/time-it/pause",  { roomId, roomType }); setBusy(false); }
+  async function handleResume() { setBusy(true); await authedFetch("/api/huddles/time-it/resume", { roomId, roomType }); setBusy(false); }
+  async function handleSkip()   { setBusy(true); await authedFetch("/api/huddles/time-it/skip",   { roomId, roomType }); setBusy(false); }
+  async function handleEnd()    { setBusy(true); await authedFetch("/api/huddles/time-it/end",    { roomId, roomType }); setBusy(false); }
   async function handleAddAgendaItem() {
     if (!newTitle.trim()) return;
     setBusy(true);
@@ -192,7 +193,7 @@ export function TimeItPanel({
 
   async function handleExtend(extra: number) {
     setBusy(true);
-    await authedFetch("/api/huddles/time-it/extend", { roomId, extraSeconds: extra });
+    await authedFetch("/api/huddles/time-it/extend", { roomId, roomType, extraSeconds: extra });
     setBusy(false);
   }
 
@@ -203,7 +204,7 @@ export function TimeItPanel({
     <div className="fixed top-20 right-4 z-30 w-72 rounded-2xl border border-white/10 bg-[#0c0a14]/95 backdrop-blur-xl shadow-2xl overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
         <span className="text-xs font-semibold text-white tracking-wide">TIME IT</span>
-        <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300 text-sm">✕</button>
+        <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300 text-sm">âœ•</button>
       </div>
 
       <div className="p-4 space-y-4">
@@ -269,7 +270,7 @@ export function TimeItPanel({
 
             {isHost && (
               <div className="space-y-1.5 pt-2 border-t border-white/[0.06]">
-                <input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="Agenda item title…"
+                <input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="Agenda item titleâ€¦"
                   className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-2 text-xs text-white" />
                 <div className="flex gap-1.5">
                   {[180, 300, 600, 900].map((s) => (
@@ -298,7 +299,7 @@ export function TimeItPanel({
               <select value={selectedSpeaker} onChange={(e) => setSelectedSpeaker(e.target.value)}
                 className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-2 text-xs text-white"
                 style={{ colorScheme: "dark" }}>
-                <option value="" style={{ color: "#000" }}>Select speaker…</option>
+                <option value="" style={{ color: "#000" }}>Select speakerâ€¦</option>
                 {participants.map((p) => (
                   <option key={p.user_id} value={p.user_id} style={{ color: "#000" }}>{p.full_name ?? p.email}</option>
                 ))}

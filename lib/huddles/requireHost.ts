@@ -1,8 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { verifyIsHost } from "@/lib/huddles/time-it";
 
-export async function requireHost(req: NextRequest, roomId: string) {
+export async function requireHost(req: NextRequest, roomId: string, roomType: "huddle" | "meeting" = "huddle") {
   const authHeader = req.headers.get("authorization") ?? "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
   if (!token) return { error: NextResponse.json({ error: "Authentication required." }, { status: 401 }) };
@@ -22,7 +22,7 @@ export async function requireHost(req: NextRequest, roomId: string) {
   );
   const { data: profile } = await admin.from("profiles").select("tenant_id").eq("id", user.id).maybeSingle();
 
-  const isHost = await verifyIsHost(roomId, user.id);
+  const isHost = await verifyIsHost(roomId, user.id, roomType);
   if (!isHost) return { error: NextResponse.json({ error: "Only the host can control Time It." }, { status: 403 }) };
 
   return { userId: user.id, tenantId: profile?.tenant_id ?? "" };

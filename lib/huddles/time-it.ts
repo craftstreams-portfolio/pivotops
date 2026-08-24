@@ -1,4 +1,4 @@
-/**
+﻿/**
  * lib/huddles/time-it.ts
  *
  * Server-authoritative Time It engine for Huddles, Speaker Mode only
@@ -35,8 +35,12 @@ export interface TimerState {
 }
 
 /** Verifies the caller is the room's host. Server-side, per spec section 25. */
-export async function verifyIsHost(roomId: string, userId: string): Promise<boolean> {
+export async function verifyIsHost(roomId: string, userId: string, roomType: "huddle" | "meeting" = "huddle"): Promise<boolean> {
   const admin = getAdmin();
+  if (roomType === "meeting") {
+    const { data } = await admin.from("meetings").select("host_user_id").eq("id", roomId).maybeSingle();
+    return !!data && data.host_user_id === userId;
+  }
   const { data } = await admin.from("voice_rooms").select("created_by").eq("id", roomId).maybeSingle();
   return !!data && data.created_by === userId;
 }
@@ -175,7 +179,7 @@ export async function endTimer(roomId: string, tenantId: string): Promise<void> 
  * no background worker infrastructure (confirmed earlier this session - the
  * events/worker subsystem's setInterval loops die on serverless return).
  */
-export async function checkAndAdvance(roomId: string, tenantId: string): Promise<TimerState | null> {
+export async function checkAndAdvance(roomId: string, tenantId: string, roomType: "huddle" | "meeting" = "huddle"): Promise<TimerState | null> {
   const admin = getAdmin();
   const state = await getTimerState(roomId);
   if (!state || state.status !== "running") return state;
@@ -203,18 +207,26 @@ export async function checkAndAdvance(roomId: string, tenantId: string): Promise
     await logEvent(admin, tenantId, roomId, state.current_speaker_id, "timer_expired");
 
     if (state.auto_mute && state.current_speaker_id) {
-      await admin.from("voice_room_participants")
-        .update({ is_muted: true, mute_reason: "time_it_expired" })
-        .eq("room_id", roomId).eq("user_id", state.current_speaker_id);
+      if (roomType === "meeting") {
+        await admin.from("meeting_participants")
+          .update({ is_muted: true })
+          .eq("meeting_id", roomId).eq("participant_user_id", state.current_speaker_id);
+      } else {
+        await admin.from("voice_room_participants")
+          .update({ is_muted: true, mute_reason: "time_it_expired" })
+          .eq("room_id", roomId).eq("user_id", state.current_speaker_id);
+      }
       await logEvent(admin, tenantId, roomId, state.current_speaker_id, "speaker_muted", { reason: "time_it_expired" });
     }
 
     // Auto-advance to the next queued speaker, if any (spec section 7).
-    // Uses the room's own host (voice_rooms.created_by) as the acting host
-    // for this system-triggered transition, not the expired speaker.
-    const { data: room } = await admin.from("voice_rooms").select("created_by").eq("id", roomId).maybeSingle();
-    if (room?.created_by) {
-      await advanceQueue(roomId, tenantId, room.created_by, "completed");
+    // Host resolved from the appropriate room table for this system-triggered
+    // transition, not the expired speaker.
+    const hostId = roomType === "meeting"
+      ? (await admin.from("meetings").select("host_user_id").eq("id", roomId).maybeSingle()).data?.host_user_id
+      : (await admin.from("voice_rooms").select("created_by").eq("id", roomId).maybeSingle()).data?.created_by;
+    if (hostId) {
+      await advanceQueue(roomId, tenantId, hostId, "completed");
     }
   }
 
@@ -225,13 +237,13 @@ export async function checkAndAdvance(roomId: string, tenantId: string): Promise
 
   return { ...state, ...updates } as TimerState;
 }
-// ─────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // AGENDA MODE (Phase 2). Reuses meeting_timer_state's existing
 // start/pause/resume/expire machinery is NOT reused here directly -
 // agenda items are simpler (no per-speaker mute), so they get their
 // own lighter functions operating on meeting_agenda_items plus the
 // active_agenda_item_id pointer on meeting_timer_state.
-// ─────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface AgendaItem {
   id: string;
@@ -361,10 +373,10 @@ export async function checkAgendaAdvance(roomId: string, tenantId: string): Prom
   return { ...active, remaining_seconds: remaining };
 }
 
-// ─────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // SPEAKER QUEUE (uses speaker_time_allocations, already created in
 // Phase 1 but unused until now - no schema change needed).
-// ─────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface QueuedSpeaker {
   id: string;
@@ -456,3 +468,4 @@ export async function getNextQueued(roomId: string): Promise<QueuedSpeaker | nul
     .order("sort_order", { ascending: true }).limit(1).maybeSingle();
   return data ?? null;
 }
+
