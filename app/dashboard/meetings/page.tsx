@@ -23,9 +23,9 @@ import {
   Maximize2, Grid3X3, RadioTower, Smile,
 } from "lucide-react";
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────
 // TYPES
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────
 type ConferenceView = "lobby" | "device-test" | "live" | "ended";
 type LayoutMode     = "grid" | "spotlight";
 
@@ -50,9 +50,9 @@ interface ParticipantState {
   reactions:   string[];
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────
 // HELPERS
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────
 function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
@@ -64,11 +64,11 @@ function getInitials(name: string) {
   return p.length >= 2 ? `${p[0][0]}${p[p.length-1][0]}`.toUpperCase() : p[0][0].toUpperCase();
 }
 
-const EMOJI_LIST = ["ðŸ‘","ðŸ‘Ž","â¤ï¸","ðŸ˜‚","ðŸ˜®","ðŸ˜¢","ðŸŽ‰","ðŸ”¥","âœ…","ðŸ‘","ðŸš€","ðŸ’¯"];
+const EMOJI_LIST = ["👍","👎","❤️","😂","😮","😢","🎉","🔥","✅","👏","🚀","💯"];
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// AUDIO SPECTRUM â€” animated bars
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────
+// AUDIO SPECTRUM — animated bars
+// ─────────────────────────────────────────
 function AudioSpectrum({ level, color = "#6366f1", bars = 24, height = 40 }: {
   level:   number;
   color?:  string;
@@ -107,9 +107,9 @@ function AudioSpectrum({ level, color = "#6366f1", bars = 24, height = 40 }: {
   );
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────
 // MIC LEVEL METER (device test)
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────
 function MicLevelMeter({ stream }: { stream: MediaStream | null }) {
   const [level, setLevel] = useState(0);
   const rafRef = useRef<number>(0);
@@ -143,7 +143,7 @@ function MicLevelMeter({ stream }: { stream: MediaStream | null }) {
       <div className="flex items-center justify-between text-xs text-zinc-400">
         <span className="flex items-center gap-1.5"><Mic size={12} /> Microphone Level</span>
         <span className={pct > 10 ? "text-emerald-400" : "text-zinc-600"}>
-          {pct > 10 ? "Detecting audio âœ“" : "Speak to test..."}
+          {pct > 10 ? "Detecting audio ✓" : "Speak to test..."}
         </span>
       </div>
       <div className="h-2 bg-zinc-800 rounded-full overflow-hidden">
@@ -162,9 +162,9 @@ function MicLevelMeter({ stream }: { stream: MediaStream | null }) {
   );
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────
 // VIDEO TILE
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────
 function VideoTile({
   participant, isSpotlight, isLocal, onSpotlight,
   hostControls, onMute, onKick, onReact,
@@ -296,9 +296,9 @@ function VideoTile({
   );
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// DEVICE TEST â€” with audio meter
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────
+// DEVICE TEST — with audio meter
+// ─────────────────────────────────────────
 function DeviceTest({
   onDone, localStream, isMuted, isVideoOn, onToggleMute, onToggleVideo,
 }: {
@@ -358,7 +358,7 @@ function DeviceTest({
       {isMuted && (
         <div className="flex items-center gap-2 text-xs text-amber-400 bg-amber-500/10
                         border border-amber-500/20 rounded-xl px-3 py-2">
-          <MicOff size={12} /> Microphone is muted â€” unmute to test audio
+          <MicOff size={12} /> Microphone is muted — unmute to test audio
         </div>
       )}
 
@@ -382,9 +382,9 @@ function DeviceTest({
   );
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────
 // MAIN PAGE
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────
 function ConferencePageInner() {
   const { tenantId, loading: tenantLoading } = useTenant();
 
@@ -415,6 +415,60 @@ function ConferencePageInner() {
   const [endedTitle,     setEndedTitle]     = useState("");
   const [showEmojiBar,   setShowEmojiBar]   = useState(false);
   const [showTimeIt,     setShowTimeIt]     = useState(false);
+  const [idleWarning,     setIdleWarning]     = useState(false);
+  const [idleCountdown,   setIdleCountdown]   = useState(30);
+  const lastActivityRef  = useRef<number>(Date.now());
+  const idleWarningRef   = useRef(false);
+  const IDLE_WARN_MS     = 4 * 60 * 1000;
+  const IDLE_LEAVE_S     = 30;
+
+  useEffect(() => {
+    if (!activeMeeting) return;
+    const markActivity = () => {
+      lastActivityRef.current = Date.now();
+      if (idleWarningRef.current) {
+        idleWarningRef.current = false;
+        setIdleWarning(false);
+        setIdleCountdown(30);
+      }
+    };
+    window.addEventListener("mousemove", markActivity);
+    window.addEventListener("keydown", markActivity);
+    window.addEventListener("click", markActivity);
+    const checker = window.setInterval(() => {
+      const idleFor = Date.now() - lastActivityRef.current;
+      if (!idleWarningRef.current && idleFor >= IDLE_WARN_MS) {
+        idleWarningRef.current = true;
+        setIdleWarning(true);
+        setIdleCountdown(IDLE_LEAVE_S);
+      }
+    }, 5000);
+    return () => {
+      window.removeEventListener("mousemove", markActivity);
+      window.removeEventListener("keydown", markActivity);
+      window.removeEventListener("click", markActivity);
+      window.clearInterval(checker);
+    };
+  }, [activeMeeting?.id]);
+
+  useEffect(() => {
+    if (!idleWarning) return;
+    if (idleCountdown <= 0) {
+      idleWarningRef.current = false;
+      setIdleWarning(false);
+      handleLeave();
+      return;
+    }
+    const t = window.setTimeout(() => setIdleCountdown((c) => c - 1), 1000);
+    return () => window.clearTimeout(t);
+  }, [idleWarning, idleCountdown]);
+
+  function stayInCall() {
+    lastActivityRef.current = Date.now();
+    idleWarningRef.current = false;
+    setIdleWarning(false);
+    setIdleCountdown(30);
+  }
   const [reactionBurst,  setReactionBurst]  = useState<{ id: string; emoji: string } | null>(null);
 
   const engineRef    = useRef<WebRTCEngine | null>(null);
@@ -427,7 +481,7 @@ function ConferencePageInner() {
 
   const isHost = myParticipant?.participant_role === "host";
 
-  // â”€â”€ Load user â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Load user ──────────────────────────
   useEffect(() => {
     const load = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -438,13 +492,13 @@ function ConferencePageInner() {
     load();
   }, []);
 
-  // â”€â”€ Load meetings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Load meetings ──────────────────────
   useEffect(() => {
     if (tenantLoading) return;
     getMeetings(tenantId).then(setMeetings);
   }, [tenantId, tenantLoading]);
 
-  // â”€â”€ Timer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Timer ──────────────────────────────
   useEffect(() => {
     if (view === "live") {
       startTimeRef.current = new Date();
@@ -464,7 +518,7 @@ function ConferencePageInner() {
     return `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
   }
 
-  // â”€â”€ Start local audio level detection â”€â”€
+  // ── Start local audio level detection ──
   const startLocalAudioDetection = (stream: MediaStream) => {
     if (!stream.getAudioTracks().length) return;
     try {
@@ -485,7 +539,7 @@ function ConferencePageInner() {
     } catch { /* ignore */ }
   };
 
-  // â”€â”€ Join meeting â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Join meeting ───────────────────────
   // Arriving from the #general Join button: open that conference straight away.
   const autoJoinedRef = useRef(false);
   useEffect(() => {
@@ -515,7 +569,7 @@ function ConferencePageInner() {
     }
   };
 
-  /* â”€â”€ Announce a live conference in #general â”€â”€
+  /* ── Announce a live conference in #general ──
      The room code is deliberately left out (the channel is readable by the whole
      tenant); the message carries a meta payload so Teams can render a Join button. */
   async function announceConference(meeting: Meeting) {
@@ -525,7 +579,7 @@ function ConferencePageInner() {
     if (!general?.id) return;
 
     const myName = currentUser.full_name ?? currentUser.email ?? "A teammate";
-    const text = `ðŸ“¹ ${myName} started a conference: "${meeting.title}"`;
+    const text = `📹 ${myName} started a conference: "${meeting.title}"`;
 
     const { data: msg } = await supabase
       .from("messages")
@@ -554,7 +608,7 @@ function ConferencePageInner() {
     }).catch(() => {});
   }
 
-  // â”€â”€ Enter live call â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Enter live call ────────────────────
   const handleEnterCall = async () => {
     if (!activeMeeting || !currentUser) return;
     setLoading(true);
@@ -570,7 +624,7 @@ function ConferencePageInner() {
       setMyParticipant(p);
       if (role === "host") {
         await updateMeetingStatus(activeMeeting.id, "live");
-        // Only the host, only on the transition to live â€” so this fires once per
+        // Only the host, only on the transition to live — so this fires once per
         // conference rather than once per person joining.
         announceConference(activeMeeting).catch(() => {});
       }
@@ -625,7 +679,7 @@ function ConferencePageInner() {
     }
   };
 
-  // â”€â”€ Leave / End call â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Leave / End call ───────────────────
   const handleLeave = async () => {
     const title = activeMeeting?.title ?? "";
     await engineRef.current?.leaveRoom();
@@ -634,7 +688,7 @@ function ConferencePageInner() {
     cancelAnimationFrame(localRafRef.current);
     audioCtxRef.current?.close();
 
-    // If host â€” mark meeting as ended
+    // If host — mark meeting as ended
     if (isHost && activeMeeting) {
       await updateMeetingStatus(activeMeeting.id, "ended" as any);
       setMeetings(prev => prev.map(m =>
@@ -651,7 +705,7 @@ function ConferencePageInner() {
     setView("ended");
   };
 
-  // â”€â”€ Toggle mute â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Toggle mute ────────────────────────
   const handleToggleMute = () => {
     const newMuted = !isMuted;
     engineRef.current?.setMuted(newMuted);
@@ -660,7 +714,7 @@ function ConferencePageInner() {
     if (myParticipant) updateParticipantState(myParticipant.id, { is_muted: newMuted });
   };
 
-  // â”€â”€ Toggle video â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Toggle video ───────────────────────
   const handleToggleVideo = () => {
     const newState = !isVideoOn;
     localStream?.getVideoTracks().forEach(t => { t.enabled = newState; });
@@ -674,7 +728,7 @@ function ConferencePageInner() {
     ));
   };
 
-  // â”€â”€ Screen share â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Screen share ───────────────────────
   const handleScreenShare = async () => {
     if (isSharing) {
       engineRef.current?.stopScreenShare();
@@ -692,7 +746,7 @@ function ConferencePageInner() {
     }
   };
 
-  // â”€â”€ React with emoji â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── React with emoji ───────────────────
   const handleReact = (userId: string, emoji: string) => {
     setParticipants(prev => prev.map(p =>
       p.userId === userId
@@ -742,9 +796,9 @@ function ConferencePageInner() {
     : speakingUserId ? enrichedParticipants.find(p => p.userId === speakingUserId)
     : enrichedParticipants[0];
 
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─────────────────────────────────────
   // ENDED VIEW
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─────────────────────────────────────
   if (view === "ended") {
     return (
       <div className="min-h-screen bg-[#080810] flex items-center justify-center p-4">
@@ -769,9 +823,9 @@ function ConferencePageInner() {
     );
   }
 
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─────────────────────────────────────
   // LOBBY
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─────────────────────────────────────
   if (view === "lobby") {
     return (
       <div className="relative p-4 md:p-6 max-w-5xl space-y-6 overflow-hidden">
@@ -826,11 +880,11 @@ function ConferencePageInner() {
             </div>
             <p className="text-zinc-200 text-sm font-medium">Nobody's in the room yet</p>
             <p className="text-zinc-600 text-xs mt-1.5 max-w-sm mx-auto leading-relaxed">
-              Open a conference and share the room code â€” your team joins from here, no downloads.
+              Open a conference and share the room code — your team joins from here, no downloads.
             </p>
             <button onClick={() => setShowNewMeeting(true)}
               className="mt-5 text-indigo-300 text-sm hover:text-indigo-200 transition font-medium">
-              Start a conference â†’
+              Start a conference →
             </button>
           </div>
         ) : (
@@ -904,7 +958,7 @@ function ConferencePageInner() {
                               boxShadow: "0 4px 16px rgba(79,70,229,0.3)" }}>
                         {loading ? <Loader2 size={14} className="animate-spin" /> : <Video size={14} />}
                         {isLive ? "Join Live" : "Start"}
-                        <span className="transition-transform group-hover/btn:translate-x-0.5">â†’</span>
+                        <span className="transition-transform group-hover/btn:translate-x-0.5">→</span>
                       </button>
                     )}
                     </div>
@@ -961,9 +1015,9 @@ function ConferencePageInner() {
     );
   }
 
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─────────────────────────────────────
   // DEVICE TEST
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─────────────────────────────────────
   if (view === "device-test") {
     return (
       <div className="min-h-screen bg-[#080810] flex items-center justify-center p-4">
@@ -986,9 +1040,9 @@ function ConferencePageInner() {
     );
   }
 
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─────────────────────────────────────
   // LIVE CALL
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─────────────────────────────────────
   return (
     <div className="relative flex flex-col h-screen bg-[#060608] overflow-hidden">
       <FloatingReactions trigger={reactionBurst} />
@@ -1237,6 +1291,26 @@ function ConferencePageInner() {
           onClose={() => setShowTimeIt(false)}
         />
       )}
+
+      {idleWarning && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
+          <div className="w-full max-w-xs rounded-2xl border border-zinc-800 bg-zinc-900 p-6 text-center">
+            <div className="w-11 h-11 rounded-full bg-amber-500/15 flex items-center justify-center mx-auto mb-3">
+              <Clock size={20} className="text-amber-400" />
+            </div>
+            <h3 className="text-white font-semibold text-sm mb-1.5">Still there?</h3>
+            <p className="text-zinc-500 text-xs mb-5">
+              You have been inactive. Leaving in <span className="text-amber-400 font-semibold tabular-nums">{idleCountdown}s</span>.
+            </p>
+            <button
+              onClick={stayInCall}
+              className="w-full bg-white hover:bg-zinc-200 text-zinc-900 font-semibold py-2.5 rounded-xl transition text-sm"
+            >
+              I am still here
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1248,3 +1322,4 @@ export default function ConferencePage() {
     </FeatureGate>
   );
 }
+
