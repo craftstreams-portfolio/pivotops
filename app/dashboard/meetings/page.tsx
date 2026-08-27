@@ -167,7 +167,7 @@ function MicLevelMeter({ stream }: { stream: MediaStream | null }) {
 // ─────────────────────────────────────────
 function VideoTile({
   participant, isSpotlight, isLocal, onSpotlight,
-  hostControls, onMute, onKick, onReact,
+  hostControls, onMute, onKick, onReact, onTransferHost,
 }: {
   participant:  ParticipantState;
   isSpotlight:  boolean;
@@ -177,6 +177,7 @@ function VideoTile({
   onMute:       () => void;
   onKick:       () => void;
   onReact:      (emoji: string) => void;
+  onTransferHost?: () => void;
 }) {
   const videoRef      = useRef<HTMLVideoElement>(null);
   const [showEmoji, setShowEmoji] = useState(false);
@@ -273,6 +274,14 @@ function VideoTile({
           </div>
           {hostControls && !isLocal && (
             <>
+              {onTransferHost && (
+                <button onClick={(e) => { e.stopPropagation(); onTransferHost(); }}
+                  className="w-7 h-7 rounded-lg bg-black/60 hover:bg-amber-500/80
+                             flex items-center justify-center transition"
+                  title="Make host">
+                  <Crown size={12} className="text-white" />
+                </button>
+              )}
               <button onClick={(e) => { e.stopPropagation(); onMute(); }}
                 className="w-7 h-7 rounded-lg bg-black/60 hover:bg-amber-500/80
                            flex items-center justify-center transition">
@@ -415,6 +424,7 @@ function ConferencePageInner() {
   const [endedTitle,     setEndedTitle]     = useState("");
   const [showEmojiBar,   setShowEmojiBar]   = useState(false);
   const [showTimeIt,     setShowTimeIt]     = useState(false);
+  const [showParticipants, setShowParticipants] = useState(false);
   const [idleWarning,     setIdleWarning]     = useState(false);
   const [idleCountdown,   setIdleCountdown]   = useState(30);
   const lastActivityRef  = useRef<number>(Date.now());
@@ -472,6 +482,7 @@ function ConferencePageInner() {
   const [reactionBurst,  setReactionBurst]  = useState<{ id: string; emoji: string } | null>(null);
 
   const engineRef    = useRef<WebRTCEngine | null>(null);
+  const notifyChanRef = useRef<any>(null);
   const timerRef     = useRef<NodeJS.Timeout | null>(null);
   const startTimeRef = useRef<Date | null>(null);
   const chatEndRef   = useRef<HTMLDivElement>(null);
@@ -479,7 +490,7 @@ function ConferencePageInner() {
   const localAnalRef = useRef<AnalyserNode | null>(null);
   const localRafRef  = useRef<number>(0);
 
-  const isHost = myParticipant?.participant_role === "host";
+  const isHost = dbParticipants.find(p => p.participant_user_id === currentUser?.id)?.participant_role === "host";
 
   // ── Load user ──────────────────────────
   useEffect(() => {
@@ -660,6 +671,20 @@ function ConferencePageInner() {
         setWaitingList(updated.filter(up => !up.admitted && up.participant_user_id !== currentUser.id));
       });
 
+      notifyChanRef.current = supabase
+        .channel(`meeting-notify-${activeMeeting.id}`)
+        .on("broadcast", { event: "host-transferred" }, ({ payload }: any) => {
+          if (payload?.newHostId === currentUser.id) {
+            window.alert("You are now the host of this meeting.");
+          }
+        })
+        .on("broadcast", { event: "invite-to-speak" }, ({ payload }: any) => {
+          if (payload?.userId === currentUser.id) {
+            window.alert("The host invited you to speak - unmute when ready.");
+          }
+        })
+        .subscribe();
+
       setParticipants([{
         userId:      currentUser.id,
         displayName: currentUser.full_name ?? "You",
@@ -766,6 +791,29 @@ function ConferencePageInner() {
   const handleAdmit    = async (p: MeetingParticipant) => { await admitParticipant(p.id); setWaitingList(prev => prev.filter(w => w.id !== p.id)); };
   const handleMuteAll  = async () => { for (const p of dbParticipants) if (p.participant_user_id !== currentUser?.id) await updateParticipantState(p.id, { is_muted: true }); };
   const handleKick     = async (p: MeetingParticipant) => kickParticipant(p.id);
+  async function transferHost(newHostUserId: string) {
+    if (!activeMeeting || !currentUser || newHostUserId === currentUser.id) return;
+    try {
+      await supabase.from("meetings").update({ host_user_id: newHostUserId }).eq("id", activeMeeting.id);
+      await supabase.from("meeting_participants").update({ participant_role: "participant" })
+        .eq("meeting_id", activeMeeting.id).eq("participant_role", "host");
+      await supabase.from("meeting_participants").update({ participant_role: "host" })
+        .eq("meeting_id", activeMeeting.id).eq("participant_user_id", newHostUserId);
+      notifyChanRef.current?.send({
+        type: "broadcast", event: "host-transferred",
+        payload: { newHostId: newHostUserId },
+      });
+    } catch (e) {
+      console.error("[transferHost] failed:", e);
+    }
+  }
+
+  function assignSpeaker(userId: string) {
+    notifyChanRef.current?.send({
+      type: "broadcast", event: "invite-to-speak",
+      payload: { userId },
+    });
+  }
   const handleSendChat = () => {
     if (!chatInput.trim() || !currentUser) return;
     setChatMsgs(prev => [...prev, { id: crypto.randomUUID(), userId: currentUser.id, name: currentUser.full_name ?? "You", content: chatInput.trim(), time: new Date().toISOString() }]);
@@ -1091,8 +1139,9 @@ function ConferencePageInner() {
               ${chatOpen ? "bg-indigo-500/20 text-indigo-400" : "bg-zinc-800 hover:bg-zinc-700 text-zinc-400"}`}>
             <MessageSquare size={14} />
           </button>
-          <button className="w-8 h-8 rounded-lg bg-zinc-800 hover:bg-zinc-700
-                             flex items-center justify-center transition text-zinc-400">
+          <button onClick={() => setShowParticipants(v => !v)}
+            className={`w-8 h-8 rounded-lg flex items-center justify-center transition
+              ${showParticipants ? "bg-indigo-500/20 text-indigo-400" : "bg-zinc-800 hover:bg-zinc-700 text-zinc-400"}`}>
             <Users size={14} />
           </button>
           {isHost && (
@@ -1118,6 +1167,7 @@ function ConferencePageInner() {
                   onMute={() => { const d = dbParticipants.find(p => p.participant_user_id === spotlightParticipant.userId); if (d) updateParticipantState(d.id, { is_muted: true }); }}
                   onKick={() => { const d = dbParticipants.find(p => p.participant_user_id === spotlightParticipant.userId); if (d) handleKick(d); }}
                   onReact={(e) => handleReact(spotlightParticipant.userId, e)}
+                  onTransferHost={() => transferHost(spotlightParticipant.userId)}
                 />
               </div>
               <div className="w-44 space-y-2 overflow-y-auto">
@@ -1128,6 +1178,7 @@ function ConferencePageInner() {
                       onMute={() => { const d = dbParticipants.find(dp => dp.participant_user_id === p.userId); if (d) updateParticipantState(d.id, { is_muted: true }); }}
                       onKick={() => { const d = dbParticipants.find(dp => dp.participant_user_id === p.userId); if (d) handleKick(d); }}
                       onReact={(e) => handleReact(p.userId, e)}
+                      onTransferHost={() => transferHost(p.userId)}
                     />
                   </div>
                 ))}
@@ -1145,6 +1196,7 @@ function ConferencePageInner() {
                   onMute={() => { const d = dbParticipants.find(dp => dp.participant_user_id === p.userId); if (d) updateParticipantState(d.id, { is_muted: true }); }}
                   onKick={() => { const d = dbParticipants.find(dp => dp.participant_user_id === p.userId); if (d) handleKick(d); }}
                   onReact={(e) => handleReact(p.userId, e)}
+                  onTransferHost={() => transferHost(p.userId)}
                 />
               ))}
             </div>
@@ -1311,6 +1363,67 @@ function ConferencePageInner() {
           </div>
         </div>
       )}
+
+      {showParticipants && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
+             onClick={() => setShowParticipants(false)}>
+          <div className="w-full max-w-sm rounded-2xl border border-zinc-800 bg-zinc-900 p-5"
+               onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-white font-semibold text-sm">Participants ({dbParticipants.length})</h3>
+              <button onClick={() => setShowParticipants(false)}
+                      className="w-7 h-7 rounded-lg flex items-center justify-center text-zinc-500 hover:text-white hover:bg-zinc-800 transition">
+                <X size={14} />
+              </button>
+            </div>
+            <div className="space-y-1.5 max-h-80 overflow-y-auto">
+              {dbParticipants.map((p) => (
+                <div key={p.id} className="flex items-center justify-between px-3 py-2 rounded-xl hover:bg-zinc-800/60 transition">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-[11px] font-semibold flex-shrink-0"
+                         style={{ background: "linear-gradient(135deg, #6366f1, #4338ca)" }}>
+                      {getInitials(p.display_name ?? "Member")}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs text-white truncate flex items-center gap-1">
+                        {p.participant_role === "host" && <Crown size={11} className="text-amber-400" />}
+                        {p.display_name ?? "Member"}
+                        {p.participant_user_id === currentUser?.id ? " (You)" : ""}
+                      </p>
+                      {p.is_muted && <p className="text-[10px] text-zinc-500">Muted</p>}
+                    </div>
+                  </div>
+                  {isHost && p.participant_user_id !== currentUser?.id && (
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button
+                        onClick={() => assignSpeaker(p.participant_user_id)}
+                        className="text-[10px] font-medium text-indigo-300 hover:text-indigo-200 px-2 py-1 rounded-lg hover:bg-indigo-500/10 transition"
+                        title="Invite to speak"
+                      >
+                        Invite
+                      </button>
+                      <button
+                        onClick={() => transferHost(p.participant_user_id)}
+                        className="w-7 h-7 rounded-lg flex items-center justify-center text-zinc-500 hover:text-amber-400 hover:bg-amber-500/10 transition"
+                        title="Make host"
+                      >
+                        <Crown size={13} />
+                      </button>
+                      <button
+                        onClick={() => handleKick(p)}
+                        className="w-7 h-7 rounded-lg flex items-center justify-center text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition"
+                        title="Remove"
+                      >
+                        <UserX size={13} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1322,4 +1435,6 @@ export default function ConferencePage() {
     </FeatureGate>
   );
 }
+
+
 
