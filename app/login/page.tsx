@@ -1,9 +1,10 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, Suspense } from "react";
 import { isValidEmail } from "@/lib/validation";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { acceptTeamInvite } from "@/lib/auth/acceptInvite";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ROUTING LOGIC — single source of truth
@@ -28,34 +29,26 @@ async function resolvePostLoginRoute(user: { id: string; email?: string | null; 
 
   const meta = user.user_metadata ?? {};
 
-  // Invited teammate: always (re)apply the invite's tenant/role, even if a
-  // placeholder profile already exists (e.g. created by the auth.users
-  // signup trigger), since that placeholder may carry a stale tenant_id.
-  if (meta.invited && meta.tenant_id && (!profile || profile.tenant_id !== meta.tenant_id)) {
-    const now = new Date().toISOString();
-    const invitedEmail = normalizeEmail(user.email ?? "");
-    const { data: tenantRow } = await supabase.from("tenants").select("org_name, org_size, org_industry, org_country").eq("id", meta.tenant_id).maybeSingle();
-    await supabase.from("profiles").upsert({
-      id: userId,
-      email: invitedEmail,
-      email_normalized: invitedEmail,
-      tenant_id: meta.tenant_id,
-      role: meta.role ?? "operator",
-      org_name: tenantRow?.org_name ?? "",
-      org_size: tenantRow?.org_size ?? "",
-      org_industry: tenantRow?.org_industry ?? "",
-      org_country: tenantRow?.org_country ?? "",
-      onboarding_complete: true,
-      first_login_at: now,
-      date_joined: now.slice(0, 10),
-      created_at: now,
-      updated_at: now,
-    }, { onConflict: "id" });
-    await supabase.from("team_invites")
-      .update({ status: "accepted", accepted_at: now })
-      .eq("tenant_id", meta.tenant_id)
-      .eq("email_normalized", invitedEmail);
-    return { destination: "dashboard", reason: "invited_teammate_joined" };
+  // Invited teammate: accepted server-side by accept_team_invite(), which
+  // writes the profile (tenant, role, org fields, onboarding flags) and flips
+  // the invite to accepted atomically. This no longer depends on
+  // user_metadata.invited being present, so invites work regardless of how the
+  // user arrived — magic link, verification link, or plain signup.
+  const needsInviteCheck =
+    !profile ||
+    !profile.tenant_id ||
+    (meta.invited && meta.tenant_id && profile.tenant_id !== meta.tenant_id);
+
+  if (needsInviteCheck) {
+    const invite = await acceptTeamInvite(supabase);
+    if (invite.ok) {
+      return { destination: "dashboard", reason: "invited_teammate_joined" };
+    }
+    if (invite.reason === "no_seats") {
+      return { destination: "error", reason: "no_seats" };
+    }
+    // "no_pending_invite" is the normal case for owners and returning users —
+    // fall through to the standard routing below.
   }
 
   if (!profile) {
@@ -164,6 +157,8 @@ function LoginPage() {
       }
     } else if (result.destination === "onboarding") {
       router.replace(claim ? `/onboarding?shopline_claim=${encodeURIComponent(claim)}` : "/onboarding");
+    } else if (result.reason === "no_seats") {
+      setError("Your team has no seats available. Ask your workspace admin to free a seat or upgrade the plan.");
     } else {
       setError("Something went wrong loading your account. Please try again or contact support.");
     }
@@ -279,6 +274,24 @@ function LoginPage() {
           setError("Account creation failed — no user returned.");
           setLoading(false);
           return;
+        }
+
+        // An invited teammate signing up with a password already has a pending
+        // invite row. Accept it now, while the signUp session is still live,
+        // and send them straight to the dashboard — they do not need the
+        // owner verification chain.
+        if (signUpData.session) {
+          const invite = await acceptTeamInvite(supabase);
+          if (invite.ok) {
+            router.replace("/dashboard");
+            return;
+          }
+          if (invite.reason === "no_seats") {
+            await supabase.auth.signOut();
+            setError("Your team has no seats available. Ask your workspace admin to free a seat or upgrade the plan.");
+            setLoading(false);
+            return;
+          }
         }
 
         // Send verification via Resend (bypasses flaky Supabase SMTP)
