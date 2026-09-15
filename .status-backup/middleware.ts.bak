@@ -206,13 +206,10 @@ export async function middleware(req: NextRequest) {
         .select("status")
         .eq("id", user.id)
         .maybeSingle();
-      // Supabase returns `any`, which widens status back to string | null and
-      // breaks the narrowing — bind it to a typed local first.
-      const resolved: string = prof?.status ?? "";
-      status = resolved;
+      status = prof?.status ?? "";
       // Cache the answer either way — a blocked user should not cost a lookup
       // per request any more than an active one does.
-      if (secret) await writeCachedStatus(res, user.id, resolved, secret);
+      if (secret) await writeCachedStatus(res, user.id, status, secret);
     }
 
     if (status && status !== "active") {
