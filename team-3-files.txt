@@ -1,9 +1,245 @@
-﻿"use client";
+﻿
+
+########## FILE: app\api\team\invites\route.ts  (134 lines) ##########
+
+import { getApiAuth, unauthorized } from "@/lib/auth/apiAuth";
+import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+import { createServerClient } from "@supabase/ssr";
+import { TeamInviteSchema } from "@/lib/security/schemas";
+import { seatCapForPlan, planLabel, isSeatExempt } from "@/lib/billing/config";
+import { sendEmail } from "@/lib/email";
+import { logAudit } from "@/lib/audit";
+
+function getAdmin() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) throw new Error("Missing Supabase env vars");
+  return createClient(url, key, { auth: { persistSession: false } });
+}
+
+/**
+ * The tenant's paid tier. `subscriptions` is authoritative â€” it is what every
+ * feature gate in the app reads â€” with tenants.plan as a fallback for rows
+ * predating the subscriptions table.
+ */
+async function resolvePlan(admin: ReturnType<typeof getAdmin>, tenantId: string): Promise<string> {
+  const { data: sub } = await admin
+    .from("subscriptions")
+    .select("plan, status")
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+
+  if (sub?.plan) {
+    // A cancelled or past-due subscription falls back to free-tier seats.
+    const live = sub.status === "active" || sub.status === "trialing";
+    return live ? sub.plan : "free";
+  }
+
+  const { data: tenantRow } = await admin
+    .from("tenants").select("plan").eq("id", tenantId).maybeSingle();
+  return tenantRow?.plan ?? "free";
+}
+
+async function getAuthedUser(req: NextRequest) {
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { cookies: { getAll() { return req.cookies.getAll(); }, setAll() {} } }
+  );
+  const { data: { user } } = await supabase.auth.getUser();
+  return user;
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const user = await getAuthedUser(req);
+    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+
+    const body = await req.json();
+    const parsed = TeamInviteSchema.safeParse(body);
+    if (!parsed.success) return NextResponse.json({ error: "Invalid invite request." }, { status: 400 });
+    const { email, role, position } = parsed.data;
+
+    const admin = getAdmin();
+
+    const { data: actorProfile } = await admin.from("profiles").select("tenant_id, role").eq("id", user.id).maybeSingle();
+    if (!actorProfile?.tenant_id) return NextResponse.json({ error: "No workspace found for your account." }, { status: 404 });
+    if (!["admin", "manager"].includes(actorProfile.role ?? "")) {
+      return NextResponse.json({ error: "Only admins and managers can invite teammates." }, { status: 403 });
+    }
+
+    const tenantId = actorProfile.tenant_id;
+
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const { count: recentCount } = await admin.from("team_invites").select("id", { count: "exact", head: true }).eq("invited_by", user.id).gte("created_at", oneHourAgo);
+    if ((recentCount ?? 0) >= 30) {
+      return NextResponse.json({ error: "Too many invites sent recently. Please try again in a while." }, { status: 429 });
+    }
+
+    const plan = await resolvePlan(admin, tenantId);
+    const cap  = isSeatExempt(tenantId) ? 999999 : seatCapForPlan(plan);
+    const emailNorm = email.trim().toLowerCase();
+
+    const { data: reserveResult, error: reserveErr } = await admin.rpc("reserve_team_invite_seat", {
+      p_tenant_id: tenantId,
+      p_email: emailNorm,
+      p_role: role,
+      p_invited_by: user.id,
+      p_cap: cap,
+    });
+
+    if (reserveErr) {
+      return NextResponse.json({ error: reserveErr.message }, { status: 500 });
+    }
+    if (!reserveResult?.ok) {
+      return NextResponse.json({
+        error: `Seat limit reached. ${planLabel(plan)} includes ${cap} seat${cap === 1 ? "" : "s"}, all currently used or pending. Upgrade your plan in Settings to invite more teammates.`,
+        code: "SEAT_LIMIT",
+        plan, cap, used: reserveResult?.used ?? cap,
+      }, { status: 403 });
+    }
+
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+
+    const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
+      type: "invite",
+      email: emailNorm,
+      options: {
+        data: { tenant_id: tenantId, role, position: position ?? null, invited: true },
+        redirectTo: baseUrl + "/login",
+      },
+    });
+
+    if (linkErr || !linkData) {
+      await admin.from("team_invites").delete().eq("tenant_id", tenantId).eq("email_normalized", emailNorm).eq("status", "pending");
+      return NextResponse.json({ error: linkErr?.message ?? "Failed to generate invite link." }, { status: 500 });
+    }
+
+    const inviteLink = linkData.properties?.action_link ?? "";
+
+    await admin.from("team_invites").update({ invite_link: inviteLink }).eq("tenant_id", tenantId).eq("email_normalized", emailNorm);
+
+    const html = '<div style="background:#f4f4f5;padding:40px 0;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;"><div style="max-width:480px;margin:0 auto;background:#ffffff;border:1px solid #e4e4e7;border-radius:16px;overflow:hidden;"><div style="padding:32px 32px 20px;text-align:center;"><div style="font-size:20px;font-weight:700;color:#10b981;">PivotOps</div><div style="font-size:10px;letter-spacing:1.5px;color:#a1a1aa;text-transform:uppercase;margin-top:4px;">Autonomous Workforce OS</div></div><div style="border-top:1px solid #e4e4e7;"></div><div style="padding:32px;color:#3f3f46;font-size:14px;line-height:1.6;"><h2 style="color:#18181b;font-size:20px;margin:0 0 12px;">You have been invited</h2><p style="margin:0 0 24px;">You have been invited to join a team on PivotOps as <strong>' + role + '</strong>. Accept the invitation to set up your account.</p><div style="text-align:center;margin:0 0 8px;"><a href="' + inviteLink + '" style="background:#10b981;color:#ffffff;padding:12px 28px;border-radius:10px;font-weight:600;font-size:14px;text-decoration:none;display:inline-block;">Accept Invitation</a></div></div><div style="border-top:1px solid #e4e4e7;padding:20px 32px;text-align:center;"><p style="margin:0;font-size:11px;color:#a1a1aa;">If you were not expecting this invitation, you can safely ignore this email.</p></div></div></div>';
+
+    const emailResult = await sendEmail({ to: emailNorm, subject: "You've been invited to join PivotOps", html });
+
+    await logAudit({ action: "TEAM_INVITE_SENT", actorId: user.id, actorName: user.email ?? user.id, entityType: "team_invite", entityId: emailNorm, metadata: { tenantId, role, emailSent: emailResult.ok } });
+
+    return NextResponse.json({ success: true, inviteLink, emailSent: emailResult.ok });
+  } catch (err) {
+    console.error("Team invite error:", err);
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Failed to send invite." }, { status: 500 });
+  }
+}
+
+export async function GET() {
+  return NextResponse.json({ route: "/api/team/invites", status: "ok" });
+}
+
+
+########## FILE: app\api\team\members\route.ts  (90 lines) ##########
+
+import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+import { createServerClient } from "@supabase/ssr";
+
+const ROLES = ["admin", "manager", "recruiter", "operator"] as const;
+
+function getAdmin() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { persistSession: false } }
+  );
+}
+
+async function getAuthedUser(req: NextRequest) {
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { cookies: { getAll() { return req.cookies.getAll(); }, setAll() {} } }
+  );
+  const { data: { user } } = await supabase.auth.getUser();
+  return user;
+}
+
+/**
+ * Update a teammate's role or job title.
+ *
+ * RLS on profiles only permits a user to update their OWN row, so an admin
+ * editing a teammate has to come through here. Authority is checked server-side:
+ * the caller must be an admin/manager in the SAME tenant as the target.
+ */
+export async function PATCH(req: NextRequest) {
+  try {
+    const user = await getAuthedUser(req);
+    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+
+    const { memberId, role, position } = await req.json();
+    if (!memberId) return NextResponse.json({ error: "Missing member." }, { status: 400 });
+    if (role && !ROLES.includes(role)) {
+      return NextResponse.json({ error: "Unknown role." }, { status: 400 });
+    }
+
+    const admin = getAdmin();
+
+    const { data: actor } = await admin
+      .from("profiles").select("tenant_id, role").eq("id", user.id).maybeSingle();
+    if (!actor?.tenant_id) return NextResponse.json({ error: "No workspace found." }, { status: 404 });
+    if (!["admin", "manager"].includes(actor.role ?? "")) {
+      return NextResponse.json({ error: "Only admins and managers can edit teammates." }, { status: 403 });
+    }
+
+    const { data: target } = await admin
+      .from("profiles").select("id, tenant_id, role").eq("id", memberId).maybeSingle();
+    if (!target) return NextResponse.json({ error: "Teammate not found." }, { status: 404 });
+    if (target.tenant_id !== actor.tenant_id) {
+      return NextResponse.json({ error: "That teammate is not in your workspace." }, { status: 403 });
+    }
+
+    // Only an admin may grant or revoke admin — a manager can't promote someone
+    // (or themselves) past their own level.
+    if (role && (role === "admin" || target.role === "admin") && actor.role !== "admin") {
+      return NextResponse.json({ error: "Only an admin can change admin access." }, { status: 403 });
+    }
+
+    // Don't let the last admin in a tenant be demoted out of existence.
+    if (target.role === "admin" && role && role !== "admin") {
+      const { count } = await admin
+        .from("profiles").select("id", { count: "exact", head: true })
+        .eq("tenant_id", actor.tenant_id).eq("role", "admin");
+      if ((count ?? 0) <= 1) {
+        return NextResponse.json({ error: "This is the only admin — promote someone else first." }, { status: 400 });
+      }
+    }
+
+    const patch: Record<string, any> = {};
+    if (role) patch.role = role;
+    if (position !== undefined) patch.position = String(position ?? "").trim().slice(0, 60) || null;
+    if (Object.keys(patch).length === 0) {
+      return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
+    }
+
+    const { error } = await admin.from("profiles").update(patch).eq("id", memberId);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+    return NextResponse.json({ ok: true });
+  } catch (e: any) {
+    console.error("[team/members]", e);
+    return NextResponse.json({ error: e?.message ?? "Internal error" }, { status: 500 });
+  }
+}
+
+
+########## FILE: app\dashboard\components\team\TeamInvitePanel.tsx  (362 lines) ##########
+
+"use client";
 
 import { useState, useEffect } from "react";
 import { isValidEmail } from "@/lib/validation";
 import { supabase } from "@/lib/supabase";
-import { X, Mail, Send, Copy, Check, Loader2, AlertCircle, Users, ShieldOff, UserMinus, RotateCcw } from "lucide-react";
+import { X, Mail, Send, Copy, Check, Loader2, AlertCircle, Users } from "lucide-react";
 import { seatCapForPlan, planLabel, isSeatExempt } from "@/lib/billing/config";
 
 const ROLES = [
@@ -13,15 +249,6 @@ const ROLES = [
   { value: "operator",  label: "Operator",  desc: "Day-to-day operations - clocking, tasks, and team chat." },
 ];
 
-// Mirrors the reasons returned by set_employee_access().
-const ACCESS_ERRORS: Record<string, string> = {
-  forbidden:          "Only admins and managers can change teammate access.",
-  not_found:          "That teammate is not in your workspace.",
-  cannot_act_on_self: "You cannot change your own access here.",
-  admin_only:         "Only an admin can change another admin's access.",
-  last_admin:         "This is the only admin - promote someone else first.",
-  invalid_action:     "Unknown action.",
-};
 
 interface Member {
   id: string;
@@ -29,7 +256,6 @@ interface Member {
   email: string | null;
   role: string | null;
   position: string | null;
-  status: string | null;
 }
 
 interface PendingInvite {
@@ -53,19 +279,17 @@ export default function TeamInvitePanel({
   const [position, setPosition] = useState("");
   const [members,  setMembers]  = useState<Member[]>([]);
   const [myRole,   setMyRole]   = useState("");
-  const [myId,     setMyId]     = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editRole,  setEditRole]  = useState("operator");
   const [editTitle, setEditTitle] = useState("");
   const [savingMember, setSavingMember] = useState(false);
-  const [accessBusyId, setAccessBusyId] = useState<string | null>(null);
   const [memberErr, setMemberErr] = useState("");
   const [sending,  setSending]  = useState(false);
   const [error,    setError]    = useState("");
   const [lastLink, setLastLink] = useState("");
   const [copied,   setCopied]   = useState(false);
   const [invites,  setInvites]  = useState<PendingInvite[]>([]);
-  const [seatsUsed, setSeatsUsed] = useState(0);
+  const [memberCount, setMemberCount] = useState(0);
 
   // Seats come from the paid tier, read from the same table every feature gate
   // uses - so this counter and the server-side cap cannot drift apart.
@@ -92,18 +316,13 @@ export default function TeamInvitePanel({
   }, [open, tenantId]);
 
   async function refreshCounts() {
-    // Seat usage comes from tenant_seats_used(), the SAME definition
-    // reserve_team_invite_seat() uses when it enforces the cap. Counting rows
-    // client-side would include deactivated teammates whose seats the server
-    // has already released.
-    const { data: used } = await supabase.rpc("tenant_seats_used", { p_tenant: tenantId });
-    setSeatsUsed(typeof used === "number" ? used : 0);
-
+    const { count } = await supabase.from("profiles").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId);
+    setMemberCount(count ?? 0);
     const { data } = await supabase.from("team_invites").select("id, email, role, status, created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(20);
     setInvites((data ?? []) as PendingInvite[]);
 
     const { data: mem } = await supabase
-      .from("profiles").select("id, full_name, email, role, position, status")
+      .from("profiles").select("id, full_name, email, role, position")
       .eq("tenant_id", tenantId).order("full_name", { ascending: true });
     setMembers((mem ?? []) as Member[]);
 
@@ -111,7 +330,6 @@ export default function TeamInvitePanel({
     if (auth?.user) {
       const me = (mem ?? []).find((m: any) => m.id === auth.user!.id);
       setMyRole(me?.role ?? "");
-      setMyId(auth.user.id);
     }
   }
 
@@ -141,38 +359,9 @@ export default function TeamInvitePanel({
     }
   }
 
-  // suspend | deactivate | reinstate. Every call is written to
-  // employee_access_audit at initiation AND on completion, server-side.
-  async function changeAccess(memberId: string, action: string) {
-    const label = action === "deactivate" ? "Deactivate" : action === "suspend" ? "Suspend" : "Reinstate";
-    const warn = action === "deactivate"
-      ? "Deactivate this teammate? They lose access immediately and their seat is freed for a replacement. Their history is kept."
-      : action === "suspend"
-        ? "Suspend this teammate? They lose access until reinstated. Their seat stays reserved."
-        : "Restore this teammate's access?";
-    if (!window.confirm(warn)) return;
-
-    setAccessBusyId(memberId); setMemberErr("");
-    try {
-      const { data, error: rpcErr } = await supabase.rpc("set_employee_access", {
-        p_user: memberId,
-        p_action: action,
-        p_reason: null,
-      });
-      if (rpcErr) throw new Error(rpcErr.message);
-      if (!data?.ok) throw new Error(ACCESS_ERRORS[data?.reason] ?? (label + " failed."));
-      setEditingId(null);
-      await refreshCounts();
-    } catch (err) {
-      setMemberErr(err instanceof Error ? err.message : "Something went wrong.");
-    } finally {
-      setAccessBusyId(null);
-    }
-  }
-
-  const activeMembers = members.filter((m) => m.status !== "deactivated");
-  const deactivated   = members.filter((m) => m.status === "deactivated");
-  const seatsLeft     = cap === Infinity ? Infinity : Math.max(0, cap - seatsUsed);
+  const pendingCount = invites.filter((i) => i.status === "pending").length;
+  const seatsUsed = memberCount + pendingCount;
+  const seatsLeft = cap === Infinity ? Infinity : Math.max(0, cap - seatsUsed);
 
   async function handleInvite() {
     if (!email.trim()) return;
@@ -218,7 +407,7 @@ export default function TeamInvitePanel({
           <div>
             <h2 className="text-base font-semibold text-white">Invite teammates</h2>
             <p className="text-xs text-zinc-500 mt-0.5">
-              {cap === Infinity ? activeMembers.length + " members" : seatsUsed + " of " + cap + " seats used · " + planLabel(plan)}
+              {cap === Infinity ? memberCount + " members" : seatsUsed + " of " + cap + " seats used · " + planLabel(plan)}
             </p>
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-500 hover:text-white hover:bg-zinc-800 transition">
@@ -231,7 +420,7 @@ export default function TeamInvitePanel({
             <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
               <AlertCircle size={15} className="text-amber-400 flex-shrink-0 mt-0.5" />
               <p className="text-xs text-amber-300 leading-relaxed">
-                {planLabel(plan)} includes {cap} seat{cap === 1 ? "" : "s"}, all currently used or pending. Deactivate a teammate who has left to free their seat, or upgrade your plan in Settings.
+                {planLabel(plan)} includes {cap} seat{cap === 1 ? "" : "s"}, all currently used or pending. Upgrade your plan in Settings to invite more teammates.
               </p>
             </div>
           ) : (
@@ -309,7 +498,7 @@ export default function TeamInvitePanel({
             </div>
           )}
 
-          {activeMembers.length > 0 && (
+          {members.length > 0 && (
             <div className="mb-6">
               <div className="flex items-center gap-2 mb-3">
                 <Users size={13} className="text-zinc-500" />
@@ -323,20 +512,15 @@ export default function TeamInvitePanel({
               )}
 
               <div className="space-y-2">
-                {activeMembers.map((m) => {
-                  const canEdit = (myRole === "admin" || (myRole === "manager" && m.role !== "admin")) && m.id !== myId;
+                {members.map((m) => {
+                  const canEdit = myRole === "admin" || (myRole === "manager" && m.role !== "admin");
                   const isEditing = editingId === m.id;
-                  const busy = accessBusyId === m.id;
-                  const suspended = m.status === "suspended";
                   return (
                     <div key={m.id} className="px-3 py-2.5 rounded-lg bg-zinc-900/50 border border-zinc-800">
                       {!isEditing ? (
                         <div className="flex items-center justify-between gap-2">
                           <div className="min-w-0">
-                            <p className="text-xs text-white truncate">
-                              {m.full_name || m.email}
-                              {suspended && <span className="ml-2 text-[9px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400 align-middle">Suspended</span>}
-                            </p>
+                            <p className="text-xs text-white truncate">{m.full_name || m.email}</p>
                             <p className="text-[10px] text-zinc-500">
                               <span className="capitalize">{m.role ?? "operator"}</span>
                               {m.position ? ` \u00B7 ${m.position}` : ""}
@@ -346,7 +530,7 @@ export default function TeamInvitePanel({
                             <button onClick={() => startEdit(m)}
                               className="flex-shrink-0 text-[10px] px-2 py-1 rounded-md border border-zinc-700
                                          text-zinc-400 hover:text-white hover:border-zinc-600 transition">
-                              Manage
+                              Edit
                             </button>
                           )}
                         </div>
@@ -375,67 +559,11 @@ export default function TeamInvitePanel({
                               Cancel
                             </button>
                           </div>
-
-                          <div className="pt-2 mt-1 border-t border-zinc-800 space-y-1.5">
-                            <p className="text-[10px] text-zinc-600 uppercase tracking-wide">Access</p>
-                            {suspended ? (
-                              <button onClick={() => changeAccess(m.id, "reinstate")} disabled={busy}
-                                className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg
-                                           border border-emerald-600/40 text-emerald-400 text-[11px]
-                                           hover:bg-emerald-500/10 disabled:opacity-40 transition">
-                                <RotateCcw size={11} /> Restore access
-                              </button>
-                            ) : (
-                              <button onClick={() => changeAccess(m.id, "suspend")} disabled={busy}
-                                className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg
-                                           border border-amber-600/40 text-amber-400 text-[11px]
-                                           hover:bg-amber-500/10 disabled:opacity-40 transition">
-                                <ShieldOff size={11} /> Suspend access
-                              </button>
-                            )}
-                            <button onClick={() => changeAccess(m.id, "deactivate")} disabled={busy}
-                              className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg
-                                         border border-red-600/40 text-red-400 text-[11px]
-                                         hover:bg-red-500/10 disabled:opacity-40 transition">
-                              <UserMinus size={11} /> Deactivate and free seat
-                            </button>
-                            <p className="text-[10px] text-zinc-600 leading-relaxed">
-                              Suspending keeps their seat reserved. Deactivating frees it for a replacement invite and keeps all their history.
-                            </p>
-                          </div>
                         </div>
                       )}
                     </div>
                   );
                 })}
-              </div>
-            </div>
-          )}
-
-          {deactivated.length > 0 && (
-            <div className="mb-6">
-              <div className="flex items-center gap-2 mb-3">
-                <UserMinus size={13} className="text-zinc-600" />
-                <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">
-                  Deactivated · no seat used
-                </h3>
-              </div>
-              <div className="space-y-2">
-                {deactivated.map((m) => (
-                  <div key={m.id} className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg bg-zinc-900/30 border border-zinc-800/60">
-                    <div className="min-w-0">
-                      <p className="text-xs text-zinc-500 truncate">{m.full_name || m.email}</p>
-                      <p className="text-[10px] text-zinc-600 capitalize">{m.role ?? "operator"}</p>
-                    </div>
-                    {myRole === "admin" && (
-                      <button onClick={() => changeAccess(m.id, "reinstate")} disabled={accessBusyId === m.id}
-                        className="flex-shrink-0 text-[10px] px-2 py-1 rounded-md border border-zinc-700
-                                   text-zinc-400 hover:text-emerald-400 hover:border-emerald-600/40 disabled:opacity-40 transition">
-                        Reinstate
-                      </button>
-                    )}
-                  </div>
-                ))}
               </div>
             </div>
           )}
@@ -455,7 +583,7 @@ export default function TeamInvitePanel({
                       <p className="text-xs text-white truncate">{inv.email}</p>
                       <p className="text-[10px] text-zinc-500 capitalize">{inv.role}</p>
                     </div>
-                    <span className={"text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 " + (inv.status === "accepted" ? "bg-emerald-500/15 text-emerald-400" : inv.status === "revoked" ? "bg-red-500/10 text-red-400" : "bg-zinc-700/50 text-zinc-400")}>
+                    <span className={"text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 " + (inv.status === "accepted" ? "bg-emerald-500/15 text-emerald-400" : "bg-zinc-700/50 text-zinc-400")}>
                       {inv.status}
                     </span>
                   </div>

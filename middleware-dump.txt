@@ -1,4 +1,8 @@
-﻿import { NextResponse } from "next/server";
+﻿
+
+########## FILE: middleware.ts  (149 lines) ##########
+
+import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
@@ -131,24 +135,6 @@ export async function middleware(req: NextRequest) {
       return NextResponse.redirect(loginUrl);
     }
 
-    // Suspending or deactivating someone does NOT invalidate their existing
-    // session token — it stays valid until it expires. So the token alone is
-    // not authority: check live status on every protected request. Candidates
-    // have no profiles row, so a missing row falls through to the check below.
-    const { data: prof } = await supabase
-      .from("profiles")
-      .select("status")
-      .eq("id", user.id)
-      .maybeSingle();
-
-    if (prof?.status && prof.status !== "active") {
-      const blocked = req.nextUrl.clone();
-      blocked.pathname = "/login";
-      blocked.search = "";
-      blocked.searchParams.set("access", prof.status);
-      return NextResponse.redirect(blocked);
-    }
-
     // Candidates belong in their own portal, not the owner dashboard.
     if (pathname.startsWith("/dashboard") && user.user_metadata?.role === "candidate") {
       const portalUrl = req.nextUrl.clone();
@@ -165,3 +151,81 @@ export async function middleware(req: NextRequest) {
 export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };
+
+
+########## FILE: lib\auth\apiAuth.ts  (54 lines) ##########
+
+import { NextRequest, NextResponse } from "next/server";
+import { createServerClient } from "@supabase/ssr";
+
+export interface ApiAuthResult {
+  userId:   string;
+  tenantId: string;
+  email:    string;
+  role?:    string;
+}
+
+export async function getApiAuth(req: NextRequest): Promise<ApiAuthResult | null> {
+  try {
+    const cookies = req.cookies;
+    const sb = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      { cookies: { getAll: () => cookies.getAll(), setAll: () => {} } }
+    );
+
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session?.user) return null;
+
+    const { data: profile } = await sb
+      .from("profiles")
+      .select("tenant_id, role")
+      .eq("id", session.user.id)
+      .single();
+
+    if (!profile?.tenant_id) return null;
+
+    return {
+      userId:   session.user.id,
+      tenantId: profile.tenant_id,
+      email:    session.user.email ?? "",
+      role:     profile.role,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function unauthorized(msg = "Authentication required.") {
+  return NextResponse.json({ error: msg }, {
+    status: 401,
+    headers: {
+      "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff",
+    }
+  });
+}
+
+export function forbidden(msg = "Insufficient permissions.") {
+  return NextResponse.json({ error: msg }, { status: 403 });
+}
+
+
+########## FILE: lib\supabase.ts  (16 lines) ##########
+
+import { createBrowserClient } from "@supabase/ssr";
+
+export const supabase = createBrowserClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  {
+    auth: {
+      // Explicitly enabled so the client picks up the session token from the
+      // URL hash on every browser, including Edge whose stricter URL handling
+      // meant the fragment was never consumed and login hung at "Please wait".
+      detectSessionInUrl: true,
+      persistSession:     true,
+      autoRefreshToken:   true,
+    },
+  }
+);

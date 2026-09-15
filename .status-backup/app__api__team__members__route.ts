@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 
@@ -27,7 +27,7 @@ async function getAuthedUser(req: NextRequest) {
  *
  * RLS on profiles only permits a user to update their OWN row, so an admin
  * editing a teammate has to come through here. Authority is checked server-side:
- * the caller must be an active admin/manager in the SAME tenant as the target.
+ * the caller must be an admin/manager in the SAME tenant as the target.
  */
 export async function PATCH(req: NextRequest) {
   try {
@@ -43,26 +43,17 @@ export async function PATCH(req: NextRequest) {
     const admin = getAdmin();
 
     const { data: actor } = await admin
-      .from("profiles").select("tenant_id, role, status").eq("id", user.id).maybeSingle();
+      .from("profiles").select("tenant_id, role").eq("id", user.id).maybeSingle();
     if (!actor?.tenant_id) return NextResponse.json({ error: "No workspace found." }, { status: 404 });
-
-    // A suspended or deactivated admin keeps a valid token — deny on live status.
-    if (actor.status && actor.status !== "active") {
-      return NextResponse.json({ error: "Your access has been revoked." }, { status: 403 });
-    }
-
     if (!["admin", "manager"].includes(actor.role ?? "")) {
       return NextResponse.json({ error: "Only admins and managers can edit teammates." }, { status: 403 });
     }
 
     const { data: target } = await admin
-      .from("profiles").select("id, tenant_id, role, status").eq("id", memberId).maybeSingle();
+      .from("profiles").select("id, tenant_id, role").eq("id", memberId).maybeSingle();
     if (!target) return NextResponse.json({ error: "Teammate not found." }, { status: 404 });
     if (target.tenant_id !== actor.tenant_id) {
       return NextResponse.json({ error: "That teammate is not in your workspace." }, { status: 403 });
-    }
-    if (target.status === "deactivated") {
-      return NextResponse.json({ error: "Reinstate this teammate before changing their role." }, { status: 400 });
     }
 
     // Only an admin may grant or revoke admin — a manager can't promote someone
@@ -72,11 +63,10 @@ export async function PATCH(req: NextRequest) {
     }
 
     // Don't let the last admin in a tenant be demoted out of existence.
-    // Deactivated admins do not count — they cannot sign in.
     if (target.role === "admin" && role && role !== "admin") {
       const { count } = await admin
         .from("profiles").select("id", { count: "exact", head: true })
-        .eq("tenant_id", actor.tenant_id).eq("role", "admin").neq("status", "deactivated");
+        .eq("tenant_id", actor.tenant_id).eq("role", "admin");
       if ((count ?? 0) <= 1) {
         return NextResponse.json({ error: "This is the only admin — promote someone else first." }, { status: 400 });
       }

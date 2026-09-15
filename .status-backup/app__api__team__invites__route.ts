@@ -15,8 +15,8 @@ function getAdmin() {
 }
 
 /**
- * The tenant's paid tier. `subscriptions` is authoritative — it is what every
- * feature gate in the app reads — with tenants.plan as a fallback for rows
+ * The tenant's paid tier. `subscriptions` is authoritative â€” it is what every
+ * feature gate in the app reads â€” with tenants.plan as a fallback for rows
  * predating the subscriptions table.
  */
 async function resolvePlan(admin: ReturnType<typeof getAdmin>, tenantId: string): Promise<string> {
@@ -59,15 +59,8 @@ export async function POST(req: NextRequest) {
 
     const admin = getAdmin();
 
-    const { data: actorProfile } = await admin.from("profiles").select("tenant_id, role, status").eq("id", user.id).maybeSingle();
+    const { data: actorProfile } = await admin.from("profiles").select("tenant_id, role").eq("id", user.id).maybeSingle();
     if (!actorProfile?.tenant_id) return NextResponse.json({ error: "No workspace found for your account." }, { status: 404 });
-
-    // Suspending or deactivating someone does not invalidate their session
-    // token, so authority is checked against live status, not the token.
-    if (actorProfile.status && actorProfile.status !== "active") {
-      return NextResponse.json({ error: "Your access has been revoked." }, { status: 403 });
-    }
-
     if (!["admin", "manager"].includes(actorProfile.role ?? "")) {
       return NextResponse.json({ error: "Only admins and managers can invite teammates." }, { status: 403 });
     }
@@ -84,8 +77,6 @@ export async function POST(req: NextRequest) {
     const cap  = isSeatExempt(tenantId) ? 999999 : seatCapForPlan(plan);
     const emailNorm = email.trim().toLowerCase();
 
-    // Re-inviting someone who was deactivated is expected: their seat was
-    // released, and reserve_team_invite_seat recycles the existing invite row.
     const { data: reserveResult, error: reserveErr } = await admin.rpc("reserve_team_invite_seat", {
       p_tenant_id: tenantId,
       p_email: emailNorm,
@@ -99,7 +90,7 @@ export async function POST(req: NextRequest) {
     }
     if (!reserveResult?.ok) {
       return NextResponse.json({
-        error: `Seat limit reached. ${planLabel(plan)} includes ${cap} seat${cap === 1 ? "" : "s"}, all currently used or pending. Deactivate a teammate who has left to free their seat, or upgrade your plan in Settings.`,
+        error: `Seat limit reached. ${planLabel(plan)} includes ${cap} seat${cap === 1 ? "" : "s"}, all currently used or pending. Upgrade your plan in Settings to invite more teammates.`,
         code: "SEAT_LIMIT",
         plan, cap, used: reserveResult?.used ?? cap,
       }, { status: 403 });

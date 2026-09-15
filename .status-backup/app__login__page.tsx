@@ -14,22 +14,11 @@ interface RoutingResult {
   reason: string;
 }
 
-// Shown when middleware bounces a non-active user back here, and when the
-// status check below signs one out.
-const ACCESS_MESSAGES: Record<string, string> = {
-  suspended:   "Your access has been suspended. Contact your workspace admin to have it restored.",
-  deactivated: "Your access to this workspace has been removed. Contact your workspace admin if you believe this is a mistake.",
-};
-
-function accessMessage(status: string): string {
-  return ACCESS_MESSAGES[status] ?? "Your access to this workspace is not currently active. Contact your workspace admin.";
-}
-
 async function resolvePostLoginRoute(user: { id: string; email?: string | null; user_metadata?: any }): Promise<RoutingResult> {
   const userId = user.id;
   const { data: profile, error: profileErr } = await supabase
     .from("profiles")
-    .select("id, tenant_id, onboarding_complete, onboarding_step, status")
+    .select("id, tenant_id, onboarding_complete, onboarding_step")
     .eq("id", userId)
     .maybeSingle();
 
@@ -45,14 +34,9 @@ async function resolvePostLoginRoute(user: { id: string; email?: string | null; 
   // the invite to accepted atomically. This no longer depends on
   // user_metadata.invited being present, so invites work regardless of how the
   // user arrived — magic link, verification link, or plain signup.
-  //
-  // This runs BEFORE the status check on purpose: re-inviting someone who was
-  // deactivated is how they are brought back, and accept_team_invite() sets
-  // their status to active. Checking status first would lock them out forever.
   const needsInviteCheck =
     !profile ||
     !profile.tenant_id ||
-    profile.status === "deactivated" ||
     (meta.invited && meta.tenant_id && profile.tenant_id !== meta.tenant_id);
 
   if (needsInviteCheck) {
@@ -60,16 +44,11 @@ async function resolvePostLoginRoute(user: { id: string; email?: string | null; 
     if (invite.ok) {
       return { destination: "dashboard", reason: "invited_teammate_joined" };
     }
+    if (invite.reason === "no_seats") {
+      return { destination: "error", reason: "no_seats" };
+    }
     // "no_pending_invite" is the normal case for owners and returning users —
-    // fall through to the checks below.
-  }
-
-  // Suspended or deactivated with no pending invite: the session token is still
-  // valid, so sign them out here rather than letting middleware bounce them
-  // back to this page in a loop.
-  if (profile?.status && profile.status !== "active") {
-    await supabase.auth.signOut();
-    return { destination: "error", reason: "access_" + profile.status };
+    // fall through to the standard routing below.
   }
 
   if (!profile) {
@@ -158,20 +137,8 @@ function LoginPage() {
   const [password, setPassword] = useState("");
   const [mode,     setMode]     = useState<"login" | "signup" | "forgot">(searchParams.get("mode") === "signup" ? "signup" : "login");
   const [loading,  setLoading]  = useState(false);
-  const [error,    setError]    = useState(() => {
-    const blocked = searchParams.get("access");
-    return blocked ? accessMessage(blocked) : "";
-  });
+  const [error,    setError]    = useState("");
   const [success,  setSuccess]  = useState("");
-
-  // Middleware sends a non-active user here with ?access=<status>. Their token
-  // is still valid, so clear it — otherwise the next navigation bounces back.
-  useEffect(() => {
-    if (searchParams.get("access")) {
-      supabase.auth.signOut().catch(() => {});
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // ── Helper: route after auth, respecting ?redirect= when it points to dashboard ──
   // A SHOPLINE claim (Entry B) arrives here in the URL from the verification link.
@@ -190,8 +157,8 @@ function LoginPage() {
       }
     } else if (result.destination === "onboarding") {
       router.replace(claim ? `/onboarding?shopline_claim=${encodeURIComponent(claim)}` : "/onboarding");
-    } else if (result.reason.startsWith("access_")) {
-      setError(accessMessage(result.reason.slice("access_".length)));
+    } else if (result.reason === "no_seats") {
+      setError("Your team has no seats available. Ask your workspace admin to free a seat or upgrade the plan.");
     } else {
       setError("Something went wrong loading your account. Please try again or contact support.");
     }
@@ -206,9 +173,6 @@ function LoginPage() {
       supabase.auth.signOut().catch(() => {});
       return;
     }
-
-    // Already bounced here by middleware — the signOut above handles it.
-    if (searchParams.get("access")) return;
 
     // Hardened session check — getSession() returns null on Edge/Safari
     // on first load due to cookie timing. getUser() forces a server
@@ -320,6 +284,12 @@ function LoginPage() {
           const invite = await acceptTeamInvite(supabase);
           if (invite.ok) {
             router.replace("/dashboard");
+            return;
+          }
+          if (invite.reason === "no_seats") {
+            await supabase.auth.signOut();
+            setError("Your team has no seats available. Ask your workspace admin to free a seat or upgrade the plan.");
+            setLoading(false);
             return;
           }
         }

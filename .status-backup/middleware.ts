@@ -1,4 +1,4 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
@@ -129,24 +129,6 @@ export async function middleware(req: NextRequest) {
       loginUrl.pathname = "/login";
       loginUrl.searchParams.set("redirect", pathname);
       return NextResponse.redirect(loginUrl);
-    }
-
-    // Suspending or deactivating someone does NOT invalidate their existing
-    // session token — it stays valid until it expires. So the token alone is
-    // not authority: check live status on every protected request. Candidates
-    // have no profiles row, so a missing row falls through to the check below.
-    const { data: prof } = await supabase
-      .from("profiles")
-      .select("status")
-      .eq("id", user.id)
-      .maybeSingle();
-
-    if (prof?.status && prof.status !== "active") {
-      const blocked = req.nextUrl.clone();
-      blocked.pathname = "/login";
-      blocked.search = "";
-      blocked.searchParams.set("access", prof.status);
-      return NextResponse.redirect(blocked);
     }
 
     // Candidates belong in their own portal, not the owner dashboard.

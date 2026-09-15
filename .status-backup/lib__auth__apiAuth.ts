@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
 export interface ApiAuthResult {
@@ -6,7 +6,6 @@ export interface ApiAuthResult {
   tenantId: string;
   email:    string;
   role?:    string;
-  status?:  string;
 }
 
 export async function getApiAuth(req: NextRequest): Promise<ApiAuthResult | null> {
@@ -23,22 +22,17 @@ export async function getApiAuth(req: NextRequest): Promise<ApiAuthResult | null
 
     const { data: profile } = await sb
       .from("profiles")
-      .select("tenant_id, role, status")
+      .select("tenant_id, role")
       .eq("id", session.user.id)
       .single();
 
     if (!profile?.tenant_id) return null;
-
-    // A suspended or deactivated teammate keeps a valid session token until it
-    // expires. Treat them as unauthenticated rather than trusting the token.
-    if (profile.status && profile.status !== "active") return null;
 
     return {
       userId:   session.user.id,
       tenantId: profile.tenant_id,
       email:    session.user.email ?? "",
       role:     profile.role,
-      status:   profile.status,
     };
   } catch {
     return null;
