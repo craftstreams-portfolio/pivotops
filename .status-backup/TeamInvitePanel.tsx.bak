@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect } from "react";
 import { isValidEmail } from "@/lib/validation";
@@ -128,7 +128,6 @@ export default function TeamInvitePanel({
   const [pendingReason, setPendingReason] = useState("internal_investigation");
   const [pendingNotes,  setPendingNotes]  = useState("");
   const [processing,    setProcessing]    = useState(false);
-  const [revokingId,    setRevokingId]    = useState<string | null>(null);
 
   // Access history
   const [historyFor, setHistoryFor] = useState<string | null>(null);
@@ -266,22 +265,6 @@ export default function TeamInvitePanel({
     deactivated: members.filter((m) => m.status === "deactivated").length,
     pending:     invites.filter((i) => i.status === "pending").length,
   };
-
-  // Revoking invalidates the token server-side: accept_team_invite() only
-  // matches pending invites, so a revoked link can never be redeemed. The row
-  // is kept for the audit trail and the seat is freed immediately.
-  async function revokeInvite(inviteId: string, email: string) {
-    if (!window.confirm("Revoke the invitation for " + email + "? The link stops working immediately.")) return;
-    setRevokingId(inviteId); setMemberErr("");
-    try {
-      const { data, error } = await supabase.rpc("revoke_team_invite", { p_invite: inviteId, p_reason: null });
-      if (error) throw new Error(error.message);
-      if (!data?.ok) throw new Error(data?.reason === "not_pending" ? "That invitation is no longer pending." : "Could not revoke the invitation.");
-      await refreshCounts();
-    } catch (e) {
-      setMemberErr(e instanceof Error ? e.message : "Something went wrong.");
-    } finally { setRevokingId(null); }
-  }
 
   const shown = filter === "pending"
     ? []
@@ -455,14 +438,7 @@ export default function TeamInvitePanel({
                         <p className="text-xs text-white truncate">{inv.email}</p>
                         <p className="text-[10px] text-zinc-500 capitalize">{inv.role} \u00B7 invited {new Date(inv.created_at).toLocaleDateString()}</p>
                       </div>
-                      {(myRole === "admin" || myRole === "manager") ? (
-                        <button onClick={() => revokeInvite(inv.id, inv.email)} disabled={revokingId === inv.id}
-                          className="flex-shrink-0 text-[10px] px-2 py-1 rounded-md border border-red-600/40 text-red-400 hover:bg-red-500/10 disabled:opacity-40 transition">
-                          {revokingId === inv.id ? "Revoking..." : "Revoke"}
-                        </button>
-                      ) : (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 bg-zinc-700/50 text-zinc-400">pending</span>
-                      )}
+                      <span className="text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 bg-zinc-700/50 text-zinc-400">pending</span>
                     </div>
                   ))}
                 </div>
