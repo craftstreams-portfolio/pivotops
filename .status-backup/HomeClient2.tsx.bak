@@ -527,10 +527,6 @@ export default function HomeClient() {
             <a href="#how-it-works" className="hover:text-white transition">How it works</a>
             <a href="#pricing" className="hover:text-white transition">Pricing</a>
             <a href="#faq" className="hover:text-white transition">FAQ</a>
-            <a href="https://calendly.com/craftstreams/new-meeting" target="_blank" rel="noopener noreferrer"
-              className="px-3.5 py-1.5 rounded-lg border border-emerald-500/40 text-emerald-400 text-xs font-semibold hover:bg-emerald-500/10 transition">
-              Request a Demo
-            </a>
           </nav>
 
         </div>
@@ -648,8 +644,6 @@ export default function HomeClient() {
 
       {/* Cost savings + Pricing */}
       <CostSavings />
-
-      <DemoCta />
       <PricingSection onJoinWaitlist={() => goSignup("pricing")} />
 
       {/* Final CTA */}
