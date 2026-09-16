@@ -4,7 +4,6 @@ import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import { Cake, Gift, Calendar as CalendarIcon, Settings as SettingsIcon, User, Loader2, ChevronLeft, ChevronRight, Sparkles, Send } from "lucide-react";
 import MessagesTab from "./MessagesTab";
-import CardsTab from "./CardsTab";
 import { useSubscription } from "@/lib/billing/gate";
 
 // Birthdays are resolved server-side by birthday_feed(), which applies the
@@ -62,7 +61,7 @@ function Avatar({ row, size = 36 }: { row: FeedRow; size?: number }) {
 }
 
 export default function BirthdayHubPage() {
-  const [tab, setTab] = useState<"overview" | "calendar" | "mine" | "messages" | "cards" | "settings">("overview");
+  const [tab, setTab] = useState<"overview" | "calendar" | "mine" | "messages" | "settings">("overview");
   const [loading, setLoading] = useState(true);
   const [feed, setFeed] = useState<FeedRow[]>([]);
   const [me, setMe] = useState<{ id: string; tenant_id: string; role: string } | null>(null);
@@ -149,7 +148,6 @@ export default function BirthdayHubPage() {
             { k: "calendar", n: "Calendar", icon: <CalendarIcon size={13} /> },
             { k: "mine",     n: "My birthday", icon: <User size={13} /> },
             { k: "messages", n: "Messages", icon: <Send size={13} /> },
-            { k: "cards", n: "Cards", icon: <Sparkles size={13} /> },
             ...(me?.role === "admin" ? [{ k: "settings", n: "Settings", icon: <SettingsIcon size={13} /> }] : []),
           ].map((t) => (
             <button key={t.k} onClick={() => setTab(t.k as any)}
@@ -182,7 +180,6 @@ export default function BirthdayHubPage() {
             {tab === "calendar" && <CalendarView rows={filtered} />}
             {tab === "mine" && me && <MyBirthdayTab me={me} onSaved={load} />}
             {tab === "messages" && me && <MessagesTab me={me} names={nameMap} />}
-            {tab === "cards" && me && <CardsTab me={me} names={nameMap} companyName={companyName} />}
             {tab === "settings" && me?.role === "admin" && <SettingsTab tenantId={me.tenant_id} companyName={companyName} />}
           </>
         )}
