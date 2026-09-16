@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Plan definitions, feature matrix and seat caps.
  *
  * This folder was called lib/paddle, which suggested Paddle handles the money.
@@ -46,31 +46,30 @@ export const PLAN_FEATURES: Record<PlanTier, {
   workflows:      boolean;
   customIntegrations: boolean;
   prioritySupport:    boolean;
-  whiteLabel:         boolean;
 }> = {
   free: {
     name: "Free Trial", maxRecruiters: 2,
     compliance: false, complianceAdvanced: false, analytics: false, conference: false, clocking: false, tasks: false,
     showcase: false, spotlight: false, pivotsos: false, workflows: false,
-    customIntegrations: false, prioritySupport: false, whiteLabel: false,
+    customIntegrations: false, prioritySupport: false,
   },
   starter: {
     name: "Starter", maxRecruiters: 5,
     compliance: true, complianceAdvanced: false, analytics: false, conference: false, clocking: false, tasks: false,
     showcase: false, spotlight: false, pivotsos: false, workflows: false,
-    customIntegrations: false, prioritySupport: false, whiteLabel: true,
+    customIntegrations: false, prioritySupport: false,
   },
   professional: {
     name: "Professional", maxRecruiters: 20,
     compliance: true, complianceAdvanced: true, analytics: true, conference: true, clocking: true, tasks: true,
     showcase: true, spotlight: true, pivotsos: false, workflows: false,
-    customIntegrations: false, prioritySupport: false, whiteLabel: true,
+    customIntegrations: false, prioritySupport: false,
   },
   enterprise: {
     name: "Enterprise", maxRecruiters: 999,
     compliance: true, complianceAdvanced: true, analytics: true, conference: true, clocking: true, tasks: true,
     showcase: true, spotlight: true, pivotsos: true, workflows: true,
-    customIntegrations: true, prioritySupport: true, whiteLabel: true,
+    customIntegrations: true, prioritySupport: true,
   },
 };
 
