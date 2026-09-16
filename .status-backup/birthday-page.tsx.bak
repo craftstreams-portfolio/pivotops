@@ -1,10 +1,8 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
-import { Cake, Gift, Calendar as CalendarIcon, Settings as SettingsIcon, User, Loader2, ChevronLeft, ChevronRight, Sparkles, Send } from "lucide-react";
-import MessagesTab from "./MessagesTab";
-import { useSubscription } from "@/lib/billing/gate";
+import { Cake, Gift, Calendar as CalendarIcon, Settings as SettingsIcon, User, Loader2, ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
 
 // Birthdays are resolved server-side by birthday_feed(), which applies the
 // employee's visibility choice and only returns an age when they opted in.
@@ -61,7 +59,7 @@ function Avatar({ row, size = 36 }: { row: FeedRow; size?: number }) {
 }
 
 export default function BirthdayHubPage() {
-  const [tab, setTab] = useState<"overview" | "calendar" | "mine" | "messages" | "settings">("overview");
+  const [tab, setTab] = useState<"overview" | "calendar" | "mine" | "settings">("overview");
   const [loading, setLoading] = useState(true);
   const [feed, setFeed] = useState<FeedRow[]>([]);
   const [me, setMe] = useState<{ id: string; tenant_id: string; role: string } | null>(null);
@@ -96,12 +94,6 @@ export default function BirthdayHubPage() {
       setLoading(false);
     }
   }
-
-  const nameMap = useMemo(() => {
-    const m: Record<string, string> = {};
-    feed.forEach((r) => { m[r.employee_id] = r.full_name ?? "Employee"; });
-    return m;
-  }, [feed]);
 
   const departments = useMemo(
     () => Array.from(new Set(feed.map((r) => r.department).filter(Boolean))) as string[],
@@ -147,7 +139,6 @@ export default function BirthdayHubPage() {
             { k: "overview", n: "Overview", icon: <Gift size={13} /> },
             { k: "calendar", n: "Calendar", icon: <CalendarIcon size={13} /> },
             { k: "mine",     n: "My birthday", icon: <User size={13} /> },
-            { k: "messages", n: "Messages", icon: <Send size={13} /> },
             ...(me?.role === "admin" ? [{ k: "settings", n: "Settings", icon: <SettingsIcon size={13} /> }] : []),
           ].map((t) => (
             <button key={t.k} onClick={() => setTab(t.k as any)}
@@ -179,7 +170,6 @@ export default function BirthdayHubPage() {
             )}
             {tab === "calendar" && <CalendarView rows={filtered} />}
             {tab === "mine" && me && <MyBirthdayTab me={me} onSaved={load} />}
-            {tab === "messages" && me && <MessagesTab me={me} names={nameMap} />}
             {tab === "settings" && me?.role === "admin" && <SettingsTab tenantId={me.tenant_id} companyName={companyName} />}
           </>
         )}
@@ -508,10 +498,6 @@ function MyBirthdayTab({ me, onSaved }: { me: { id: string; tenant_id: string };
 
 // ── SETTINGS (admin) ────────────────────────────────────────────────────────
 function SettingsTab({ tenantId, companyName }: { tenantId: string; companyName: string }) {
-  // Hiding the PivotOps footer is a paid-plan entitlement. The gate is the
-  // existing billing matrix - not a second permission system.
-  const sub = useSubscription(tenantId);
-  const canWhiteLabel = sub.features?.whiteLabel === true;
   const [s, setS] = useState<any>(null);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
@@ -578,19 +564,16 @@ function SettingsTab({ tenantId, companyName }: { tenantId: string; companyName:
           { k: "auto_send",        t: "Send automatically",          d: "Off by default. Nothing goes out without a person until you turn this on." },
           { k: "skip_weekends",    t: "Skip weekends",               d: "Move weekend birthdays to the nearest working day." },
           { k: "notify_manager",   t: "Notify the manager",          d: "Tell a manager when someone on their team has a birthday." },
-        ].map((row) => {
-          const locked = row.k === "show_powered_by" && !canWhiteLabel;
-          return (
-          <label key={row.k} className={"flex items-start gap-2.5 " + (locked ? "opacity-60 cursor-not-allowed" : "cursor-pointer")}>
-            <input type="checkbox" checked={locked ? true : !!s[row.k]} disabled={locked} onChange={(e) => set(row.k, e.target.checked)}
+        ].map((row) => (
+          <label key={row.k} className="flex items-start gap-2.5 cursor-pointer">
+            <input type="checkbox" checked={!!s[row.k]} onChange={(e) => set(row.k, e.target.checked)}
               className="mt-0.5 accent-emerald-500" />
             <span>
               <span className="text-xs">{row.t}</span>
-              <span className="block text-[10px] text-zinc-500">{locked ? "Included on the Free Trial. Upgrade your plan in Settings to hide the footer." : row.d}</span>
+              <span className="block text-[10px] text-zinc-500">{row.d}</span>
             </span>
           </label>
-          );
-        })}
+        ))}
       </div>
 
       {s.show_powered_by && (

@@ -586,7 +586,7 @@ function SettingsTab({ tenantId, companyName }: { tenantId: string; companyName:
               className="mt-0.5 accent-emerald-500" />
             <span>
               <span className="text-xs">{row.t}</span>
-              <span className="block text-[10px] text-zinc-500">{locked ? "Included on the Free Trial. Upgrade your plan in Settings to hide the footer." : row.d}</span>
+              <span className="block text-[10px] text-zinc-500">{row.d}</span>
             </span>
           </label>
           );

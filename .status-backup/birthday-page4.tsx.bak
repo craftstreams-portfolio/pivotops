@@ -578,7 +578,7 @@ function SettingsTab({ tenantId, companyName }: { tenantId: string; companyName:
           { k: "auto_send",        t: "Send automatically",          d: "Off by default. Nothing goes out without a person until you turn this on." },
           { k: "skip_weekends",    t: "Skip weekends",               d: "Move weekend birthdays to the nearest working day." },
           { k: "notify_manager",   t: "Notify the manager",          d: "Tell a manager when someone on their team has a birthday." },
-        ].map((row) => {
+        ].map((row) => (
           const locked = row.k === "show_powered_by" && !canWhiteLabel;
           return (
           <label key={row.k} className={"flex items-start gap-2.5 " + (locked ? "opacity-60 cursor-not-allowed" : "cursor-pointer")}>
@@ -586,11 +586,10 @@ function SettingsTab({ tenantId, companyName }: { tenantId: string; companyName:
               className="mt-0.5 accent-emerald-500" />
             <span>
               <span className="text-xs">{row.t}</span>
-              <span className="block text-[10px] text-zinc-500">{locked ? "Included on the Free Trial. Upgrade your plan in Settings to hide the footer." : row.d}</span>
+              <span className="block text-[10px] text-zinc-500">{row.d}</span>
             </span>
           </label>
-          );
-        })}
+        ))}
       </div>
 
       {s.show_powered_by && (
