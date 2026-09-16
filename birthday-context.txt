@@ -1,0 +1,431 @@
+﻿
+
+########## FILE: vercel.json  (16 lines) ##########
+
+{
+  "framework": "nextjs",
+  "buildCommand": "next build",
+  "devCommand": "next dev",
+  "installCommand": "npm install",
+  "crons": [
+    {
+      "path": "/api/spotlight/reveal",
+      "schedule": "0 5 1 * *"
+    },
+    {
+      "path": "/api/cron/compliance-reminders",
+      "schedule": "0 9 * * *"
+    }
+  ]
+}
+
+
+########## FILE: app\api\cron\compliance-reminders\route.ts  (100 lines) ##########
+
+import { NextResponse } from "next/server";
+import { getAdmin } from "@/lib/supabase-admin";
+import { sendEmail } from "@/lib/email";
+
+const MAX_REMINDERS = 3;
+const REMIND_AFTER_HOURS = 20;
+const PORTAL_URL = (process.env.NEXT_PUBLIC_APP_URL ?? "https://www.pivotops.app") + "/candidate/portal";
+
+export async function POST(req: Request) {
+  const authHeader = (req as any).headers?.get?.("authorization") ?? "";
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const admin = getAdmin();
+  const cutoff = new Date(Date.now() - REMIND_AFTER_HOURS * 60 * 60 * 1000).toISOString();
+  const now = new Date().toISOString();
+
+  let processed = 0, emailed = 0, notified = 0;
+  const errors: string[] = [];
+
+  try {
+    // Rejected docs still under the cap, not reminded within the last 6h
+    const { data: due, error } = await admin
+      .from("candidate_credentials")
+      .select("id, candidate_id, tenant_id, name, doc_type, rejection_reason, reminder_count, last_reminded_at, status")
+      .eq("status", "rejected")
+      .lt("reminder_count", MAX_REMINDERS);
+
+    if (error) throw new Error(error.message);
+
+    const rows = (due ?? []).filter(
+      (r: any) => !r.last_reminded_at || r.last_reminded_at < cutoff
+    );
+
+    // Resolve candidate emails once per candidate
+    const candidateIds = Array.from(new Set(rows.map((r: any) => r.candidate_id).filter(Boolean)));
+    const acctMap: Record<string, { email: string | null; name: string | null }> = {};
+    if (candidateIds.length) {
+      const { data: accts } = await admin
+        .from("candidate_accounts")
+        .select("candidate_id, email, full_name")
+        .in("candidate_id", candidateIds);
+      (accts ?? []).forEach((a: any) => { acctMap[a.candidate_id] = { email: a.email, name: a.full_name }; });
+    }
+
+    for (const r of rows) {
+      processed++;
+      const acct = acctMap[r.candidate_id] ?? { email: null, name: null };
+      const docLabel = r.name || r.doc_type || "a document";
+      const reason = r.rejection_reason ? ` Reason: ${r.rejection_reason}.` : "";
+      const attempt = (r.reminder_count ?? 0) + 1;
+
+      // 1) Email the candidate
+      if (acct.email) {
+        const { ok } = await sendEmail({
+          to: acct.email,
+          subject: `Action needed: re-upload ${docLabel}`,
+          html: `<div style="font-family:system-ui,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#0f172a">
+            <h2 style="margin:0 0 12px">Document needs re-uploading</h2>
+            <p>Hi ${acct.name ?? "there"},</p>
+            <p>Your document <strong>${docLabel}</strong> was not accepted and needs to be re-uploaded.${reason}</p>
+            <p>Please log in to your candidate portal and upload a corrected version to continue your onboarding.</p>
+            <p style="margin:24px 0">
+              <a href="${PORTAL_URL}" style="background:#6366f1;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600">Open Candidate Portal</a>
+            </p>
+            <p style="color:#64748b;font-size:13px">Reminder ${attempt} of ${MAX_REMINDERS}. You will stop receiving these once the document is re-uploaded.</p>
+          </div>`,
+        });
+        if (ok) emailed++;
+      }
+
+      // 2) Xavier in-app notification (service-role, correct tenant_id)
+      const { error: notifErr } = await admin.from("xavier_notifications").insert({
+        tenant_id:    r.tenant_id,
+        candidate_id: r.candidate_id,
+        stage:        "manual_review",
+        message:      `Reminder ${attempt}/${MAX_REMINDERS}: ${acct.name ?? "Candidate"} still needs to re-upload "${docLabel}".`,
+        type:         "warning",
+        read:         false,
+        created_at:   now,
+      });
+      if (!notifErr) notified++;
+      else errors.push(`notif ${r.id}: ${notifErr.message}`);
+
+      // 3) Bump the counter so the cap is enforced
+      const { error: updErr } = await admin
+        .from("candidate_credentials")
+        .update({ reminder_count: attempt, last_reminded_at: now })
+        .eq("id", r.id);
+      if (updErr) errors.push(`update ${r.id}: ${updErr.message}`);
+    }
+
+    return NextResponse.json({ ok: true, processed, emailed, notified, errors });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return NextResponse.json({ ok: false, error: msg, processed, emailed, notified, errors }, { status: 500 });
+  }
+}
+
+
+########## FILE: lib\email\dispatch.ts  (225 lines) ##########
+
+/**
+ * PivotOps Email Dispatcher
+ * Single entry point for all transactional emails.
+ * Import this instead of calling sendEmail directly.
+ */
+
+import { sendEmail, EMAIL_SENDERS } from "../email";
+import * as T from "./templates";
+
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://www.pivotops.app";
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function dashboardUrl(path = "") {
+  return `${APP_URL}/dashboard${path}`;
+}
+
+// ── Dispatchers ───────────────────────────────────────────────────────────────
+
+export async function emailWelcome(params: {
+  to:          string;
+  userName:    string;
+  orgName:     string;
+  applyLink:   string;
+  plan:        string;
+}) {
+  const tpl = T.welcomeEmail({
+    userName:     params.userName,
+    orgName:      params.orgName,
+    dashboardUrl: dashboardUrl(),
+    applyLink:    params.applyLink,
+    plan:         params.plan,
+  });
+  return sendEmail({
+    to:      params.to,
+    subject: tpl.subject,
+    html:    tpl.html,
+    from:    EMAIL_SENDERS.notifications,
+    tags:    [{ name: "type", value: "welcome" }],
+  });
+}
+
+export async function emailOnboardingComplete(params: {
+  to:       string;
+  userName: string;
+  orgName:  string;
+  applyLink: string;
+}) {
+  const tpl = T.onboardingCompleteEmail({
+    userName:     params.userName,
+    orgName:      params.orgName,
+    applyLink:    params.applyLink,
+    dashboardUrl: dashboardUrl(),
+  });
+  return sendEmail({ to: params.to, subject: tpl.subject, html: tpl.html, from: EMAIL_SENDERS.notifications });
+}
+
+export async function emailTeamInvite(params: {
+  to:          string;
+  inviteeName: string;
+  inviterName: string;
+  orgName:     string;
+  role:        string;
+  acceptUrl:   string;
+}) {
+  const tpl = T.teamInviteEmail({
+    ...params,
+    expiresIn: "48 hours",
+  });
+  return sendEmail({ to: params.to, subject: tpl.subject, html: tpl.html, from: EMAIL_SENDERS.notifications });
+}
+
+export async function emailApplicationReceived(params: {
+  to:            string;
+  candidateName: string;
+  roleName:      string;
+  orgName:       string;
+  referenceId:   string;
+}) {
+  const tpl = T.applicationReceivedEmail(params);
+  return sendEmail({ to: params.to, subject: tpl.subject, html: tpl.html, from: EMAIL_SENDERS.noreply });
+}
+
+export async function emailInterviewScheduled(params: {
+  to:            string;
+  candidateName: string;
+  roleName:      string;
+  orgName:       string;
+  scheduledTime: string;
+  timezone:      string;
+  confirmUrl:    string;
+}) {
+  const tpl = T.interviewScheduledEmail(params);
+  return sendEmail({ to: params.to, subject: tpl.subject, html: tpl.html, from: EMAIL_SENDERS.notifications });
+}
+
+export async function emailOfferLetter(params: {
+  to:            string;
+  candidateName: string;
+  roleName:      string;
+  orgName:       string;
+  startDate?:    string;
+  notes?:        string;
+  acceptUrl:     string;
+  declineUrl:    string;
+}) {
+  const tpl = T.offerLetterEmail({ ...params, expiresIn: "72 hours" });
+  return sendEmail({ to: params.to, subject: tpl.subject, html: tpl.html, from: EMAIL_SENDERS.notifications });
+}
+
+export async function emailOfferAccepted(params: {
+  to:            string;
+  candidateName: string;
+  roleName:      string;
+  orgName:       string;
+}) {
+  const tpl = T.offerAcceptedEmail({ ...params, dashboardUrl: dashboardUrl("/recruitment") });
+  return sendEmail({ to: params.to, subject: tpl.subject, html: tpl.html, from: EMAIL_SENDERS.notifications });
+}
+
+export async function emailOfferDeclined(params: {
+  to:            string;
+  candidateName: string;
+  roleName:      string;
+  orgName:       string;
+}) {
+  const tpl = T.offerDeclinedEmail({ ...params, dashboardUrl: dashboardUrl("/recruitment") });
+  return sendEmail({ to: params.to, subject: tpl.subject, html: tpl.html, from: EMAIL_SENDERS.notifications });
+}
+
+export async function emailRejection(params: {
+  to:            string;
+  candidateName: string;
+  roleName:      string;
+  orgName:       string;
+}) {
+  const tpl = T.rejectionEmail(params);
+  return sendEmail({ to: params.to, subject: tpl.subject, html: tpl.html, from: EMAIL_SENDERS.noreply });
+}
+
+export async function emailSubscriptionConfirmed(params: {
+  to:              string;
+  userName:        string;
+  orgName:         string;
+  plan:            string;
+  amount:          string;
+  billingCycle:    string;
+  nextBillingDate: string;
+}) {
+  const tpl = T.subscriptionConfirmedEmail({ ...params, dashboardUrl: dashboardUrl() });
+  return sendEmail({ to: params.to, subject: tpl.subject, html: tpl.html, from: EMAIL_SENDERS.billing, tags: [{ name: "type", value: "billing" }] });
+}
+
+export async function emailPlanUpgraded(params: {
+  to:           string;
+  userName:     string;
+  orgName:      string;
+  fromPlan:     string;
+  toPlan:       string;
+  newAmount:    string;
+  effectiveDate: string;
+}) {
+  const tpl = T.planUpgradedEmail({ ...params, dashboardUrl: dashboardUrl() });
+  return sendEmail({ to: params.to, subject: tpl.subject, html: tpl.html, from: EMAIL_SENDERS.billing });
+}
+
+export async function emailPlanDowngraded(params: {
+  to:           string;
+  userName:     string;
+  orgName:      string;
+  fromPlan:     string;
+  toPlan:       string;
+  newAmount:    string;
+  effectiveDate: string;
+}) {
+  const tpl = T.planDowngradedEmail({ ...params, dashboardUrl: dashboardUrl() });
+  return sendEmail({ to: params.to, subject: tpl.subject, html: tpl.html, from: EMAIL_SENDERS.billing });
+}
+
+export async function emailPaymentFailed(params: {
+  to:               string;
+  userName:         string;
+  orgName:          string;
+  amount:           string;
+  retryDate:        string;
+}) {
+  const tpl = T.paymentFailedEmail({
+    ...params,
+    updateBillingUrl: dashboardUrl("/settings/billing"),
+  });
+  return sendEmail({ to: params.to, subject: tpl.subject, html: tpl.html, from: EMAIL_SENDERS.billing });
+}
+
+export async function emailAccountSuspended(params: {
+  to:       string;
+  userName: string;
+  orgName:  string;
+  reason:   string;
+}) {
+  const tpl = T.accountSuspendedEmail({
+    ...params,
+    contactUrl: `${APP_URL}/support`,
+  });
+  return sendEmail({ to: params.to, subject: tpl.subject, html: tpl.html, from: EMAIL_SENDERS.support });
+}
+
+export async function emailComplianceReminder(params: {
+  to:           string;
+  employeeName: string;
+  orgName:      string;
+  missingDocs:  string[];
+  portalUrl:    string;
+  deadline:     string;
+}) {
+  const tpl = T.complianceReminderEmail(params);
+  return sendEmail({ to: params.to, subject: tpl.subject, html: tpl.html, from: EMAIL_SENDERS.notifications });
+}
+
+export async function emailPasswordReset(params: {
+  to:        string;
+  userName:  string;
+  resetUrl:  string;
+}) {
+  const tpl = T.passwordResetEmail({ ...params, expiresIn: "1 hour" });
+  return sendEmail({ to: params.to, subject: tpl.subject, html: tpl.html, from: EMAIL_SENDERS.noreply });
+}
+
+
+########## FILE: lib\billing\gate.ts  (74 lines) ##########
+
+"use client";
+
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
+import { PLAN_FEATURES, canAccessFeature } from "./config";
+import type { PlanTier } from "./config";
+
+export interface SubscriptionState {
+  plan:        PlanTier;
+  status:      string;
+  isActive:    boolean;
+  isTrial:     boolean;
+  isExpired:        boolean;
+  trialEndsAt:      string | null;
+  cancelAtPeriodEnd: boolean;
+  features:    typeof PLAN_FEATURES["free"];
+  loading:     boolean;
+}
+
+export function useSubscription(tenantId: string): SubscriptionState {
+  const [state, setState] = useState<SubscriptionState>({
+    plan:        "free",
+    status:      "trialing",
+    isActive:    true,
+    isTrial:     true,
+    isExpired:        false,
+    trialEndsAt:      null,
+    cancelAtPeriodEnd: false,
+    features:    PLAN_FEATURES["free"],
+    loading:     true,
+  });
+
+  useEffect(() => {
+    if (!tenantId) return;
+    supabase
+      .from("subscriptions")
+      .select("plan, status, trial_ends_at, cancel_at_period_end")
+      .eq("tenant_id", tenantId)
+      .single()
+      .then(({ data }) => {
+        if (!data) {
+          setState(s => ({ ...s, loading: false }));
+          return;
+        }
+        const plan        = (data.plan ?? "free") as PlanTier;
+        const status      = data.status ?? "trialing";
+        const trialEndsAt = data.trial_ends_at ?? null;
+        const cancelAtPeriodEnd = data.cancel_at_period_end === true;
+        const isTrial     = status === "trialing";
+        // A free/trialing plan whose trial window has passed is expired.
+        // Paid plans (active professional/enterprise) are NEVER expired.
+        const trialOver   = !!trialEndsAt && new Date(trialEndsAt).getTime() < Date.now();
+        const isExpired   = (plan === "free" || status === "trialing") && trialOver;
+        const isActive    = !isExpired && (status === "active" || isTrial);
+
+        setState({
+          plan,
+          status,
+          isActive,
+          isTrial,
+          isExpired,
+          trialEndsAt,
+          cancelAtPeriodEnd,
+          features: PLAN_FEATURES[plan],
+          loading:  false,
+        });
+      });
+  }, [tenantId]);
+
+  return state;
+}
+
+// Server-side gate check (use in API routes / server components)
+export { canAccessFeature };

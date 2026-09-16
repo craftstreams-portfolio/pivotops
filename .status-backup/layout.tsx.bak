@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import { UnreadCountsProvider, useUnreadCountsContext } from "@/lib/chat/UnreadCountsContext";
@@ -11,7 +11,7 @@ import {
   Menu, X, Siren, Clock3, Trophy, Sparkles, Briefcase, Lock,
   ClipboardList, UserPlus, UserMinus, BadgeCheck, Flag,
   ChevronDown, ChevronRight, CalendarDays, Phone,
-  Video, MessageSquare, LogOut, Plus, Cake,
+  Video, MessageSquare, LogOut, Plus,
 } from "lucide-react";
 import TeamInvitePanel from "@/app/dashboard/components/team/TeamInvitePanel";
 import { useSubscription } from "@/lib/billing/gate";
@@ -97,7 +97,6 @@ const navItems: NavItem[] = [
     { label:"Conference",        href:"/dashboard/meetings", icon:Video         },
     { label:"Huddles",           href:"/dashboard/voice",    icon:Phone         },
     { label:"Employee Profiles", href:"/dashboard/profiles", icon:UserPlus      },
-    { label:"Birthday Hub",      href:"/dashboard/birthday-hub", icon:Cake      },
   ]},
   { label:"PivotSOS", icon:Siren, children:[
     { label:"Command Center",  href:"/dashboard/pivotsos"                       },
