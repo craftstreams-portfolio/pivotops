@@ -1,5 +1,4 @@
 "use client";
-import SupportInquiryPanel from "./SupportInquiryPanel";
 import { safeGetUserMedia } from "@/lib/media/safeGetUserMedia";
 import { useUnreadCountsContext } from "@/lib/chat/UnreadCountsContext";
 
@@ -1722,8 +1721,6 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
                 </div>
               </div>
             </div>
-
-            <SupportInquiryPanel channelId={activeChannel?.id ?? null} />
 
             <div className="flex flex-1 overflow-hidden">
               {/* Messages */}
