@@ -201,6 +201,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unknown action." }, { status: 400 });
   } catch (e) {
     console.error("[support/chat]", e);
-    return NextResponse.json({ error: "Something went wrong.", debug: String((e as any)?.message ?? e) }, { status: 500 });
+    return NextResponse.json({ error: "Something went wrong." }, { status: 500 });
   }
 }
