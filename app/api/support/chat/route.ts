@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
 
       if (chErr) {
         console.error("[support/chat] channel:", chErr.message);
-        return NextResponse.json({ error: "Could not start the chat." }, { status: 500 });
+        return NextResponse.json({ error: "Could not start the chat.", debug: chErr.message }, { status: 500 });
       }
 
       const { error: gErr } = await admin.from("support_guests").insert({
@@ -91,7 +91,7 @@ export async function POST(req: NextRequest) {
       if (gErr) {
         await admin.from("channels").delete().eq("id", ch.id);
         console.error("[support/chat] guest:", gErr.message);
-        return NextResponse.json({ error: "Could not start the chat." }, { status: 500 });
+        return NextResponse.json({ error: "Could not start the chat.", debug: gErr.message }, { status: 500 });
       }
 
       // Header card in the inquiry channel so an agent sees who this is.
