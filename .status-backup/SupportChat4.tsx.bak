@@ -86,24 +86,7 @@ export default function SupportChat({ onClose }: { onClose: () => void }) {
 
     ch.on("broadcast", { event: "status" }, (payload: any) => {
       const s = payload?.payload?.status;
-      if (!s) return;
-      setClosed(s === "CLOSED");
-      if (s === "CLOSED" || s === "RESOLVED") {
-        setAgentTyping(false);
-        setMsgs((prev) => prev.concat([{
-          id: "closed-" + Date.now(),
-          content: s === "RESOLVED"
-            ? "This conversation has been marked resolved. Thanks for reaching out - reply any time to reopen it."
-            : "This conversation has been closed. Thanks for reaching out to PivotOps.",
-          author: "system", sender_type: "system",
-          created_at: new Date().toISOString(),
-        }]));
-        scrollDown();
-        // Give the visitor time to read it before the window goes.
-        if (s === "CLOSED") {
-          setTimeout(() => { sessionStorage.removeItem(TOKEN_KEY); onClose(); }, 6000);
-        }
-      }
+      if (s) setClosed(s === "CLOSED");
     });
 
     ch.on("broadcast", { event: "typing" }, (payload: any) => {
