@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { randomBytes } from "crypto";
-import { sendEmail } from "@/lib/email";
 
 // Public, unauthenticated endpoint. Every operation is validated server-side
 // against the guest token. The client never supplies a tenant_id, channel_id
@@ -125,31 +124,6 @@ export async function POST(req: NextRequest) {
         content: "New customer inquiry from " + name + (company ? " (" + company + ")" : "") + " - see #website-inquiry",
         meta: { sender_type: "system", visibility: "public", inquiry_channel_id: ch.id },
       });
-
-      // Alert the team. Sent after the conversation is safely persisted and
-      // wrapped so a mail failure never costs the visitor their chat.
-      try {
-        const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://www.pivotops.app";
-        const link = appUrl + "/dashboard/teams?channel=" + ch.id;
-        const esc = (s: string) => String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-        await sendEmail({
-          to: "inquiries@pivotops.app",
-          subject: "New inquiry: " + name + (company ? " (" + company + ")" : ""),
-          html: [
-            String.raw`<div style="background:#f4f4f5;padding:32px 0;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">`,
-            String.raw`<div style="max-width:520px;margin:0 auto;background:#fff;border:1px solid #e4e4e7;border-radius:16px;overflow:hidden;">`,
-            String.raw`<div style="padding:24px 28px 8px;"><div style="font-size:11px;letter-spacing:1.5px;color:#a1a1aa;text-transform:uppercase;">New customer inquiry</div>`,
-            String.raw`<h2 style="margin:8px 0 0;font-size:18px;color:#18181b;">` + esc(name) + String.raw`</h2>`,
-            company ? String.raw`<p style="margin:2px 0 0;font-size:13px;color:#71717a;">` + esc(company) + String.raw`</p>` : "",
-            String.raw`<p style="margin:2px 0 0;font-size:13px;color:#71717a;">` + esc(email) + String.raw`</p></div>`,
-            String.raw`<div style="padding:16px 28px;"><div style="background:#fafafa;border-left:3px solid #10b981;padding:12px 14px;border-radius:6px;font-size:14px;color:#3f3f46;white-space:pre-wrap;">` + esc(message) + String.raw`</div></div>`,
-            String.raw`<div style="padding:4px 28px 28px;text-align:center;"><a href="` + link + String.raw`" style="background:#10b981;color:#fff;padding:12px 28px;border-radius:10px;font-weight:600;font-size:14px;text-decoration:none;display:inline-block;">Reply in Teams</a></div>`,
-            String.raw`</div></div>`,
-          ].join(""),
-        });
-      } catch (mailErr) {
-        console.error("[support/chat] alert email:", mailErr);
-      }
 
       return NextResponse.json({
         ok: true, token,

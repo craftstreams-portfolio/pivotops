@@ -1108,13 +1108,8 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
         setChannels(regular as Channel[]);
         setDmChannels(dms);
         if (regular.length > 0 && !activeChannel) {
-          // ?channel=<id> lets the inquiry alert email open the right
-          // conversation directly instead of dropping you on the default.
-          const wanted = typeof window !== "undefined"
-            ? new URLSearchParams(window.location.search).get("channel") : null;
-          const target = (wanted && regular.find((c: any) => c.id === wanted)) || regular[0];
-          setActiveChannel(target as Channel);
-          markRead(target.id);
+          setActiveChannel(regular[0] as Channel);
+          markRead(regular[0].id);
         }
         setLoading(false);
       });
