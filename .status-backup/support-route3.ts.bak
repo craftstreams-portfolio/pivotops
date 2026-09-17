@@ -68,10 +68,7 @@ export async function POST(req: NextRequest) {
       // separate row per conversation is what keeps inquiries distinguishable
       // in Teams and scopes the visitor's realtime topic to their own messages.
       const { data: ch, error: chErr } = await admin.from("channels").insert({
-        // Channel names are unique per tenant, so a repeat visitor would collide
-        // with their own earlier inquiry. The token suffix keeps each one distinct
-        // while staying readable in the channel list.
-        name: "Website Inquiry - " + name + " " + token.slice(0, 6),
+        name: "Website Inquiry - " + name,
         tenant_id: cfg.tenant_id,
         type: "channel",
         created_by: null,
@@ -79,7 +76,7 @@ export async function POST(req: NextRequest) {
 
       if (chErr) {
         console.error("[support/chat] channel:", chErr.message);
-        return NextResponse.json({ error: "Could not start the chat." }, { status: 500 });
+        return NextResponse.json({ error: "Could not start the chat.", debug: chErr.message }, { status: 500 });
       }
 
       const { error: gErr } = await admin.from("support_guests").insert({
@@ -92,12 +89,9 @@ export async function POST(req: NextRequest) {
       });
 
       if (gErr) {
-        // Messages first: messages.channel_id has a foreign key, so deleting the
-        // channel while a row references it throws and masks the real error.
-        await admin.from("messages").delete().eq("channel_id", ch.id);
         await admin.from("channels").delete().eq("id", ch.id);
         console.error("[support/chat] guest:", gErr.message);
-        return NextResponse.json({ error: "Could not start the chat." }, { status: 500 });
+        return NextResponse.json({ error: "Could not start the chat.", debug: gErr.message }, { status: 500 });
       }
 
       // Header card in the inquiry channel so an agent sees who this is.
@@ -207,6 +201,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unknown action." }, { status: 400 });
   } catch (e) {
     console.error("[support/chat]", e);
-    return NextResponse.json({ error: "Something went wrong." }, { status: 500 });
+    return NextResponse.json({ error: "Something went wrong.", debug: String((e as any)?.message ?? e) }, { status: 500 });
   }
 }
