@@ -84,11 +84,6 @@ export default function SupportChat({ onClose }: { onClose: () => void }) {
       scrollDown();
     });
 
-    ch.on("broadcast", { event: "status" }, (payload: any) => {
-      const s = payload?.payload?.status;
-      if (s) setClosed(s === "CLOSED");
-    });
-
     ch.on("broadcast", { event: "typing" }, (payload: any) => {
       if (payload?.payload?.who !== "agent") return;
       setAgentTyping(true);
