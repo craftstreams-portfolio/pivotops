@@ -73,7 +73,7 @@ export default function SupportChat({ onClose }: { onClose: () => void }) {
   // Realtime: one topic per conversation, named by the secret token.
   useEffect(() => {
     if (!token) return;
-    const ch = supabase.channel("support:" + token, { config: { broadcast: { self: false }, private: true } });
+    const ch = supabase.channel("support:" + token, { config: { broadcast: { self: false } } });
 
     ch.on("broadcast", { event: "message" }, (payload: any) => {
       const m = payload?.payload;
