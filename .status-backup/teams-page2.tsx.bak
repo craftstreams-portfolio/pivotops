@@ -1011,7 +1011,6 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
   const [channels,       setChannels]       = useState<Channel[]>([]);
   const [dmChannels,     setDmChannels]     = useState<any[]>([]);
   const [activeChannel,  setActiveChannel]  = useState<Channel | null>(null);
-  const supportTypingRef = useRef(0);
   const [messages,       setMessages]       = useState<Message[]>([]);
   const [allProfiles,    setAllProfiles]    = useState<Record<string, Profile>>({});
   const [profileList,    setProfileList]    = useState<Profile[]>([]);
@@ -1861,13 +1860,6 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
                           value={mention.value}
                           onChange={(v) => {
                             mention.setValue(v);
-                            // Support inquiries also notify the website visitor.
-                            // Throttled: the RPC is cheap but the visitor only
-                            // needs to know someone is there, not every keystroke.
-                            if (activeChannel && Date.now() - supportTypingRef.current > 2500) {
-                              supportTypingRef.current = Date.now();
-                              supabase.rpc("support_agent_typing", { p_channel: activeChannel.id }).then(() => {}, () => {});
-                            }
                             if (typingChannelRef.current && currentUser && activeChannel) {
                               typingChannelRef.current.send({
                                 type: "broadcast", event: "typing",
