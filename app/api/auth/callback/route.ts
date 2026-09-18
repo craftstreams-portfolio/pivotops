@@ -24,8 +24,22 @@ export async function GET(request: Request) {
         },
       }
     );
-    await supabase.auth.exchangeCodeForSession(code);
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+
+    // A freshly confirmed signup has no tenant yet - sending them to
+    // /dashboard means landing on a workspace that does not exist, which
+    // hangs or bounces. Route by whether onboarding is actually done.
+    if (!error && data?.user) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("tenant_id, onboarding_complete")
+        .eq("id", data.user.id)
+        .maybeSingle();
+
+      const ready = !!profile?.tenant_id && profile.onboarding_complete === true;
+      return NextResponse.redirect(new URL(ready ? "/dashboard" : "/onboarding", request.url));
+    }
   }
 
-  return NextResponse.redirect(new URL("/dashboard", request.url));
+  return NextResponse.redirect(new URL("/login", request.url));
 }
