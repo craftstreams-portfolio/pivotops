@@ -1,0 +1,634 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { isValidEmail } from "@/lib/validation";
+import { supabase } from "@/lib/supabase";
+import { X, Mail, Send, Copy, Check, Loader2, AlertCircle, Users, ShieldOff, UserMinus, RotateCcw, LogOut, Ban, History } from "lucide-react";
+import { seatCapForPlan, planLabel, isSeatExempt } from "@/lib/billing/config";
+
+const ROLES = [
+  { value: "admin",     label: "Admin",     desc: "Full access - manage settings, billing, and all team members." },
+  { value: "manager",   label: "Manager",   desc: "Oversee recruitment, onboarding, and team operations." },
+  { value: "recruiter", label: "Recruiter", desc: "Manage candidates, interviews, and offers." },
+  { value: "operator",  label: "Operator",  desc: "Day-to-day operations - clocking, tasks, and team chat." },
+];
+
+// Status is never communicated by colour alone - every badge carries a label.
+const STATUS_META: Record<string, { label: string; access: string; dot: string; chip: string }> = {
+  active:      { label: "Active",      access: "Allowed", dot: "bg-emerald-400", chip: "bg-emerald-500/15 text-emerald-400" },
+  disabled:    { label: "Disabled",    access: "Blocked", dot: "bg-amber-400",   chip: "bg-amber-500/15 text-amber-400" },
+  suspended:   { label: "Suspended",   access: "Blocked", dot: "bg-red-400",     chip: "bg-red-500/15 text-red-400" },
+  deactivated: { label: "Deactivated", access: "Blocked", dot: "bg-zinc-500",    chip: "bg-zinc-700/50 text-zinc-400" },
+};
+
+const SUSPEND_REASONS = [
+  { value: "internal_investigation", label: "Internal investigation" },
+  { value: "security_incident",      label: "Security incident" },
+  { value: "credential_compromise",  label: "Credential compromise" },
+  { value: "policy_violation",       label: "Policy violation" },
+  { value: "other",                  label: "Other" },
+];
+
+// Copy for each confirmation. Deliberately states that nothing is deleted.
+const ACTION_COPY: Record<string, { title: string; body: string; cta: string; tone: "amber" | "red" | "emerald"; needsReason?: boolean }> = {
+  revoke_sessions: {
+    title: "Revoke all sessions?",
+    body:  "This signs the employee out of every device immediately. They keep their access and can sign back in normally.",
+    cta:   "Revoke sessions", tone: "amber",
+  },
+  disable: {
+    title: "Disable access?",
+    body:  "This will immediately terminate the employee's active sessions and prevent them from accessing this workspace. Their profile and historical records will remain available to administrators.",
+    cta:   "Disable access", tone: "amber",
+  },
+  suspend: {
+    title: "Suspend employee?",
+    body:  "This will immediately terminate all active sessions and prevent this employee from accessing PivotOps. Their account, historical activity, and audit records will be preserved.",
+    cta:   "Suspend employee", tone: "red", needsReason: true,
+  },
+  deactivate: {
+    title: "Deactivate employee?",
+    body:  "This employee will lose access to PivotOps and will no longer appear in the active workforce. Their seat is freed for a replacement. Historical records, activity, and audit information will be preserved.",
+    cta:   "Deactivate employee", tone: "red",
+  },
+  reinstate: {
+    title: "Re-enable access?",
+    body:  "This will restore this employee's ability to access the workspace.",
+    cta:   "Re-enable access", tone: "emerald",
+  },
+  restore: {
+    title: "Restore employee?",
+    body:  "This returns a deactivated employee to the active workforce and consumes a seat.",
+    cta:   "Restore employee", tone: "emerald",
+  },
+};
+
+const AUDIT_LABELS: Record<string, string> = {
+  revoke_sessions: "All active sessions revoked",
+  disable:         "Employee access disabled",
+  suspend:         "Suspension",
+  deactivate:      "Deactivation",
+  reinstate:       "Employee access enabled",
+  restore:         "Employee restored",
+  invite_create:   "Employee invited",
+  invite_accept:   "Invitation accepted",
+};
+
+interface Member {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+  role: string | null;
+  position: string | null;
+  status: string | null;
+  suspended_at: string | null;
+  deactivated_at: string | null;
+}
+
+interface PendingInvite {
+  id: string; email: string; role: string; status: string; created_at: string;
+}
+
+interface AuditRow {
+  id: string; action: string; event_status: string;
+  previous_status: string | null; new_status: string | null;
+  reason: string | null; metadata: any; created_at: string;
+}
+
+export default function TeamInvitePanel({
+  open, onClose, tenantId, orgSize,
+}: {
+  open: boolean;
+  onClose: () => void;
+  tenantId: string;
+  orgSize: string;
+}) {
+  const [email,    setEmail]    = useState("");
+  const [role,     setRole]     = useState("operator");
+  const [position, setPosition] = useState("");
+  const [members,  setMembers]  = useState<Member[]>([]);
+  const [myRole,   setMyRole]   = useState("");
+  const [myId,     setMyId]     = useState("");
+  const [filter,   setFilter]   = useState("active");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editRole,  setEditRole]  = useState("operator");
+  const [editTitle, setEditTitle] = useState("");
+  const [savingMember, setSavingMember] = useState(false);
+  const [memberErr, setMemberErr] = useState("");
+  const [toast,    setToast]    = useState("");
+  const [sending,  setSending]  = useState(false);
+  const [error,    setError]    = useState("");
+  const [lastLink, setLastLink] = useState("");
+  const [copied,   setCopied]   = useState(false);
+  const [invites,  setInvites]  = useState<PendingInvite[]>([]);
+  const [seatsUsed, setSeatsUsed] = useState(0);
+
+  // Confirmation dialog state
+  const [pending, setPending] = useState<{ member: Member; action: string } | null>(null);
+  const [pendingReason, setPendingReason] = useState("internal_investigation");
+  const [pendingNotes,  setPendingNotes]  = useState("");
+  const [processing,    setProcessing]    = useState(false);
+  const [revokingId,    setRevokingId]    = useState<string | null>(null);
+
+  // Access history
+  const [historyFor, setHistoryFor] = useState<string | null>(null);
+  const [history,    setHistory]    = useState<AuditRow[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  const [plan, setPlan] = useState<string>("free");
+  useEffect(() => {
+    if (!tenantId) return;
+    supabase.from("subscriptions").select("plan, status").eq("tenant_id", tenantId).maybeSingle()
+      .then(({ data }) => {
+        if (data?.plan) {
+          const live = data.status === "active" || data.status === "trialing";
+          setPlan(live ? data.plan : "free");
+          return;
+        }
+        supabase.from("tenants").select("plan").eq("id", tenantId).maybeSingle()
+          .then(({ data: tn }) => setPlan(tn?.plan ?? "free"));
+      });
+  }, [tenantId]);
+
+  const cap = isSeatExempt(tenantId) ? Infinity : seatCapForPlan(plan);
+
+  useEffect(() => {
+    if (!open || !tenantId) return;
+    refreshCounts();
+  }, [open, tenantId]);
+
+  async function refreshCounts() {
+    // Seat usage comes from tenant_seats_used(), the SAME definition
+    // reserve_team_invite_seat() uses when it enforces the cap.
+    const { data: used } = await supabase.rpc("tenant_seats_used", { p_tenant: tenantId });
+    setSeatsUsed(typeof used === "number" ? used : 0);
+
+    const { data } = await supabase.from("team_invites").select("id, email, role, status, created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(20);
+    setInvites((data ?? []) as PendingInvite[]);
+
+    const { data: mem } = await supabase
+      .from("profiles").select("id, full_name, email, role, position, status, suspended_at, deactivated_at")
+      .eq("tenant_id", tenantId).order("full_name", { ascending: true });
+    setMembers((mem ?? []) as Member[]);
+
+    const { data: auth } = await supabase.auth.getUser();
+    if (auth?.user) {
+      const me = (mem ?? []).find((m: any) => m.id === auth.user!.id);
+      setMyRole(me?.role ?? "");
+      setMyId(auth.user.id);
+    }
+  }
+
+  async function loadHistory(memberId: string) {
+    if (historyFor === memberId) { setHistoryFor(null); return; }
+    setHistoryFor(memberId); setHistoryLoading(true); setHistory([]);
+    const { data } = await supabase
+      .from("employee_access_audit")
+      .select("id, action, event_status, previous_status, new_status, reason, metadata, created_at")
+      .eq("employee_id", memberId)
+      .order("created_at", { ascending: false })
+      .limit(30);
+    setHistory((data ?? []) as AuditRow[]);
+    setHistoryLoading(false);
+  }
+
+  function startEdit(m: Member) {
+    setEditingId(m.id); setEditRole(m.role ?? "operator");
+    setEditTitle(m.position ?? ""); setMemberErr("");
+  }
+
+  async function saveMember(memberId: string) {
+    setSavingMember(true); setMemberErr("");
+    try {
+      const res = await fetch("/api/team/members", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ memberId, role: editRole, position: editTitle }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not update teammate.");
+      setEditingId(null);
+      refreshCounts();
+    } catch (err) {
+      setMemberErr(err instanceof Error ? err.message : "Something went wrong.");
+    } finally { setSavingMember(false); }
+  }
+
+  function askConfirm(member: Member, action: string) {
+    setPending({ member, action });
+    setPendingReason("internal_investigation");
+    setPendingNotes("");
+    setMemberErr("");
+  }
+
+  // Every action goes through /api/team/access so the server captures the
+  // actor, IP and user agent, and writes the initiation record before acting.
+  async function runAction() {
+    if (!pending || processing) return;
+    const { member, action } = pending;
+    const copy = ACTION_COPY[action];
+    setProcessing(true); setMemberErr("");
+    try {
+      const res = await fetch("/api/team/access", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          memberId: member.id,
+          action,
+          reason: copy.needsReason ? pendingReason : (action === "deactivate" ? "offboarding" : null),
+          notes: pendingNotes.trim() || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Access state could not be updated.");
+      setPending(null);
+      setEditingId(null);
+      setToast(copy.cta + " - done. The action has been recorded in the security history.");
+      setTimeout(() => setToast(""), 5000);
+      await refreshCounts();
+      if (historyFor === member.id) { setHistoryFor(null); await loadHistory(member.id); }
+    } catch (err) {
+      setMemberErr(err instanceof Error ? err.message : "Something went wrong. The attempted action has been recorded in the security history.");
+      setPending(null);
+    } finally { setProcessing(false); }
+  }
+
+  function actionsFor(status: string): string[] {
+    if (status === "deactivated") return ["restore"];
+    if (status === "disabled" || status === "suspended") return ["reinstate", "revoke_sessions", "deactivate"];
+    return ["revoke_sessions", "disable", "suspend", "deactivate"];
+  }
+
+  const counts = {
+    active:      members.filter((m) => (m.status ?? "active") === "active").length,
+    disabled:    members.filter((m) => m.status === "disabled").length,
+    suspended:   members.filter((m) => m.status === "suspended").length,
+    deactivated: members.filter((m) => m.status === "deactivated").length,
+    pending:     invites.filter((i) => i.status === "pending").length,
+  };
+
+  // Revoking invalidates the token server-side: accept_team_invite() only
+  // matches pending invites, so a revoked link can never be redeemed. The row
+  // is kept for the audit trail and the seat is freed immediately.
+  async function revokeInvite(inviteId: string, email: string) {
+    if (!window.confirm("Revoke the invitation for " + email + "? The link stops working immediately.")) return;
+    setRevokingId(inviteId); setMemberErr("");
+    try {
+      const { data, error } = await supabase.rpc("revoke_team_invite", { p_invite: inviteId, p_reason: null });
+      if (error) throw new Error(error.message);
+      if (!data?.ok) throw new Error(data?.reason === "not_pending" ? "That invitation is no longer pending." : "Could not revoke the invitation.");
+      await refreshCounts();
+    } catch (e) {
+      setMemberErr(e instanceof Error ? e.message : "Something went wrong.");
+    } finally { setRevokingId(null); }
+  }
+
+  const shown = filter === "pending"
+    ? []
+    : members.filter((m) => (m.status ?? "active") === filter);
+
+  const seatsLeft = cap === Infinity ? Infinity : Math.max(0, cap - seatsUsed);
+
+  async function handleInvite() {
+    if (!email.trim()) return;
+    if (!isValidEmail(email)) { setError("Please enter a valid email address."); return; }
+    setSending(true); setError(""); setLastLink("");
+    try {
+      const res = await fetch("/api/team/invites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), role, position: position.trim() || undefined }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to send invite.");
+      setLastLink(data.inviteLink || "");
+      setEmail(""); setPosition("");
+      refreshCounts();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally { setSending(false); }
+  }
+
+  async function copyLink() {
+    if (!lastLink) return;
+    try {
+      await navigator.clipboard.writeText(lastLink);
+      setCopied(true); setTimeout(() => setCopied(false), 2000);
+    } catch {}
+  }
+
+  function fmt(ts: string) {
+    const d = new Date(ts);
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
+      + " \u00B7 " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  }
+
+  if (!open) return null;
+
+  const toneClasses: Record<string, string> = {
+    amber:   "bg-amber-600 hover:bg-amber-500 text-white",
+    red:     "bg-red-600 hover:bg-red-500 text-white",
+    emerald: "bg-emerald-600 hover:bg-emerald-500 text-white",
+  };
+
+  return (
+    <div className="fixed inset-0 z-[150]">
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <div className="absolute right-0 top-0 h-full w-full max-w-md bg-zinc-950 border-l border-zinc-800 flex flex-col">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-zinc-800">
+          <div>
+            <h2 className="text-base font-semibold text-white">Team access</h2>
+            <p className="text-xs text-zinc-500 mt-0.5">
+              {cap === Infinity ? counts.active + " active" : seatsUsed + " of " + cap + " seats used \u00B7 " + planLabel(plan)}
+            </p>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-500 hover:text-white hover:bg-zinc-800 transition">
+            <X size={16} />
+          </button>
+        </div>
+
+        {toast && (
+          <div className="mx-6 mt-4 px-4 py-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300">
+            {toast}
+          </div>
+        )}
+
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          {/* ── INVITE ── */}
+          {seatsLeft === 0 ? (
+            <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
+              <AlertCircle size={15} className="text-amber-400 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-300 leading-relaxed">
+                {planLabel(plan)} includes {cap} seat{cap === 1 ? "" : "s"}, all currently used or pending. Deactivate an employee who has left to free their seat, or upgrade your plan in Settings.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div>
+                <label className="flex items-center gap-2 text-xs text-zinc-500 mb-1.5"><Mail size={11} /> Email address</label>
+                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+                  placeholder="teammate@company.com"
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white placeholder-zinc-600 outline-none focus:border-emerald-500 transition" />
+              </div>
+
+              <div>
+                <label className="text-xs text-zinc-500 mb-1.5 block">
+                  Job title <span className="text-zinc-600">(optional)</span>
+                </label>
+                <input type="text" value={position} onChange={(e) => setPosition(e.target.value)} maxLength={60}
+                  placeholder="e.g. Senior Recruiter, Regional Ops Lead"
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white placeholder-zinc-600 outline-none focus:border-emerald-500 transition" />
+              </div>
+
+              <div>
+                <label className="text-xs text-zinc-500 mb-1.5 block">Role and access</label>
+                <div className="space-y-2">
+                  {ROLES.map((r) => (
+                    <button key={r.value} onClick={() => setRole(r.value)}
+                      className={"w-full text-left px-4 py-3 rounded-xl border transition " + (role === r.value ? "border-emerald-500 bg-emerald-500/10" : "border-zinc-800 bg-zinc-900/50 hover:border-zinc-700")}>
+                      <p className={"text-sm font-medium " + (role === r.value ? "text-emerald-400" : "text-white")}>{r.label}</p>
+                      <p className="text-[11px] text-zinc-500 mt-0.5">{r.desc}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {error && (
+                <div className="px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-sm text-red-400">{error}</div>
+              )}
+
+              <button onClick={handleInvite} disabled={sending || !email.trim()}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold disabled:opacity-40 transition">
+                {sending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+                {sending ? "Sending..." : "Send invite"}
+              </button>
+
+              {lastLink && (
+                <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4 space-y-2">
+                  <p className="text-xs text-zinc-500">Invite sent. You can also share this link directly:</p>
+                  <div className="flex items-center gap-2 bg-zinc-800/80 border border-zinc-700 rounded-lg px-3 py-2">
+                    <span className="text-xs text-zinc-300 truncate flex-1">{lastLink}</span>
+                    <button onClick={copyLink} className="flex-shrink-0 text-zinc-400 hover:text-white transition">
+                      {copied ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── FILTERS ── */}
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <Users size={13} className="text-zinc-500" />
+              <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Workforce</h3>
+            </div>
+
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              {[
+                { k: "active",      n: "Active",      c: counts.active },
+                { k: "pending",     n: "Pending",     c: counts.pending },
+                { k: "disabled",    n: "Disabled",    c: counts.disabled },
+                { k: "suspended",   n: "Suspended",   c: counts.suspended },
+                { k: "deactivated", n: "Deactivated", c: counts.deactivated },
+              ].map((f) => (
+                <button key={f.k} onClick={() => { setFilter(f.k); setEditingId(null); setHistoryFor(null); }}
+                  className={"px-2.5 py-1 rounded-lg text-[11px] border transition " + (filter === f.k ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-400" : "border-zinc-800 bg-zinc-900/50 text-zinc-500 hover:text-zinc-300")}>
+                  {f.n} <span className="opacity-60">{f.c}</span>
+                </button>
+              ))}
+            </div>
+
+            {memberErr && (
+              <div className="mb-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-[11px] text-red-400">{memberErr}</div>
+            )}
+
+            {/* ── PENDING INVITES ── */}
+            {filter === "pending" && (
+              invites.filter((i) => i.status === "pending").length === 0 ? (
+                <p className="text-xs text-zinc-600">No pending invitations.</p>
+              ) : (
+                <div className="space-y-2">
+                  {invites.filter((i) => i.status === "pending").map((inv) => (
+                    <div key={inv.id} className="flex items-center justify-between px-3 py-2.5 rounded-lg bg-zinc-900/50 border border-zinc-800">
+                      <div className="min-w-0">
+                        <p className="text-xs text-white truncate">{inv.email}</p>
+                        <p className="text-[10px] text-zinc-500 capitalize">{inv.role} \u00B7 invited {new Date(inv.created_at).toLocaleDateString()}</p>
+                      </div>
+                      {(myRole === "admin" || myRole === "manager") ? (
+                        <button onClick={() => revokeInvite(inv.id, inv.email)} disabled={revokingId === inv.id}
+                          className="flex-shrink-0 text-[10px] px-2 py-1 rounded-md border border-red-600/40 text-red-400 hover:bg-red-500/10 disabled:opacity-40 transition">
+                          {revokingId === inv.id ? "Revoking..." : "Revoke"}
+                        </button>
+                      ) : (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 bg-zinc-700/50 text-zinc-400">pending</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
+
+            {/* ── MEMBER LIST ── */}
+            {filter !== "pending" && (
+              shown.length === 0 ? (
+                <p className="text-xs text-zinc-600">No employees with this status.</p>
+              ) : (
+                <div className="space-y-2">
+                  {shown.map((m) => {
+                    const status = m.status ?? "active";
+                    const meta = STATUS_META[status] ?? STATUS_META.active;
+                    const canManage = (myRole === "admin" || (myRole === "manager" && m.role !== "admin")) && m.id !== myId;
+                    const isEditing = editingId === m.id;
+                    return (
+                      <div key={m.id} className="px-3 py-2.5 rounded-lg bg-zinc-900/50 border border-zinc-800">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-xs text-white truncate">{m.full_name || m.email}</p>
+                            <p className="text-[10px] text-zinc-500 flex items-center gap-1.5">
+                              <span className={"inline-block w-1.5 h-1.5 rounded-full " + meta.dot} aria-hidden="true" />
+                              <span>{meta.label}</span>
+                              <span className="text-zinc-700">|</span>
+                              <span className="capitalize">{m.role ?? "operator"}</span>
+                              {m.position ? <span className="truncate">{"\u00B7 " + m.position}</span> : null}
+                            </p>
+                          </div>
+                          {canManage && (
+                            <button onClick={() => (isEditing ? setEditingId(null) : startEdit(m))}
+                              className="flex-shrink-0 text-[10px] px-2 py-1 rounded-md border border-zinc-700 text-zinc-400 hover:text-white hover:border-zinc-600 transition">
+                              {isEditing ? "Close" : "Manage"}
+                            </button>
+                          )}
+                        </div>
+
+                        {isEditing && (
+                          <div className="mt-3 pt-3 border-t border-zinc-800 space-y-3">
+                            <div className="grid grid-cols-2 gap-2 text-[10px]">
+                              <div><span className="text-zinc-600">Status</span><p className="text-zinc-300">{meta.label}</p></div>
+                              <div><span className="text-zinc-600">Access</span><p className="text-zinc-300">{meta.access}</p></div>
+                              {m.suspended_at && status === "suspended" && (
+                                <div className="col-span-2"><span className="text-zinc-600">Suspended on</span><p className="text-zinc-300">{fmt(m.suspended_at)}</p></div>
+                              )}
+                              {m.deactivated_at && status === "deactivated" && (
+                                <div className="col-span-2"><span className="text-zinc-600">Deactivated on</span><p className="text-zinc-300">{fmt(m.deactivated_at)}</p></div>
+                              )}
+                            </div>
+
+                            {status !== "deactivated" && (
+                              <div className="space-y-2">
+                                <select value={editRole} onChange={(e) => setEditRole(e.target.value)}
+                                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-2 text-xs text-white outline-none focus:border-emerald-500">
+                                  {ROLES.map((r) => (<option key={r.value} value={r.value}>{r.label}</option>))}
+                                </select>
+                                <input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} maxLength={60}
+                                  placeholder="Job title (optional)"
+                                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-2 text-xs text-white placeholder-zinc-600 outline-none focus:border-emerald-500" />
+                                <button onClick={() => saveMember(m.id)} disabled={savingMember}
+                                  className="w-full py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold disabled:opacity-40 transition">
+                                  {savingMember ? "Saving..." : "Save role and title"}
+                                </button>
+                              </div>
+                            )}
+
+                            <div className="space-y-1.5">
+                              <p className="text-[10px] text-zinc-600 uppercase tracking-wide">Access controls</p>
+                              {actionsFor(status).map((a) => {
+                                const c = ACTION_COPY[a];
+                                const icon = a === "revoke_sessions" ? <LogOut size={11} />
+                                  : a === "disable" ? <Ban size={11} />
+                                  : a === "suspend" ? <ShieldOff size={11} />
+                                  : a === "deactivate" ? <UserMinus size={11} />
+                                  : <RotateCcw size={11} />;
+                                const border = c.tone === "red" ? "border-red-600/40 text-red-400 hover:bg-red-500/10"
+                                  : c.tone === "amber" ? "border-amber-600/40 text-amber-400 hover:bg-amber-500/10"
+                                  : "border-emerald-600/40 text-emerald-400 hover:bg-emerald-500/10";
+                                return (
+                                  <button key={a} onClick={() => askConfirm(m, a)}
+                                    className={"w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg border text-[11px] transition " + border}>
+                                    {icon} {c.cta}
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            <button onClick={() => loadHistory(m.id)}
+                              className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-zinc-700 text-zinc-400 text-[11px] hover:text-white transition">
+                              <History size={11} /> {historyFor === m.id ? "Hide" : "Access & security history"}
+                            </button>
+
+                            {historyFor === m.id && (
+                              <div className="space-y-2 pt-1">
+                                {historyLoading ? (
+                                  <p className="text-[10px] text-zinc-600">Loading...</p>
+                                ) : history.length === 0 ? (
+                                  <p className="text-[10px] text-zinc-600">No recorded events.</p>
+                                ) : history.map((h) => (
+                                  <div key={h.id} className="px-2.5 py-2 rounded-lg bg-zinc-900 border border-zinc-800">
+                                    <p className="text-[10px] text-zinc-500">{fmt(h.created_at)}</p>
+                                    <p className="text-[11px] text-zinc-200 mt-0.5">{AUDIT_LABELS[h.action] ?? h.action}</p>
+                                    <p className="text-[10px] text-zinc-500 mt-0.5">
+                                      Status: <span className="capitalize">{h.event_status}</span>
+                                      {h.previous_status && h.new_status && h.previous_status !== h.new_status
+                                        ? " \u00B7 " + h.previous_status + " \u2192 " + h.new_status : ""}
+                                    </p>
+                                    {h.reason && <p className="text-[10px] text-zinc-500">Reason: {h.reason.replace(/_/g, " ")}</p>}
+                                    {h.metadata?.notes && <p className="text-[10px] text-zinc-500">Notes: {h.metadata.notes}</p>}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ── CONFIRMATION DIALOG ── */}
+      {pending && (
+        <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="absolute inset-0 bg-black/70" onClick={() => !processing && setPending(null)} />
+          <div className="relative w-full sm:max-w-sm bg-zinc-950 border border-zinc-800 rounded-t-2xl sm:rounded-2xl p-5 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div>
+              <h3 className="text-sm font-semibold text-white">{ACTION_COPY[pending.action].title}</h3>
+              <p className="text-xs text-zinc-400 mt-1.5 leading-relaxed">{ACTION_COPY[pending.action].body}</p>
+              <p className="text-[11px] text-zinc-500 mt-2">{pending.member.full_name || pending.member.email}</p>
+            </div>
+
+            {ACTION_COPY[pending.action].needsReason && (
+              <div className="space-y-2">
+                <label className="text-[11px] text-zinc-500 block">Suspension reason</label>
+                <select value={pendingReason} onChange={(e) => setPendingReason(e.target.value)} disabled={processing}
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-2 text-xs text-white outline-none focus:border-emerald-500">
+                  {SUSPEND_REASONS.map((r) => (<option key={r.value} value={r.value}>{r.label}</option>))}
+                </select>
+                <label className="text-[11px] text-zinc-500 block pt-1">Additional notes</label>
+                <textarea value={pendingNotes} onChange={(e) => setPendingNotes(e.target.value)} rows={3} maxLength={1000} disabled={processing}
+                  placeholder="Visible to administrators only."
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-2 text-xs text-white placeholder-zinc-600 outline-none focus:border-emerald-500 resize-none" />
+                <p className="text-[10px] text-zinc-600">Notes are restricted to authorized administrators and are never sent to the employee.</p>
+              </div>
+            )}
+
+            <div className="flex gap-2 pt-1">
+              <button onClick={() => setPending(null)} disabled={processing}
+                className="flex-1 py-2 rounded-lg border border-zinc-700 text-zinc-400 text-xs hover:text-white disabled:opacity-40 transition">
+                Cancel
+              </button>
+              <button onClick={runAction} disabled={processing}
+                className={"flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold disabled:opacity-50 transition " + toneClasses[ACTION_COPY[pending.action].tone]}>
+                {processing && <Loader2 size={12} className="animate-spin" />}
+                {processing ? "Working..." : ACTION_COPY[pending.action].cta}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

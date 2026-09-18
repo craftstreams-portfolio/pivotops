@@ -1,0 +1,136 @@
+@import "tailwindcss";
+
+/* ===============================
+   TAILWIND LAYERS
+================================= */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ===============================
+   BASE SYSTEM VARIABLES
+================================= */
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+
+  --primary: #16a34a;
+  --border: #e4e4e7;
+
+  /* layout stability */
+  --app-min-height: 100vh;
+}
+
+/* ===============================
+   DARK MODE (DEFAULT SYSTEM)
+================================= */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+
+    --primary: #22c55e;
+    --border: #27272a;
+  }
+}
+
+/* ===============================
+   GLOBAL BODY SYSTEM
+================================= */
+body {
+  background: var(--background);
+  color: var(--foreground);
+
+  font-family: ui-sans-serif, system-ui, -apple-system,
+    BlinkMacSystemFont, "Segoe UI", Roboto,
+    Helvetica, Arial, "Apple Color Emoji",
+    "Segoe UI Emoji";
+
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  min-height: var(--app-min-height);
+}
+
+/* ===============================
+   ROOT APP STABILITY FIX
+================================= */
+html,
+body {
+  height: 100%;
+  width: 100%;
+}
+
+/* ===============================
+   GLOBAL BOX MODEL
+================================= */
+* {
+  box-sizing: border-box;
+}
+
+/* ===============================
+   SMOOTH SCROLL
+================================= */
+html {
+  scroll-behavior: smooth;
+}
+
+/* ===============================
+   SCROLLBAR (DASHBOARD UI)
+================================= */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0a0a0a;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
+}
+
+/* ===============================
+   TEXT SELECTION
+================================= */
+::selection {
+  background: rgba(34, 197, 94, 0.25);
+  color: white;
+}
+
+/* ===============================
+   UI ANIMATION BASE
+================================= */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0px);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.25s ease-out;
+}
+
+/* ===============================
+   KANBAN / DRAG FIX (CRITICAL)
+   FIXES BLUR + SUBPIXEL RENDERING
+================================= */
+.kanban-card {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  transform: translateZ(0);
+  backface-visibility: hidden;
+
+  will-change: transform;
+}
