@@ -34,9 +34,12 @@ export default function OnboardingVerifyPage() {
         }
 
         setStatus("success");
-        // Send them to login to sign in, then they land on onboarding
+        // Prefer the URL claim, fall back to the one stored against this
+        // verification record server-side - the URL param is absent when the
+        // merchant opens the email on a different device.
+        const effectiveClaim = claim || data?.shopline_claim || null;
         setTimeout(() => {
-          window.location.href = "/login?verified=1" + (claim ? `&shopline_claim=${encodeURIComponent(claim)}` : "");
+          window.location.href = "/login?verified=1" + (effectiveClaim ? `&shopline_claim=${encodeURIComponent(effectiveClaim)}` : "");
         }, 2500);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Verification failed.");

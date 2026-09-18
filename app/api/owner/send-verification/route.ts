@@ -32,6 +32,10 @@ export async function POST(req: NextRequest) {
         auth_user_id: authUserId,
         email:        email.trim().toLowerCase(),
         full_name:    fullName || null,
+        // Persisted server-side so a merchant who confirms on a different
+        // device than they installed from does not lose the SHOPLINE claim -
+        // localStorage cannot cross devices.
+        shopline_claim: shopline_claim || null,
       })
       .select("token")
       .single();

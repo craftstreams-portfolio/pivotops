@@ -46,7 +46,9 @@ export async function POST(req: NextRequest) {
       .update({ used: true })
       .eq("token", token);
 
-    return NextResponse.json({ ok: true, email: verif.email });
+    // Return the stored claim so the client can carry it forward even if the
+    // URL param was lost - covers confirming on a different device.
+    return NextResponse.json({ ok: true, email: verif.email, shopline_claim: verif.shopline_claim ?? null });
   } catch (err) {
     console.error("[owner verify-token]", err);
     return NextResponse.json({ error: "Something went wrong." }, { status: 500 });
