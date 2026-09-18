@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect, Suspense } from "react";
 import { isValidEmail } from "@/lib/validation";
@@ -274,7 +274,7 @@ function LoginPage() {
           new URLSearchParams(window.location.search).get("shopline_claim") ||
           localStorage.getItem("shopline_claim");
         const emailRedirectTo =
-          `${window.location.origin}/onboarding` +
+          `${window.location.origin}/api/auth/callback` +
           (claim ? `?shopline_claim=${encodeURIComponent(claim)}` : "");
 
         const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
@@ -372,7 +372,7 @@ function LoginPage() {
     try {
       const { error: otpErr } = await supabase.auth.signInWithOtp({
         email: email.trim(),
-        options: { emailRedirectTo: window.location.origin + "/auth/callback" },
+        options: { emailRedirectTo: window.location.origin + "/api/auth/callback" },
       });
       if (otpErr) { setError(otpErr.message); setLoading(false); return; }
       setSuccess("Check your email for a sign-in link. It works even if you never set a password — useful for invited teammates.");

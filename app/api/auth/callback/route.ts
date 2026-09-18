@@ -37,7 +37,15 @@ export async function GET(request: Request) {
         .maybeSingle();
 
       const ready = !!profile?.tenant_id && profile.onboarding_complete === true;
-      return NextResponse.redirect(new URL(ready ? "/dashboard" : "/onboarding", request.url));
+
+      // Preserve the SHOPLINE claim token across the redirect - without this
+      // a merchant installing from SHOPLINE would lose their store claim
+      // silently when they confirm their email.
+      const claim = requestUrl.searchParams.get("shopline_claim");
+      const dest = ready
+        ? "/dashboard"
+        : "/onboarding" + (claim ? `?shopline_claim=${encodeURIComponent(claim)}` : "");
+      return NextResponse.redirect(new URL(dest, request.url));
     }
   }
 
