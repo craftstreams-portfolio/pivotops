@@ -6,6 +6,15 @@ import { Store, Plus, CheckCircle2, Loader2, ExternalLink } from "lucide-react";
 
 
 
+interface ShopifyConnection {
+  id: string;
+  shop: string;
+  scope: string | null;
+  installed_at: string;
+  claimed_at: string | null;
+  uninstalled_at: string | null;
+}
+
 interface Connection {
   handle: string;
   store_name: string | null;
@@ -20,6 +29,7 @@ export default function IntegrationsPage() {
   const [connecting, setConnecting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [connections, setConnections] = useState<Connection[]>([]);
+  const [shopifyConns, setShopifyConns] = useState<ShopifyConnection[]>([]);
   const [error, setError] = useState("");
 
   async function authHeader(): Promise<Record<string, string>> {
@@ -32,6 +42,16 @@ export default function IntegrationsPage() {
     try {
       const headers = await authHeader();
       const res = await fetch("/api/shopline/connections", { headers });
+
+      // Shopify stores are connected by the OAuth install flow, not from
+      // this page - this only displays what is already linked.
+      try {
+        const sres = await fetch("/api/shopify/connections", { headers });
+        if (sres.ok) {
+          const sdata = await sres.json();
+          setShopifyConns(sdata.connections ?? []);
+        }
+      } catch {}
       const data = await res.json();
       if (res.ok) setConnections(data.connections ?? []);
     } catch {
@@ -78,7 +98,7 @@ export default function IntegrationsPage() {
         <Store className="w-6 h-6 text-emerald-400" />
         <h1 className="text-2xl font-bold text-white">Integrations</h1>
       </div>
-      <p className="text-zinc-400 text-sm mb-8">Connect your SHOPLINE store to PivotOps.</p>
+      <p className="text-zinc-400 text-sm mb-8">Connect your store to PivotOps.</p>
 
       <div className="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-6 mb-6">
         <h2 className="text-lg font-semibold text-white mb-3">Connect a SHOPLINE store</h2>
@@ -127,6 +147,43 @@ export default function IntegrationsPage() {
                 <span className={"text-xs px-2 py-1 rounded-md " + (c.status === "active" ? "bg-emerald-500/15 text-emerald-400" : "bg-zinc-700/40 text-zinc-400")}>{c.status}</span>
               </li>
             ))}
+          </ul>
+        )}
+      </div>
+
+      {/* Shopify - connections are created by the OAuth install flow from the
+          Shopify App Store, so this section displays them rather than
+          offering a handle input like SHOPLINE does. */}
+      <div className="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-6 mt-6">
+        <h2 className="text-lg font-semibold text-white mb-1">Shopify</h2>
+        <p className="text-zinc-500 text-sm mb-4">
+          Install PivotOps from the Shopify App Store to link a store. Connected stores appear here.
+        </p>
+
+        {shopifyConns.length === 0 ? (
+          <p className="text-zinc-500 text-sm">No Shopify stores connected yet.</p>
+        ) : (
+          <ul className="space-y-3">
+            {shopifyConns.map((s) => {
+              const active = !s.uninstalled_at;
+              return (
+                <li key={s.id} className="flex items-center justify-between bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-white font-medium">{s.shop.replace(".myshopify.com", "")}</span>
+                      {active ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : null}
+                    </div>
+                    <span className="text-zinc-500 text-xs mt-0.5 block">{s.shop}</span>
+                    {s.scope ? (
+                      <span className="text-zinc-600 text-xs mt-0.5 block">Scope: {s.scope}</span>
+                    ) : null}
+                  </div>
+                  <span className={"text-xs px-2 py-1 rounded-md " + (active ? "bg-emerald-500/15 text-emerald-400" : "bg-zinc-700/40 text-zinc-400")}>
+                    {active ? "connected" : "uninstalled"}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
