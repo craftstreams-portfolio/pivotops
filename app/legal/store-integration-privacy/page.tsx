@@ -4,7 +4,7 @@ import { buildMetadata } from "@/lib/seo/config";
 export const metadata: Metadata = buildMetadata({
   title: "Privacy Policy - PivotOps for Shopify",
   description: "How PivotOps collects, uses, and protects data when integrated with a Shopify store.",
-  path: "/legal/shopify-privacy",
+  path: "/legal/store-integration-privacy",
 });
 
 export default function ShopifyPrivacyPage() {
