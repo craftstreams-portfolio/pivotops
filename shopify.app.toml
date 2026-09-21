@@ -1,0 +1,33 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "4f4916c529f169edbe44ddb467e59530"
+name = "pivotops"
+application_url = "https://www.pivotops.app/api/shopify/install"
+embedded = false
+
+[webhooks]
+api_version = "2026-07"
+
+# Mandatory for App Store distribution. Each topic points at the matching
+# route already live under app/api/shopify/webhooks/ - built and deployed
+# this session, isolated from SHOPLINE's equivalent handlers.
+[[webhooks.subscriptions]]
+compliance_topics = ["customers/data_request"]
+uri = "https://www.pivotops.app/api/shopify/webhooks/customers/data_request"
+
+[[webhooks.subscriptions]]
+compliance_topics = ["customers/redact"]
+uri = "https://www.pivotops.app/api/shopify/webhooks/customers/redact"
+
+[[webhooks.subscriptions]]
+compliance_topics = ["shop/redact"]
+uri = "https://www.pivotops.app/api/shopify/webhooks/shop/redact"
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "read_locations"
+optional_scopes = [ ]
+use_legacy_install_flow = true
+
+[auth]
+redirect_urls = [ "https://www.pivotops.app/api/shopify/callback" ]

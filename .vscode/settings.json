@@ -1,0 +1,33 @@
+{
+  "deno.enablePaths": [
+    "supabase/functions"
+  ],
+
+  "deno.lint": true,
+
+  "deno.unstable": [
+    "bare-node-builtins",
+    "byonm",
+    "sloppy-imports",
+    "unsafe-proto",
+    "webgpu",
+    "broadcast-channel",
+    "worker-options",
+    "cron",
+    "kv",
+    "ffi",
+    "fs",
+    "http",
+    "net"
+  ],
+
+  // ✅ NEXT.JS SAFE FORMATTER
+  "[typescript]": {
+    "editor.defaultFormatter": "vscode.typescript-language-features"
+  },
+
+  // ✅ FIX TAILWIND WARNINGS
+  "css.lint.unknownAtRules": "ignore",
+  "scss.lint.unknownAtRules": "ignore",
+  "less.lint.unknownAtRules": "ignore"
+}

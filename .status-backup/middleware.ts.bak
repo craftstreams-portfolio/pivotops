@@ -1,0 +1,242 @@
+﻿import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { createServerClient } from "@supabase/ssr";
+
+const isDev = process.env.NODE_ENV === "development";
+
+// ── Rate limit store (edge-compatible, resets on cold start) ────────────────
+const rateLimitMap = new Map<string, { count: number; reset: number }>();
+
+function getRateLimit(ip: string, limit: number, windowMs: number): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+  if (!entry || now > entry.reset) {
+    rateLimitMap.set(ip, { count: 1, reset: now + windowMs });
+    return true;
+  }
+  if (entry.count >= limit) return false;
+  entry.count++;
+  return true;
+}
+
+const PUBLIC_RATE_LIMITED = [
+  "/candidate/register",
+  "/candidate/login",
+  "/login",
+  "/api/public/tenant-lookup",
+];
+
+// ── Routes that require a valid session ─────────────────────────────────────
+// Checked server-side in middleware so no browser can bypass the gate.
+const PROTECTED_PREFIXES = [
+  "/dashboard",
+  "/onboarding",
+  "/tasks",
+  "/workforce",
+  "/replay",
+];
+
+// ── Cached access status ────────────────────────────────────────────────────
+// Reading profiles.status on every request costs a database round-trip per
+// navigation AND per link prefetch, which is enough to make the dashboard feel
+// sluggish. The status is cached in an HMAC-signed, httpOnly cookie instead.
+//
+// The signature is what makes this safe: the cookie is client-visible storage,
+// so an unsigned one would let a suspended user set status=active themselves.
+// The payload is bound to the user id, so it cannot be replayed into another
+// session either.
+//
+// Trade-off: suspending or deactivating someone takes effect within
+// STATUS_TTL_MS rather than instantly. Lower the TTL if you need it tighter.
+const STATUS_COOKIE = "po_st";
+const STATUS_TTL_MS = 60_000;
+
+function b64url(bytes: Uint8Array): string {
+  let s = "";
+  for (const b of bytes) s += String.fromCharCode(b);
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+async function sign(payload: string, secret: string): Promise<string> {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, enc.encode(payload));
+  return b64url(new Uint8Array(sig));
+}
+
+async function readCachedStatus(req: NextRequest, userId: string, secret: string): Promise<string | null> {
+  const raw = req.cookies.get(STATUS_COOKIE)?.value;
+  if (!raw) return null;
+  const parts = raw.split(".");
+  if (parts.length !== 4) return null;
+  const [uid, status, exp, sig] = parts;
+  if (uid !== userId) return null;
+  if (!Number(exp) || Date.now() > Number(exp)) return null;
+  const expected = await sign(uid + "." + status + "." + exp, secret);
+  // Signature mismatch means the cookie was tampered with — ignore it and
+  // fall through to a live lookup rather than trusting it.
+  if (expected !== sig) return null;
+  return status;
+}
+
+async function writeCachedStatus(res: NextResponse, userId: string, status: string, secret: string) {
+  const exp = String(Date.now() + STATUS_TTL_MS);
+  const payload = userId + "." + status + "." + exp;
+  const sig = await sign(payload, secret);
+  res.cookies.set(STATUS_COOKIE, payload + "." + sig, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: !isDev,
+    path: "/",
+    maxAge: Math.ceil(STATUS_TTL_MS / 1000),
+  });
+}
+
+function applySecurityHeaders(res: NextResponse): NextResponse {
+  res.headers.set("X-Frame-Options", "DENY");
+  res.headers.set("X-Content-Type-Options", "nosniff");
+  res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.headers.set("Permissions-Policy", "camera=(self), microphone=(self), geolocation=(), payment=()");
+
+  if (!isDev) {
+    res.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
+  }
+
+  res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  res.headers.set("X-XSS-Protection", "1; mode=block");
+
+  const scriptSrc = isDev
+    ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com"
+    : "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com";
+
+  res.headers.set(
+    "Content-Security-Policy",
+    [
+      "default-src 'self'",
+      "object-src 'none'",
+      scriptSrc,
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob: https:",
+      "font-src 'self' https://fonts.gstatic.com",
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://nominatim.openstreetmap.org https://api.anthropic.com https://www.googletagmanager.com https://www.google-analytics.com https://*.google-analytics.com https://*.analytics.google.com",
+      "frame-ancestors 'self' https://*.myshopline.com https://*.shopline.com",
+      "base-uri 'self'",
+      "form-action 'self'",
+      ...(!isDev ? ["upgrade-insecure-requests"] : []),
+    ].join("; ")
+  );
+
+  return res;
+}
+
+export async function middleware(req: NextRequest) {
+  const { pathname } = req.nextUrl;
+
+  // Static assets — pass through immediately
+  if (
+    pathname.startsWith("/_next") ||
+    pathname.startsWith("/favicon") ||
+    /\.(png|jpg|jpeg|svg|ico|webp|css|js|woff2?)$/.test(pathname)
+  ) {
+    return NextResponse.next();
+  }
+
+  // Rate limit public endpoints
+  const isRateLimited = PUBLIC_RATE_LIMITED.some(p => pathname.startsWith(p));
+  if (isRateLimited) {
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+      ?? req.headers.get("x-real-ip")
+      ?? "unknown";
+    if (!getRateLimit(ip, 100, 60_000)) {
+      return new NextResponse("Too many requests", {
+        status: 429,
+        headers: { "Retry-After": "60", "X-Content-Type-Options": "nosniff" },
+      });
+    }
+  }
+
+  // ── Server-side auth gate ────────────────────────────────────────────────
+  // Runs before the page renders — no browser behaviour can bypass this.
+  // Uses @supabase/ssr so the session cookie is read from the request headers
+  // the same way on every browser including Edge.
+  const isProtected = PROTECTED_PREFIXES.some(p => pathname.startsWith(p));
+  if (isProtected) {
+    const res = NextResponse.next();
+
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() { return req.cookies.getAll(); },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              res.cookies.set(name, value, options)
+            );
+          },
+        },
+      }
+    );
+
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      const loginUrl = req.nextUrl.clone();
+      loginUrl.pathname = "/login";
+      loginUrl.searchParams.set("redirect", pathname);
+      return NextResponse.redirect(loginUrl);
+    }
+
+    // Suspending or deactivating someone does NOT invalidate their existing
+    // session token — it stays valid until it expires. So the token alone is
+    // not authority. Candidates have no profiles row; a missing row falls
+    // through to the candidate check below.
+    const secret = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    let status: string | null = null;
+
+    if (secret) {
+      status = await readCachedStatus(req, user.id, secret);
+    }
+
+    if (status === null) {
+      const { data: prof } = await supabase
+        .from("profiles")
+        .select("status")
+        .eq("id", user.id)
+        .maybeSingle();
+      status = prof?.status ?? "";
+      // Cache the answer either way — a blocked user should not cost a lookup
+      // per request any more than an active one does.
+      if (secret) await writeCachedStatus(res, user.id, status, secret);
+    }
+
+    if (status && status !== "active") {
+      const blocked = req.nextUrl.clone();
+      blocked.pathname = "/login";
+      blocked.search = "";
+      blocked.searchParams.set("access", status);
+      const redirect = NextResponse.redirect(blocked);
+      // Carry the cached value onto the redirect too, and clear it on the way
+      // out so a reinstated user is not held back by a stale cookie.
+      redirect.cookies.set(STATUS_COOKIE, "", { path: "/", maxAge: 0 });
+      return redirect;
+    }
+
+    // Candidates belong in their own portal, not the owner dashboard.
+    if (pathname.startsWith("/dashboard") && user.user_metadata?.role === "candidate") {
+      const portalUrl = req.nextUrl.clone();
+      portalUrl.pathname = "/candidate/portal";
+      return NextResponse.redirect(portalUrl);
+    }
+
+    return applySecurityHeaders(res);
+  }
+
+  return applySecurityHeaders(NextResponse.next());
+}
+
+export const config = {
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+};
