@@ -13,15 +13,15 @@ api_version = "2026-07"
 # this session, isolated from SHOPLINE's equivalent handlers.
 [[webhooks.subscriptions]]
 compliance_topics = ["customers/data_request"]
-uri = "/api/shopify/webhooks/customers/data_request"
+uri = "https://www.pivotops.app/api/shopify/webhooks/customers/data_request"
 
 [[webhooks.subscriptions]]
 compliance_topics = ["customers/redact"]
-uri = "/api/shopify/webhooks/customers/redact"
+uri = "https://www.pivotops.app/api/shopify/webhooks/customers/redact"
 
 [[webhooks.subscriptions]]
 compliance_topics = ["shop/redact"]
-uri = "/api/shopify/webhooks/shop/redact"
+uri = "https://www.pivotops.app/api/shopify/webhooks/shop/redact"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes

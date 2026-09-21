@@ -184,6 +184,15 @@ export default function SettingsPage(){
           </div>
           <span className="text-xs text-indigo-400 group-hover:text-indigo-300">Manage &rarr;</span>
         </a>
+        <a href="/dashboard/settings/integrations"
+           className="flex items-center justify-between px-4 py-3 rounded-xl border border-zinc-800
+                      hover:border-zinc-700 transition group">
+          <div>
+            <p className="text-sm text-white font-medium">Shopify</p>
+            <p className="text-xs text-zinc-500 mt-0.5">View Shopify stores connected to PivotOps</p>
+          </div>
+          <span className="text-xs text-indigo-400 group-hover:text-indigo-300">Manage &rarr;</span>
+        </a>
       </Section>
 
       <Section icon={Workflow} title="Automation">
