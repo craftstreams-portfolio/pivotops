@@ -54,6 +54,10 @@ export default function SettingsPage(){
   const [depts,setDepts]=useState("");
 
   const load=useCallback(async()=>{
+    // useTenant resolves asynchronously. Without this guard the first load
+    // ran with an empty tenantId, found no row, and tried to insert a
+    // default settings row for tenant "" - which RLS rejects with a 403.
+    if(!tenantId) return;
     setLoading(true);
     const {data}=await supabase.from("workspace_settings").select("*").eq("tenant_id",tenantId).maybeSingle();
     if(data){
