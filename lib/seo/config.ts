@@ -61,13 +61,13 @@ export function buildMetadata(input: PageMetadataInput): Metadata {
       siteName: SITE_NAME,
       type: "website",
       locale: "en_US",
-      images: [{ url: ogImage, width: 1200, height: 630, alt: fullTitle }],
+      ...(input.ogImage ? { images: [{ url: ogImage, width: 1200, height: 630, alt: fullTitle }] } : {}),
     },
     twitter: {
       card: "summary_large_image",
       title: fullTitle,
       description: input.description,
-      images: [ogImage],
+      ...(input.ogImage ? { images: [ogImage] } : {}),
     },
   };
 }
