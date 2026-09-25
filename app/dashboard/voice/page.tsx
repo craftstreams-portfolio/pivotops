@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import FloatingReactions from "@/app/dashboard/components/voice/FloatingReactions";
 import { supabase } from "@/lib/supabase";
+import { AudioMeshEngine } from "@/lib/huddles/AudioMeshEngine";
 import { TimeItPanel } from "@/app/dashboard/components/voice/TimeItPanel";
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -42,13 +43,6 @@ interface SignalMsg {
   to?: string;
   payload: any;
 }
-
-/* ────────────────────────────────────────────────────────────────────────
-   SELF-CONTAINED AUDIO-ONLY WEBRTC MESH
-   (mirrors the architecture of lib's WebRTCEngine, trimmed to audio-only
-   and inlined here so this page has zero cross-file import risk)
-──────────────────────────────────────────────────────────────────────── */
-import { AudioMeshEngine } from "@/lib/huddles/AudioMeshEngine";
 
 /* ────────────────────────────────────────────────────────────────────────
    PURPLE SPEAKING SPECTRUM
