@@ -1,7 +1,9 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import { UnreadCountsProvider, useUnreadCountsContext } from "@/lib/chat/UnreadCountsContext";
+import { HuddleCallProvider } from "@/lib/huddles/HuddleCallContext";
+import { MiniCallBar } from "@/app/dashboard/components/voice/MiniCallBar";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -295,6 +297,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <UnreadCountsProvider userId={userId || null}>
+    <HuddleCallProvider>
     <div className="flex min-h-screen overflow-hidden bg-zinc-950 text-white">
 
       {mobileOpen && (
@@ -498,6 +501,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       />
       <DashboardTour targets={tourTargets.current} />
     </div>
+    <MiniCallBar />
+    </HuddleCallProvider>
     </UnreadCountsProvider>
   );
 }
