@@ -6,6 +6,20 @@ import { supabase } from "@/lib/supabase";
 import { AudioMeshEngine } from "@/lib/huddles/AudioMeshEngine";
 import { TimeItPanel } from "@/app/dashboard/components/voice/TimeItPanel";
 
+/* Features reachable from the split-screen left pane. Rendered in an iframe
+   so the Huddles page never unmounts - a route change would tear down the
+   WebRTC engine and end the call mid-conversation. */
+const SPLIT_FEATURES: { label: string; href: string }[] = [
+  { label: "Overview",    href: "/dashboard" },
+  { label: "Recruitment", href: "/dashboard/recruitment" },
+  { label: "Onboarding",  href: "/dashboard/onboarding" },
+  { label: "Compliance",  href: "/dashboard/compliance" },
+  { label: "Clocking",    href: "/dashboard/clocking" },
+  { label: "Team Chat",   href: "/dashboard/teams" },
+  { label: "Tasks",       href: "/dashboard/tasks" },
+  { label: "Analytics",   href: "/dashboard/analytics" },
+];
+
 /* ────────────────────────────────────────────────────────────────────────
    TYPES
 ──────────────────────────────────────────────────────────────────────── */
@@ -107,6 +121,8 @@ export default function HuddlesPage() {
   const [levels, setLevels] = useState<Record<string, number>>({});
   const [myMuted, setMyMuted] = useState(true);
   const [showTimeIt, setShowTimeIt] = useState(false);
+  const [splitScreen, setSplitScreen] = useState(false);
+  const [splitFeature, setSplitFeature] = useState("/dashboard");
 
   // Watches MY OWN participant row for a remote mute (Time It auto-mute, or
   // any future host-mute feature). is_muted on other rows is display-only -
@@ -1049,7 +1065,31 @@ export default function HuddlesPage() {
      RENDER: ACTIVE ROOM
   ──────────────────────────────────────────────────────────────────── */
   return (
-    <div className="relative h-[calc(100vh-6rem)] bg-[#08060f] px-6 py-8 flex flex-col overflow-hidden">
+    <div className={splitScreen ? "flex h-[calc(100vh-6rem)] overflow-hidden" : "contents"}>
+    {splitScreen && (
+      <div className="w-1/2 flex flex-col border-r border-white/10 bg-[#0a0812] overflow-hidden">
+        <div className="flex items-center gap-1.5 px-3 py-2.5 border-b border-white/[0.06] overflow-x-auto flex-shrink-0">
+          {SPLIT_FEATURES.map((f) => (
+            <button key={f.href} onClick={() => setSplitFeature(f.href)}
+              className={`text-[11px] px-2.5 py-1.5 rounded-lg whitespace-nowrap transition flex-shrink-0 ${
+                splitFeature === f.href
+                  ? "bg-purple-500/20 text-purple-300 border border-purple-500/40"
+                  : "text-zinc-500 hover:text-zinc-300 border border-transparent"
+              }`}>
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <iframe
+          key={splitFeature}
+          src={splitFeature + "?embed=1"}
+          className="flex-1 w-full border-0"
+          title="PivotOps feature"
+        />
+      </div>
+    )}
+    <div className={"relative bg-[#08060f] px-6 py-8 flex flex-col overflow-hidden " +
+                    (splitScreen ? "w-1/2 h-full" : "h-[calc(100vh-6rem)]")}>
       <style>{`@keyframes pv-bar { from { transform: scaleY(0.45); } to { transform: scaleY(1.25); } } @keyframes pv-pop { 0% { transform: scale(0) rotate(-15deg); opacity: 0; } 60% { transform: scale(1.25) rotate(6deg); opacity: 1; } 100% { transform: scale(1) rotate(0deg); opacity: 1; } }`}</style>
 
       {/* Ambient depth */}
@@ -1062,7 +1102,7 @@ export default function HuddlesPage() {
 
       <FloatingReactions trigger={reactionBurst} />
 
-      <div className="relative max-w-3xl w-full mx-auto flex-1 flex flex-col min-h-0">
+      <div className={"relative w-full mx-auto flex-1 flex flex-col min-h-0 " + (splitScreen ? "max-w-full" : "max-w-3xl")}>
         {/* Header */}
         <div className="flex items-center justify-between mb-7 flex-shrink-0">
           <div className="min-w-0">
@@ -1290,6 +1330,25 @@ export default function HuddlesPage() {
           )}
 
           <button
+            onClick={() => setSplitScreen((v) => !v)}
+            title={splitScreen ? "Exit split screen" : "Split screen"}
+            className="group flex flex-col items-center gap-1.5 transition-transform hover:-translate-y-[2px]"
+          >
+            <span className="rounded-full flex items-center justify-center text-lg transition-all"
+                  style={{
+                    width: 52, height: 52,
+                    background: splitScreen ? "rgba(124,58,237,0.20)" : "rgba(255,255,255,0.05)",
+                    border: splitScreen ? "1px solid rgba(124,58,237,0.55)" : "1px solid rgba(255,255,255,0.12)",
+                  }}>
+              ⧉
+            </span>
+            <span className="text-[10px] transition-colors"
+                  style={{ color: splitScreen ? "#c084fc" : undefined }}>
+              <span className={splitScreen ? "" : "text-zinc-500 group-hover:text-zinc-300"}>Split</span>
+            </span>
+          </button>
+
+          <button
             onClick={() => setShowTimeIt((v) => !v)}
             title="Time It"
             className="group flex flex-col items-center gap-1.5 transition-transform hover:-translate-y-[2px]"
@@ -1406,6 +1465,7 @@ export default function HuddlesPage() {
           </div>
         </div>
       )}
+    </div>
     </div>
   );
 }
