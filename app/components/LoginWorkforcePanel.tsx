@@ -75,7 +75,7 @@ function FeedRow({ stream, delay }: { stream: FeedEvent[]; delay: number }) {
         }, 420);
       };
       tick();
-      const id = setInterval(tick, 3400);
+      const id = setInterval(tick, 5200);
       return () => clearInterval(id);
     }, delay);
     return () => { alive = false; clearTimeout(start); };
@@ -119,7 +119,7 @@ export function LoginWorkforcePanel() {
     const id = setInterval(() => {
       setCoverage((v) => (v >= 98 ? 76 : v + 1));
       setScore((v) => (v >= 92 ? 71 : v + 1));
-    }, 90);
+    }, 150);
     return () => clearInterval(id);
   }, []);
 
@@ -145,7 +145,7 @@ export function LoginWorkforcePanel() {
 
         <div className="mb-5 space-y-2">
           {STREAMS.map((stream, i) => (
-            <FeedRow key={i} stream={stream} delay={i * 850} />
+            <FeedRow key={i} stream={stream} delay={i * 1300} />
           ))}
         </div>
 
