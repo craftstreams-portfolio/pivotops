@@ -407,7 +407,10 @@ function LoginPage() {
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.05),transparent_65%)]" />
 
       {/* Subtle grid */}
-      <div className="absolute inset-0 opacity-[0.025]"
+      {/* Hidden below md: 1px lines at 60px spacing alias badly on high-DPI
+          phone screens, reading as a dirty or blotchy background rather than
+          subtle texture. */}
+      <div className="absolute inset-0 opacity-[0.025] hidden md:block"
         style={{
           backgroundImage: `linear-gradient(#ffffff 1px, transparent 1px),
                             linear-gradient(90deg, #ffffff 1px, transparent 1px)`,
