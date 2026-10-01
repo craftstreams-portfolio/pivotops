@@ -1,23 +1,9 @@
-export type AuditEvent = {
-  actorId: string;
-  action: string;
-  entity: string;
-  entityId: string;
-  timestamp: string;
-  metadata?: Record<string, unknown>;
-};
-
-const auditLog: AuditEvent[] = [];
-
-export function logAudit(event: AuditEvent) {
-  auditLog.push({
-    ...event,
-    timestamp: new Date().toISOString(),
-  });
-
-  console.log("🧾 AUDIT:", event.action, event.entityId);
-}
-
-export function getAuditLog() {
-  return auditLog;
-}
+/**
+ * lib/audit/audit.logger.ts
+ *
+ * Was an in-memory array that never reached the database. Re-exports the
+ * real writer so any remaining import gets working behaviour rather than a
+ * silent no-op.
+ */
+export { logAudit, auditIp } from "@/lib/audit";
+export type { AuditAction, AuditInput, AuditSeverity } from "@/lib/audit";

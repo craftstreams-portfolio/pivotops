@@ -109,7 +109,7 @@ export const POST = withSecurity<CandidateActionInput>(
       await safeSideEffect("xavierNotify:onboarding_triggered", () => xavierNotify({ tenantId, candidateId, stage: "onboarding_triggered", candidateName: name }));
       await safeSideEffect("xavierNotify:compliance_initiated", () => xavierNotify({ tenantId, candidateId, stage: "compliance_initiated", candidateName: name }));
       await safeSideEffect("addWorkflowEvent", () => addWorkflowEvent({ candidateId, tenantId, eventType: "ONBOARDING_TRIGGERED", actorId, actorName, meta: { onboardingId: onboarding?.id ?? null, registerLink, portalLink } }));
-      await safeSideEffect("logAudit", () => logAudit({ action: "PROCEED_ONBOARDING", actorId, actorName, entityType: "candidate", entityId: candidateId, metadata: { tenantId } }));
+      await safeSideEffect("logAudit", () => logAudit({ tenantId, action: "recruitment.onboarding_started", userId: actorId, userName: actorName, entityType: "candidate", entityId: candidateId }));
       if (candidatesChannelId) {
         await safeSideEffect("postToChannel", () => postToChannel(admin, candidatesChannelId!, "Onboarding Triggered - " + name, tenantId, { registerLink, portalLink }));
       }
@@ -123,7 +123,7 @@ export const POST = withSecurity<CandidateActionInput>(
 
       await safeSideEffect("xavierNotify:auto_reject", () => xavierNotify({ tenantId, candidateId, stage: "auto_reject", candidateName: name, extra: declineReason }));
       await safeSideEffect("addWorkflowEvent", () => addWorkflowEvent({ candidateId, tenantId, eventType: "CANDIDATE_DECLINED", actorId, actorName, meta: { reason: declineReason ?? null } }));
-      await safeSideEffect("logAudit", () => logAudit({ action: "DECLINE_CANDIDATE", actorId, actorName, entityType: "candidate", entityId: candidateId, metadata: { tenantId, declineReason } }));
+      await safeSideEffect("logAudit", () => logAudit({ tenantId, action: "recruitment.candidate_declined", userId: actorId, userName: actorName, entityType: "candidate", entityId: candidateId, metadata: { declineReason } }));
       if (candidatesChannelId) {
         await safeSideEffect("postToChannel", () => postToChannel(admin, candidatesChannelId!, "Candidate Declined - " + name, tenantId, { reason: declineReason ?? null }));
       }
@@ -163,7 +163,7 @@ export const POST = withSecurity<CandidateActionInput>(
 
       await safeSideEffect("xavierNotify:interview_scheduled", () => xavierNotify({ tenantId, candidateId, stage: "interview_scheduled", candidateName: name, extra: localTime + " (" + tz + ")" }));
       await safeSideEffect("addWorkflowEvent", () => addWorkflowEvent({ candidateId, tenantId, eventType: "INTERVIEW_SCHEDULED", actorId, actorName, meta: { scheduledAt: scheduledAt.toISOString(), timezone: tz, localTime } }));
-      await safeSideEffect("logAudit", () => logAudit({ action: "SCHEDULE_INTERVIEW", actorId, actorName, entityType: "candidate", entityId: candidateId, metadata: { tenantId, scheduledAt: scheduledAt.toISOString() } }));
+      await safeSideEffect("logAudit", () => logAudit({ tenantId, action: "recruitment.interview_scheduled", userId: actorId, userName: actorName, entityType: "candidate", entityId: candidateId, metadata: { scheduledAt: scheduledAt.toISOString() } }));
       if (candidatesChannelId) {
         await safeSideEffect("postToChannel", () => postToChannel(admin, candidatesChannelId!, "Interview Scheduled - " + name + " - " + localTime + " (" + tz + ")", tenantId, { scheduledAt: scheduledAt.toISOString(), timezone: tz }));
       }
@@ -209,7 +209,7 @@ export const POST = withSecurity<CandidateActionInput>(
 
       await safeSideEffect("xavierNotify:offer_sent", () => xavierNotify({ tenantId, candidateId, stage: "offer_sent", candidateName: name }));
       await safeSideEffect("addWorkflowEvent", () => addWorkflowEvent({ candidateId, tenantId, eventType: "OFFER_SENT", actorId, actorName, meta: { startDate: startDate ?? null, emailSent: emailResult.ok } }));
-      await safeSideEffect("logAudit", () => logAudit({ action: "SEND_OFFER", actorId, actorName, entityType: "candidate", entityId: candidateId, metadata: { tenantId, startDate, emailSent: emailResult.ok } }));
+      await safeSideEffect("logAudit", () => logAudit({ tenantId, action: "recruitment.offer_sent", userId: actorId, userName: actorName, entityType: "candidate", entityId: candidateId, metadata: { startDate, emailSent: emailResult.ok } }));
       if (candidatesChannelId) {
         await safeSideEffect("postToChannel", () => postToChannel(admin, candidatesChannelId!, "Offer Sent - " + name + (emailResult.ok ? "" : " (email delivery failed - check RESEND_API_KEY)"), tenantId, { emailSent: emailResult.ok }));
       }

@@ -1,4 +1,4 @@
-﻿import { getApiAuth, unauthorized } from "@/lib/auth/apiAuth";
+import { getApiAuth, unauthorized } from "@/lib/auth/apiAuth";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
@@ -129,7 +129,7 @@ export async function POST(req: NextRequest) {
 
     const emailResult = await sendEmail({ to: emailNorm, subject: "You've been invited to join PivotOps", html });
 
-    await logAudit({ action: "TEAM_INVITE_SENT", actorId: user.id, actorName: user.email ?? user.id, entityType: "team_invite", entityId: emailNorm, metadata: { tenantId, role, emailSent: emailResult.ok } });
+    await logAudit({ tenantId, action: "access.invite_sent", userId: user.id, userName: user.email ?? user.id, entityType: "team_invite", entityId: emailNorm, metadata: { role, emailSent: emailResult.ok } });
 
     return NextResponse.json({ success: true, inviteLink, emailSent: emailResult.ok });
   } catch (err) {

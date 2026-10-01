@@ -9,11 +9,12 @@ const WorkflowSchema = z.object({ candidateId: z.string().uuid() });
 export const POST = withSecurity(
   async (_req, { auth, body }) => {
     await logAudit({
-      action: "schedule_interview",
-      actorName: auth!.email ?? "Recruiter",
-      actorId: auth!.userId,
+      tenantId:   auth!.tenantId,
+      action:     "recruitment.interview_scheduled",
+      userId:     auth!.userId,
+      userName:   auth!.email ?? "Recruiter",
       entityType: "candidate",
-      entityId: body.candidateId,
+      entityId:   body.candidateId,
     });
     return NextResponse.json({ success: true });
   },
