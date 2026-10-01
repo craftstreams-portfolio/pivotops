@@ -5,6 +5,7 @@ import { isValidEmail } from "@/lib/validation";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { acceptTeamInvite } from "@/lib/auth/acceptInvite";
+import { LoginWorkforcePanel } from "@/app/components/LoginWorkforcePanel";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ROUTING LOGIC — single source of truth
@@ -401,8 +402,8 @@ function LoginPage() {
   }
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden
-                    bg-zinc-950 px-4">
+    <div className="relative grid min-h-screen grid-cols-1 overflow-hidden bg-zinc-950
+                    lg:grid-cols-2">
       {/* Background glow */}
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.05),transparent_65%)]" />
 
@@ -418,7 +419,8 @@ function LoginPage() {
         }}
       />
 
-      <div className="relative z-10 w-full max-w-md">
+      <div className="relative z-10 flex items-center justify-center px-4 py-12">
+      <div className="w-full max-w-md">
 
         {/* ── LOGO ── */}
         <div className="flex flex-col items-center gap-3 mb-8">
@@ -546,6 +548,14 @@ function LoginPage() {
         <p className="text-center text-[10px] text-zinc-700 mt-6">
           Secured by PivotOps · All data encrypted in transit
         </p>
+      </div>
+      </div>
+
+      {/* Hidden below lg - on phones the form alone is the right experience
+          and this would push it below the fold. */}
+      <div className="relative z-10 hidden items-center justify-center border-l border-white/[0.06]
+                      bg-[#07060d] px-8 py-12 lg:flex">
+        <LoginWorkforcePanel />
       </div>
     </div>
   );
