@@ -1,0 +1,640 @@
+﻿"use client";
+
+import { useState, useEffect, useMemo } from "react";
+import { supabase } from "@/lib/supabase";
+import { Cake, Gift, Calendar as CalendarIcon, Settings as SettingsIcon, User, Loader2, ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
+
+// Birthdays are resolved server-side by birthday_feed(), which applies the
+// employee's visibility choice and only returns an age when they opted in.
+// Nothing here recomputes whose birthday is visible.
+interface FeedRow {
+  employee_id: string;
+  full_name: string | null;
+  avatar_url: string | null;
+  department: string | null;
+  job_title: string | null;
+  birth_month: number;
+  birth_day: number;
+  next_date: string;
+  days_away: number;
+  age: number | null;
+}
+
+interface MyBirthday {
+  birth_month: number | null;
+  birth_day: number | null;
+  birth_year: number | null;
+  visibility: string;
+  show_age: boolean;
+  allow_automatic_messages: boolean;
+  preferred_channel: string;
+}
+
+const VISIBILITY = [
+  { value: "everyone",    label: "Everyone in the company", desc: "All colleagues can see your birthday." },
+  { value: "managers_hr", label: "Managers and HR only",    desc: "Only admins and managers can see it." },
+  { value: "admin_only",  label: "HR / admin only",         desc: "Only workspace admins can see it." },
+  { value: "hidden",      label: "Hidden",                  desc: "Nobody sees it and no automatic message is sent." },
+];
+
+const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const DOW = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+
+function initials(name: string | null) {
+  if (!name) return "?";
+  return name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
+}
+
+function Avatar({ row, size = 36 }: { row: FeedRow; size?: number }) {
+  if (row.avatar_url) {
+    return <img src={row.avatar_url} alt="" width={size} height={size}
+      className="rounded-full object-cover flex-shrink-0" style={{ width: size, height: size }} />;
+  }
+  return (
+    <div className="rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center flex-shrink-0 text-[11px] font-medium text-zinc-400"
+      style={{ width: size, height: size }} aria-hidden="true">
+      {initials(row.full_name)}
+    </div>
+  );
+}
+
+export default function BirthdayHubPage() {
+  const [tab, setTab] = useState<"overview" | "calendar" | "mine" | "settings">("overview");
+  const [loading, setLoading] = useState(true);
+  const [feed, setFeed] = useState<FeedRow[]>([]);
+  const [me, setMe] = useState<{ id: string; tenant_id: string; role: string } | null>(null);
+  const [companyName, setCompanyName] = useState("");
+  const [err, setErr] = useState("");
+  const [search, setSearch] = useState("");
+  const [dept, setDept] = useState("all");
+
+  useEffect(() => { load(); }, []);
+
+  async function load() {
+    setLoading(true); setErr("");
+    try {
+      const { data: auth } = await supabase.auth.getUser();
+      if (!auth?.user) { setErr("Not signed in."); setLoading(false); return; }
+
+      const { data: prof } = await supabase
+        .from("profiles").select("id, tenant_id, role").eq("id", auth.user.id).maybeSingle();
+      if (!prof?.tenant_id) { setErr("No workspace found."); setLoading(false); return; }
+      setMe(prof as any);
+
+      // Company name is resolved server-side - never assembled in the browser.
+      const { data: cn } = await supabase.rpc("tenant_company_name", { p_tenant: prof.tenant_id });
+      setCompanyName(typeof cn === "string" ? cn : "Your Company");
+
+      const { data: rows, error } = await supabase.rpc("birthday_feed", { p_days_ahead: 400 });
+      if (error) throw new Error(error.message);
+      setFeed((rows ?? []) as FeedRow[]);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not load birthdays.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const departments = useMemo(
+    () => Array.from(new Set(feed.map((r) => r.department).filter(Boolean))) as string[],
+    [feed]
+  );
+
+  const filtered = useMemo(() => feed.filter((r) => {
+    const q = search.trim().toLowerCase();
+    if (q && !(r.full_name ?? "").toLowerCase().includes(q)) return false;
+    if (dept !== "all" && r.department !== dept) return false;
+    return true;
+  }), [feed, search, dept]);
+
+  const today    = filtered.filter((r) => r.days_away === 0);
+  const thisWeek = filtered.filter((r) => r.days_away > 0 && r.days_away <= 7);
+  const thisMonth= filtered.filter((r) => r.days_away >= 0 && r.days_away <= 31);
+  const upcoming = filtered.filter((r) => r.days_away > 0).slice(0, 25);
+
+  const perMonth = useMemo(() => {
+    const counts = new Array(12).fill(0);
+    filtered.forEach((r) => { counts[r.birth_month - 1]++; });
+    return counts;
+  }, [filtered]);
+
+  return (
+    <div className="min-h-screen bg-zinc-950 text-white">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+
+        <header className="mb-6">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500/20 to-indigo-500/20 border border-zinc-800 flex items-center justify-center">
+              <Cake size={17} className="text-emerald-400" />
+            </div>
+            <div>
+              <h1 className="text-lg font-semibold tracking-tight">Birthday Hub</h1>
+              <p className="text-xs text-zinc-500">{companyName}</p>
+            </div>
+          </div>
+        </header>
+
+        <nav className="flex gap-1 mb-6 border-b border-zinc-800 overflow-x-auto" aria-label="Birthday Hub sections">
+          {[
+            { k: "overview", n: "Overview", icon: <Gift size={13} /> },
+            { k: "calendar", n: "Calendar", icon: <CalendarIcon size={13} /> },
+            { k: "mine",     n: "My birthday", icon: <User size={13} /> },
+            ...(me?.role === "admin" ? [{ k: "settings", n: "Settings", icon: <SettingsIcon size={13} /> }] : []),
+          ].map((t) => (
+            <button key={t.k} onClick={() => setTab(t.k as any)}
+              aria-current={tab === t.k ? "page" : undefined}
+              className={"flex items-center gap-1.5 px-3 py-2 text-xs whitespace-nowrap border-b-2 -mb-px transition " +
+                (tab === t.k ? "border-emerald-500 text-emerald-400" : "border-transparent text-zinc-500 hover:text-zinc-300")}>
+              {t.icon} {t.n}
+            </button>
+          ))}
+        </nav>
+
+        {err && (
+          <div role="alert" className="mb-5 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-sm text-red-400">{err}</div>
+        )}
+
+        {loading ? (
+          <div className="flex items-center gap-2 text-sm text-zinc-500 py-12 justify-center">
+            <Loader2 size={15} className="animate-spin" /> Loading birthdays...
+          </div>
+        ) : (
+          <>
+            {tab === "overview" && (
+              <Overview
+                today={today} thisWeek={thisWeek} thisMonth={thisMonth}
+                upcoming={upcoming} perMonth={perMonth} total={feed.length}
+                search={search} setSearch={setSearch}
+                dept={dept} setDept={setDept} departments={departments}
+              />
+            )}
+            {tab === "calendar" && <CalendarView rows={filtered} />}
+            {tab === "mine" && me && <MyBirthdayTab me={me} onSaved={load} />}
+            {tab === "settings" && me?.role === "admin" && <SettingsTab tenantId={me.tenant_id} companyName={companyName} />}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── OVERVIEW ────────────────────────────────────────────────────────────────
+function Overview(props: any) {
+  const { today, thisWeek, thisMonth, upcoming, perMonth, total, search, setSearch, dept, setDept, departments } = props;
+
+  const stats = [
+    { label: "Today",      value: today.length },
+    { label: "This week",  value: thisWeek.length },
+    { label: "This month", value: thisMonth.length },
+    { label: "On record",  value: total },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+        {stats.map((s) => (
+          <div key={s.label} className="rounded-xl border border-zinc-800 bg-zinc-900/50 px-3.5 py-3">
+            <p className="text-xl font-semibold">{s.value}</p>
+            <p className="text-[11px] text-zinc-500 mt-0.5">{s.label}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex flex-col sm:flex-row gap-2">
+        <input value={search} onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search employees..." aria-label="Search employees"
+          className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm placeholder-zinc-600 outline-none focus:border-emerald-500 transition" />
+        <select value={dept} onChange={(e) => setDept(e.target.value)} aria-label="Filter by department"
+          className="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-emerald-500">
+          <option value="all">All departments</option>
+          {departments.map((d: string) => (<option key={d} value={d}>{d}</option>))}
+        </select>
+      </div>
+
+      <section aria-labelledby="today-h">
+        <h2 id="today-h" className="text-xs font-semibold text-zinc-400 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+          <Sparkles size={12} className="text-emerald-400" /> Today
+        </h2>
+        {today.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-zinc-800 px-4 py-8 text-center">
+            <p className="text-sm text-zinc-500">No birthdays today.</p>
+            <p className="text-xs text-zinc-600 mt-1">The next one is in {upcoming[0]?.days_away ?? "-"} days.</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {today.map((r: FeedRow) => (
+              <div key={r.employee_id}
+                className="flex items-center gap-3 rounded-xl border border-emerald-500/25 bg-gradient-to-r from-emerald-500/10 to-transparent px-3.5 py-3">
+                <Avatar row={r} size={40} />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium truncate">
+                    {r.full_name}
+                    {r.age !== null && <span className="text-zinc-500 font-normal"> · turning {r.age}</span>}
+                  </p>
+                  <p className="text-[11px] text-zinc-500 truncate">
+                    {[r.job_title, r.department].filter(Boolean).join(" · ") || "Team member"}
+                  </p>
+                </div>
+                <span className="text-[10px] px-2 py-1 rounded-full bg-emerald-500/15 text-emerald-400 flex-shrink-0">Today</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section aria-labelledby="upcoming-h">
+        <h2 id="upcoming-h" className="text-xs font-semibold text-zinc-400 uppercase tracking-wide mb-3">Upcoming</h2>
+        {upcoming.length === 0 ? (
+          <p className="text-sm text-zinc-600">No upcoming birthdays on record.</p>
+        ) : (
+          <div className="space-y-1.5">
+            {upcoming.map((r: FeedRow) => (
+              <div key={r.employee_id} className="flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 px-3 py-2.5">
+                <Avatar row={r} size={30} />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs truncate">{r.full_name}</p>
+                  <p className="text-[10px] text-zinc-500 truncate">
+                    {MONTHS[r.birth_month - 1]} {r.birth_day}
+                    {r.department ? " · " + r.department : ""}
+                  </p>
+                </div>
+                <span className="text-[10px] text-zinc-500 flex-shrink-0">
+                  {r.days_away === 1 ? "tomorrow" : "in " + r.days_away + " days"}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section aria-labelledby="month-h">
+        <h2 id="month-h" className="text-xs font-semibold text-zinc-400 uppercase tracking-wide mb-3">By month</h2>
+        <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+          {perMonth.map((c: number, i: number) => (
+            <div key={i} className="rounded-lg border border-zinc-800 bg-zinc-900/40 px-2 py-2 text-center">
+              <p className="text-[10px] text-zinc-500">{MONTHS[i].slice(0, 3)}</p>
+              <p className="text-sm font-medium mt-0.5">{c}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+// ── CALENDAR ────────────────────────────────────────────────────────────────
+function CalendarView({ rows }: { rows: FeedRow[] }) {
+  const [offset, setOffset] = useState(0);
+  const base = new Date();
+  const view = new Date(base.getFullYear(), base.getMonth() + offset, 1);
+  const year = view.getFullYear(), month = view.getMonth();
+
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  // Monday-first grid.
+  const lead = (new Date(year, month, 1).getDay() + 6) % 7;
+
+  const byDay: Record<number, FeedRow[]> = {};
+  rows.filter((r) => r.birth_month === month + 1).forEach((r) => {
+    (byDay[r.birth_day] ??= []).push(r);
+  });
+
+  const isCurrentMonth = offset === 0;
+  const todayDate = base.getDate();
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-medium">{MONTHS[month]} {year}</h2>
+        <div className="flex gap-1">
+          <button onClick={() => setOffset(offset - 1)} aria-label="Previous month"
+            className="w-7 h-7 rounded-lg border border-zinc-800 flex items-center justify-center text-zinc-400 hover:text-white transition">
+            <ChevronLeft size={14} />
+          </button>
+          <button onClick={() => setOffset(0)}
+            className="px-2.5 h-7 rounded-lg border border-zinc-800 text-[11px] text-zinc-400 hover:text-white transition">Today</button>
+          <button onClick={() => setOffset(offset + 1)} aria-label="Next month"
+            className="w-7 h-7 rounded-lg border border-zinc-800 flex items-center justify-center text-zinc-400 hover:text-white transition">
+            <ChevronRight size={14} />
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-7 gap-1 text-center">
+        {DOW.map((d) => (<div key={d} className="text-[10px] text-zinc-600 py-1">{d}</div>))}
+        {Array.from({ length: lead }).map((_, i) => (<div key={"lead" + i} />))}
+        {Array.from({ length: daysInMonth }).map((_, i) => {
+          const day = i + 1;
+          const people = byDay[day] ?? [];
+          const isToday = isCurrentMonth && day === todayDate;
+          return (
+            <div key={day}
+              className={"min-h-[56px] rounded-lg border p-1 text-left " +
+                (isToday ? "border-emerald-500/50 bg-emerald-500/5" : people.length ? "border-zinc-700 bg-zinc-900/60" : "border-zinc-800/60 bg-zinc-900/20")}>
+              <p className={"text-[10px] " + (isToday ? "text-emerald-400 font-medium" : "text-zinc-600")}>{day}</p>
+              <div className="flex flex-wrap gap-0.5 mt-0.5">
+                {people.slice(0, 3).map((p) => (
+                  <span key={p.employee_id} title={p.full_name ?? ""}
+                    className="text-[8px] px-1 py-0.5 rounded bg-zinc-800 text-zinc-300 truncate max-w-full">
+                    {initials(p.full_name)}
+                  </span>
+                ))}
+                {people.length > 3 && <span className="text-[8px] text-zinc-500">+{people.length - 3}</span>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {rows.filter((r) => r.birth_month === month + 1).length > 0 && (
+        <div className="space-y-1.5 pt-2">
+          {rows.filter((r) => r.birth_month === month + 1)
+            .sort((a, b) => a.birth_day - b.birth_day)
+            .map((r) => (
+              <div key={r.employee_id} className="flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 px-3 py-2">
+                <Avatar row={r} size={26} />
+                <p className="text-xs flex-1 truncate">{r.full_name}</p>
+                <span className="text-[10px] text-zinc-500">{MONTHS[month].slice(0, 3)} {r.birth_day}</span>
+              </div>
+            ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── MY BIRTHDAY ─────────────────────────────────────────────────────────────
+function MyBirthdayTab({ me, onSaved }: { me: { id: string; tenant_id: string }; onSaved: () => void }) {
+  const [v, setV] = useState<MyBirthday>({
+    birth_month: null, birth_day: null, birth_year: null,
+    visibility: "everyone", show_age: false,
+    allow_automatic_messages: true, preferred_channel: "in_app",
+  });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    supabase.from("birthday_profiles")
+      .select("birth_month, birth_day, birth_year, visibility, show_age, allow_automatic_messages, preferred_channel")
+      .eq("employee_id", me.id).maybeSingle()
+      .then(({ data }) => { if (data) setV(data as any); setLoading(false); });
+  }, [me.id]);
+
+  async function save() {
+    setSaving(true); setMsg(""); setErr("");
+    try {
+      if (!v.birth_month || !v.birth_day) throw new Error("Choose a month and day.");
+      const { error } = await supabase.from("birthday_profiles").upsert({
+        tenant_id: me.tenant_id,
+        employee_id: me.id,
+        birth_month: v.birth_month,
+        birth_day: v.birth_day,
+        birth_year: v.birth_year || null,
+        visibility: v.visibility,
+        show_age: v.show_age,
+        allow_automatic_messages: v.allow_automatic_messages,
+        preferred_channel: v.preferred_channel,
+        updated_by: me.id,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "employee_id" });
+      if (error) throw new Error(error.message);
+      setMsg("Saved.");
+      setTimeout(() => setMsg(""), 4000);
+      onSaved();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not save.");
+    } finally { setSaving(false); }
+  }
+
+  if (loading) return <p className="text-sm text-zinc-500">Loading...</p>;
+
+  const maxDay = v.birth_month ? new Date(2024, v.birth_month, 0).getDate() : 31;
+
+  return (
+    <div className="max-w-md space-y-5">
+      <div>
+        <h2 className="text-sm font-medium mb-1">Your birthday</h2>
+        <p className="text-xs text-zinc-500">You control who sees this and whether anything is sent.</p>
+      </div>
+
+      {msg && <div role="status" className="px-3.5 py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-400">{msg}</div>}
+      {err && <div role="alert" className="px-3.5 py-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-400">{err}</div>}
+
+      <div className="grid grid-cols-3 gap-2">
+        <div>
+          <label htmlFor="bm" className="text-[11px] text-zinc-500 block mb-1">Month</label>
+          <select id="bm" value={v.birth_month ?? ""} onChange={(e) => setV({ ...v, birth_month: Number(e.target.value) || null })}
+            className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-2 text-xs outline-none focus:border-emerald-500">
+            <option value="">-</option>
+            {MONTHS.map((m, i) => (<option key={m} value={i + 1}>{m}</option>))}
+          </select>
+        </div>
+        <div>
+          <label htmlFor="bd" className="text-[11px] text-zinc-500 block mb-1">Day</label>
+          <select id="bd" value={v.birth_day ?? ""} onChange={(e) => setV({ ...v, birth_day: Number(e.target.value) || null })}
+            className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-2 text-xs outline-none focus:border-emerald-500">
+            <option value="">-</option>
+            {Array.from({ length: maxDay }).map((_, i) => (<option key={i} value={i + 1}>{i + 1}</option>))}
+          </select>
+        </div>
+        <div>
+          <label htmlFor="by" className="text-[11px] text-zinc-500 block mb-1">Year <span className="text-zinc-600">(optional)</span></label>
+          <input id="by" type="number" inputMode="numeric" value={v.birth_year ?? ""}
+            onChange={(e) => setV({ ...v, birth_year: e.target.value ? Number(e.target.value) : null })}
+            placeholder="1990"
+            className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-2 text-xs placeholder-zinc-600 outline-none focus:border-emerald-500" />
+        </div>
+      </div>
+      <p className="text-[10px] text-zinc-600 -mt-3">Leave the year blank if you would rather not record it at all.</p>
+
+      <fieldset>
+        <legend className="text-[11px] text-zinc-500 mb-1.5">Who can see it</legend>
+        <div className="space-y-1.5">
+          {VISIBILITY.map((o) => (
+            <button key={o.value} onClick={() => setV({ ...v, visibility: o.value })}
+              aria-pressed={v.visibility === o.value}
+              className={"w-full text-left px-3 py-2.5 rounded-xl border transition " +
+                (v.visibility === o.value ? "border-emerald-500 bg-emerald-500/10" : "border-zinc-800 bg-zinc-900/50 hover:border-zinc-700")}>
+              <p className={"text-xs font-medium " + (v.visibility === o.value ? "text-emerald-400" : "text-white")}>{o.label}</p>
+              <p className="text-[10px] text-zinc-500 mt-0.5">{o.desc}</p>
+            </button>
+          ))}
+        </div>
+      </fieldset>
+
+      <div className="space-y-2.5">
+        <label className="flex items-start gap-2.5 cursor-pointer">
+          <input type="checkbox" checked={v.show_age} disabled={!v.birth_year}
+            onChange={(e) => setV({ ...v, show_age: e.target.checked })}
+            className="mt-0.5 accent-emerald-500" />
+          <span>
+            <span className="text-xs">Show my age</span>
+            <span className="block text-[10px] text-zinc-500">
+              {v.birth_year ? "Colleagues will see the age you are turning." : "Add a birth year first."}
+            </span>
+          </span>
+        </label>
+
+        <label className="flex items-start gap-2.5 cursor-pointer">
+          <input type="checkbox" checked={v.allow_automatic_messages}
+            onChange={(e) => setV({ ...v, allow_automatic_messages: e.target.checked })}
+            className="mt-0.5 accent-emerald-500" />
+          <span>
+            <span className="text-xs">Allow automatic birthday messages</span>
+            <span className="block text-[10px] text-zinc-500">Turn this off to opt out of anything automated.</span>
+          </span>
+        </label>
+      </div>
+
+      <button onClick={save} disabled={saving}
+        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold disabled:opacity-40 transition">
+        {saving && <Loader2 size={14} className="animate-spin" />}
+        {saving ? "Saving..." : "Save preferences"}
+      </button>
+    </div>
+  );
+}
+
+// ── SETTINGS (admin) ────────────────────────────────────────────────────────
+function SettingsTab({ tenantId, companyName }: { tenantId: string; companyName: string }) {
+  const [s, setS] = useState<any>(null);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
+
+  const DEFAULTS = {
+    tenant_id: tenantId, enabled: true, auto_send: false, require_approval: true,
+    send_hour: 9, use_employee_timezone: true, skip_weekends: false,
+    feb29_rule: "feb_28", default_channel: "in_app", default_tone: "warm_professional",
+    sender_name: "", sender_title: "", show_company_name: true, show_powered_by: true,
+    custom_footer: "", default_visibility: "everyone", notify_manager: false,
+  };
+
+  useEffect(() => {
+    supabase.from("birthday_settings").select("*").eq("tenant_id", tenantId).maybeSingle()
+      .then(({ data }) => setS(data ?? DEFAULTS));
+  }, [tenantId]);
+
+  async function save() {
+    setSaving(true); setMsg(""); setErr("");
+    try {
+      const { error } = await supabase.from("birthday_settings")
+        .upsert({ ...s, tenant_id: tenantId, updated_at: new Date().toISOString() }, { onConflict: "tenant_id" });
+      if (error) throw new Error(error.message);
+      setMsg("Settings saved.");
+      setTimeout(() => setMsg(""), 4000);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not save settings.");
+    } finally { setSaving(false); }
+  }
+
+  if (!s) return <p className="text-sm text-zinc-500">Loading...</p>;
+
+  const set = (k: string, val: any) => setS({ ...s, [k]: val });
+
+  return (
+    <div className="max-w-md space-y-5">
+      <div>
+        <h2 className="text-sm font-medium mb-1">Birthday settings</h2>
+        <p className="text-xs text-zinc-500">Applies to everyone in {companyName}.</p>
+      </div>
+
+      {msg && <div role="status" className="px-3.5 py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-400">{msg}</div>}
+      {err && <div role="alert" className="px-3.5 py-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-400">{err}</div>}
+
+      {/* Live preview - uses the tenant's real resolved name, never a placeholder */}
+      <div className="rounded-xl border border-zinc-800 bg-gradient-to-br from-emerald-500/5 to-indigo-500/5 p-4">
+        <p className="text-[10px] text-zinc-500 uppercase tracking-wide mb-2">Preview</p>
+        <p className="text-sm">Happy Birthday, Sarah! 🎉</p>
+        {s.show_company_name && (
+          <p className="text-xs text-zinc-400 mt-1.5">From all of us at {companyName}.</p>
+        )}
+        {s.show_powered_by && (
+          <p className="text-[10px] text-zinc-600 mt-3">{s.custom_footer?.trim() || "Powered by PivotOps"}</p>
+        )}
+      </div>
+
+      <div className="space-y-2.5">
+        {[
+          { k: "enabled",          t: "Birthday Hub enabled",        d: "Turn the whole module off for this workspace." },
+          { k: "show_company_name",t: "Show company name in messages", d: "Messages read \u201Cfrom all of us at " + companyName + "\u201D." },
+          { k: "show_powered_by",  t: "Show \u201CPowered by PivotOps\u201D", d: "A product-branding option shown at the foot of every message." },
+          { k: "require_approval", t: "Require approval before sending", d: "Messages wait for an admin or manager to approve." },
+          { k: "auto_send",        t: "Send automatically",          d: "Off by default. Nothing goes out without a person until you turn this on." },
+          { k: "skip_weekends",    t: "Skip weekends",               d: "Move weekend birthdays to the nearest working day." },
+          { k: "notify_manager",   t: "Notify the manager",          d: "Tell a manager when someone on their team has a birthday." },
+        ].map((row) => (
+          <label key={row.k} className="flex items-start gap-2.5 cursor-pointer">
+            <input type="checkbox" checked={!!s[row.k]} onChange={(e) => set(row.k, e.target.checked)}
+              className="mt-0.5 accent-emerald-500" />
+            <span>
+              <span className="text-xs">{row.t}</span>
+              <span className="block text-[10px] text-zinc-500">{row.d}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+
+      {s.show_powered_by && (
+        <div>
+          <label htmlFor="cf" className="text-[11px] text-zinc-500 block mb-1">Custom footer <span className="text-zinc-600">(optional)</span></label>
+          <input id="cf" value={s.custom_footer ?? ""} onChange={(e) => set("custom_footer", e.target.value)}
+            maxLength={120} placeholder="Powered by PivotOps"
+            className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-xs placeholder-zinc-600 outline-none focus:border-emerald-500" />
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label htmlFor="sn" className="text-[11px] text-zinc-500 block mb-1">Sender name</label>
+          <input id="sn" value={s.sender_name ?? ""} onChange={(e) => set("sender_name", e.target.value)} maxLength={60}
+            placeholder="The People Team"
+            className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-xs placeholder-zinc-600 outline-none focus:border-emerald-500" />
+        </div>
+        <div>
+          <label htmlFor="st" className="text-[11px] text-zinc-500 block mb-1">Sender title</label>
+          <input id="st" value={s.sender_title ?? ""} onChange={(e) => set("sender_title", e.target.value)} maxLength={60}
+            placeholder="HR"
+            className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-xs placeholder-zinc-600 outline-none focus:border-emerald-500" />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label htmlFor="sh" className="text-[11px] text-zinc-500 block mb-1">Send at</label>
+          <select id="sh" value={s.send_hour} onChange={(e) => set("send_hour", Number(e.target.value))}
+            className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-2 text-xs outline-none focus:border-emerald-500">
+            {Array.from({ length: 24 }).map((_, h) => (
+              <option key={h} value={h}>{String(h).padStart(2, "0")}:00</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label htmlFor="f29" className="text-[11px] text-zinc-500 block mb-1">29 February falls on</label>
+          <select id="f29" value={s.feb29_rule} onChange={(e) => set("feb29_rule", e.target.value)}
+            className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-2 text-xs outline-none focus:border-emerald-500">
+            <option value="feb_28">28 February</option>
+            <option value="mar_01">1 March</option>
+            <option value="nearest_working_day">Nearest working day</option>
+          </select>
+        </div>
+      </div>
+
+      <div>
+        <label htmlFor="dv" className="text-[11px] text-zinc-500 block mb-1">Default visibility for new employees</label>
+        <select id="dv" value={s.default_visibility} onChange={(e) => set("default_visibility", e.target.value)}
+          className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-2 text-xs outline-none focus:border-emerald-500">
+          {VISIBILITY.map((o) => (<option key={o.value} value={o.value}>{o.label}</option>))}
+        </select>
+        <p className="text-[10px] text-zinc-600 mt-1">Each employee can change their own setting at any time.</p>
+      </div>
+
+      <button onClick={save} disabled={saving}
+        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold disabled:opacity-40 transition">
+        {saving && <Loader2 size={14} className="animate-spin" />}
+        {saving ? "Saving..." : "Save settings"}
+      </button>
+    </div>
+  );
+}

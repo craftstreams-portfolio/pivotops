@@ -1,0 +1,2198 @@
+"use client";
+import { safeGetUserMedia } from "@/lib/media/safeGetUserMedia";
+import { useUnreadCountsContext } from "@/lib/chat/UnreadCountsContext";
+
+import { useEffect, useState, useRef, useCallback } from "react";
+import { supabase }          from "@/lib/supabase";
+import { useTenant }         from "@/lib/hooks/useTenant";
+import {
+  getCurrentProfile, getAllProfiles, type Profile,
+} from "@/lib/profile/profile.service";
+import {
+  getChannels, getMessages, createChannel,
+  sendTextMessage, uploadAndSendFile,
+  uploadAndSendVoice, retractMessage,
+  toggleReaction, subscribeToChannel,
+  togglePinMessage, getPinnedMessages,
+  getChannelPins, toggleChannelPin, deleteChannel,
+  type Message, type Channel, type MessagePriority,
+} from "@/lib/chat/chat.service";
+import { useMentionInput }           from "@/lib/mentions/mention.hooks";
+import { MentionInput, MentionText } from "@/lib/mentions/MentionInput";
+import { NotificationBell }          from "@/lib/mentions/NotificationBell";
+import { IconTooltip }               from "@/lib/ui/IconTooltip";
+import XavierAvatar                  from "@/app/dashboard/components/team/XavierAvatar";
+import ReportAIContent               from "@/app/dashboard/components/ai/ReportAIContent";
+import {
+  setUserPresence, getTenantPresence, subscribeToPresence,
+  setOffline, type PresenceState,
+} from "@/lib/teams/presence.service";
+import {
+  getGroupedQueue, resolveQueueItem, resolveCategory,
+  subscribeToQueue, type QueueItem,
+} from "@/lib/teams/queue.engine";
+import {
+  STATUS_META, type UserStatus, type QueueCategory,
+} from "@/lib/teams/status.engine";
+import {
+  Send, Paperclip, Mic, Smile, Reply, Trash2, PinOff, Check,
+  Plus, Hash, X, Play, Pause, Download,
+  StopCircle, Search, Pin, MoreHorizontal,
+  CheckCheck, Loader2, ChevronDown, ChevronUp,
+  Inbox, AtSign, Users, CheckCircle2,
+  Bell, MessageSquare, ClipboardList,
+  ShieldAlert, Brain, ExternalLink,
+  Copy, Building2, Globe, Phone, Mail,
+  Calendar, ArrowLeft, Briefcase, Zap,
+} from "lucide-react";
+
+// ─────────────────────────────────────────
+// CONSTANTS
+// ─────────────────────────────────────────
+const EMOJI_LIST = [
+  "😀","😄","❤️","😍","😊","😎","😂","🎉",
+  "🔥","✅","❌","🚀","💯","🎯","👀","🙌",
+  "👏","🙏","💪","⚡","🎊","💡","📌","😅",
+];
+const MEMES = [
+  { label: "This is fine 🔥", content: "This is fine 🔥" },
+  { label: "Deal with it 😎", content: "Deal with it 😎" },
+  { label: "Stonks 📈",       content: "Stonks 📈"       },
+  { label: "GG 🏆",           content: "GG 🏆"           },
+  { label: "Ship it 🚀",      content: "Ship it 🚀"      },
+  { label: "Big brain 🧠",    content: "Big brain 🧠"    },
+];
+const QUEUE_SECTIONS: {
+  key: QueueCategory; label: string;
+  icon: React.ElementType; color: string;
+}[] = [
+  { key: "escalations",   label: "Critical",     icon: ShieldAlert,   color: "text-red-400"    },
+  { key: "mentions",      label: "Mentions",      icon: AtSign,        color: "text-indigo-400" },
+  { key: "approvals",     label: "Approvals",     icon: ClipboardList, color: "text-amber-400"  },
+  { key: "conversations", label: "Conversations", icon: MessageSquare, color: "text-zinc-400"   },
+  { key: "alerts",        label: "Alerts",        icon: Bell,          color: "text-orange-400" },
+];
+
+// ─────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────
+function getInitials(name: string | null, email: string | null) {  if (name) {
+    const p = name.trim().split(" ");
+    return p.length >= 2
+      ? `${p[0][0]}${p[p.length - 1][0]}`.toUpperCase()
+      : p[0][0].toUpperCase();
+  }
+  return email?.[0]?.toUpperCase() ?? "?";
+}
+function formatTime(iso: string) {  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+function formatDate(iso: string) {  const d = new Date(iso); const now = new Date();
+  if (d.toDateString() === now.toDateString()) return "Today";
+  const y = new Date(now); y.setDate(now.getDate() - 1);
+  if (d.toDateString() === y.toDateString()) return "Yesterday";
+  return d.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" });
+}
+function formatDuration(s: number) {  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+function formatRelative(iso: string) {  const d = Date.now() - new Date(iso).getTime(), m = Math.floor(d / 60000);
+  if (m < 1) return "just now"; if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`;
+  return new Date(iso).toLocaleDateString([], { month: "short", day: "numeric" });
+}
+function groupByDate(msgs: Message[]) {  const g: { date: string; messages: Message[] }[] = [];
+  for (const m of msgs) {
+    const date = formatDate(m.created_at);
+    const last = g[g.length - 1];
+    if (last?.date === date) last.messages.push(m);
+    else g.push({ date, messages: [m] });
+  }
+  return g;
+}
+
+// ─────────────────────────────────────────
+// AVATAR
+// ─────────────────────────────────────────
+function Avatar({
+  profile, size = "md", status,
+}: {
+  profile:  Profile | null;
+  size?:    "xs" | "sm" | "md" | "lg";
+  status?:  UserStatus | null;
+}) {  const sz = size === "xs" ? "w-6 h-6 text-[9px]"
+           : size === "sm" ? "w-8 h-8 text-xs"
+           : size === "lg" ? "w-11 h-11 text-base"
+                           : "w-9 h-9 text-sm";
+  const dotColor = status ? STATUS_META[status]?.dot : null;
+  return (
+    <div className="relative flex-shrink-0">
+      {profile?.avatar_url
+        ? <img src={profile.avatar_url} alt=""
+            className={`${sz} rounded-full object-cover`} />
+        : <div className={`${sz} rounded-full bg-indigo-500/20 text-indigo-300
+                           flex items-center justify-center font-semibold`}>
+            {getInitials(profile?.full_name ?? null, profile?.email ?? null)}
+          </div>
+      }
+      {dotColor && (
+        <span className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full
+                          border-2 border-[#0a0a12] ${dotColor}`} />
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────
+// STATUS SWITCHER (reusable)
+// ─────────────────────────────────────────
+function StatusSwitcher({
+  current, onChange,
+}: {
+  current:  UserStatus;
+  onChange: (s: UserStatus) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const meta = STATUS_META[current];
+  useEffect(() => {
+    const h = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    if (open) document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+  return (
+    <div className="relative" ref={ref}>
+      <button onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-zinc-800 transition w-full">
+        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${meta.dot}`} />
+        <span className={`text-xs font-medium ${meta.color} flex-1 text-left`}>{meta.label}</span>
+        <ChevronDown size={11} className="text-zinc-600" />
+      </button>
+      {open && (
+        <div className="absolute bottom-full left-0 mb-1 w-56 bg-zinc-900 border border-zinc-700
+                        rounded-xl shadow-2xl overflow-hidden z-50">
+          {(Object.keys(STATUS_META) as UserStatus[]).map((s) => {
+            const m = STATUS_META[s];
+            return (
+              <button key={s} onClick={() => { onChange(s); setOpen(false); }}
+                className={`w-full flex items-start gap-3 px-3 py-2.5 hover:bg-zinc-800
+                             transition text-left ${current === s ? "bg-zinc-800/50" : ""}`}>
+                <span className={`w-2 h-2 rounded-full flex-shrink-0 mt-1.5 ${m.dot}`} />
+                <div className="min-w-0">
+                  <p className={`text-sm font-medium ${m.color}`}>{m.label}</p>
+                  <p className="text-[10px] text-zinc-400 leading-tight mt-0.5">{m.description}</p>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────
+// PROFILE VIEW PANEL
+// ─────────────────────────────────────────
+function ProfileViewPanel({
+  profile, isOwnProfile, currentStatus, onClose, onDM, onStatusChange,
+}: {
+  profile:       Profile;
+  isOwnProfile:  boolean;
+  currentStatus: UserStatus;
+  onClose:       () => void;
+  onDM:          (p: Profile) => void;
+  onStatusChange:(s: UserStatus) => void;
+}) {
+  const meta = STATUS_META[currentStatus];
+
+  const details: { icon: React.ElementType; label: string; value: string | null | undefined }[] = [
+    { icon: Briefcase,  label: "Position",   value: profile.position   },
+    { icon: Building2,  label: "Department", value: profile.department  },
+    { icon: Globe,      label: "Location",   value: profile.location    },
+    { icon: Phone,      label: "Phone",      value: profile.phone       },
+    { icon: Mail,       label: "Email",      value: profile.email       },
+    { icon: Calendar,   label: "Joined",     value: profile.date_joined
+        ? new Date(profile.date_joined).toLocaleDateString([], { month: "long", year: "numeric" })
+        : null },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-end">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+
+      <div className="relative w-80 h-full bg-[#0a0a14] border-l border-zinc-800
+                      overflow-y-auto shadow-2xl flex flex-col">
+
+        {/* Hero gradient */}
+        <div className="relative h-24 bg-gradient-to-br from-indigo-900/50 via-purple-900/30 to-zinc-900 flex-shrink-0">
+          <button onClick={onClose}
+            className="absolute top-3 left-3 w-8 h-8 rounded-lg bg-black/40
+                       hover:bg-black/60 flex items-center justify-center transition">
+            <ArrowLeft size={15} className="text-white" />
+          </button>
+        </div>
+
+        <div className="px-5 pb-6 flex-1">
+          {/* Avatar row */}
+          <div className="flex items-end justify-between -mt-8 mb-4">
+            <div className="relative">
+              <div className="w-16 h-16 rounded-full border-4 border-[#0a0a14] overflow-hidden
+                              bg-indigo-500/30 flex items-center justify-center">
+                {profile.avatar_url
+                  ? <img src={profile.avatar_url} alt=""
+                      className="w-full h-full object-cover" />
+                  : <span className="text-xl font-bold text-indigo-200">
+                      {getInitials(profile.full_name, profile.email)}
+                    </span>
+                }
+              </div>
+              <span className={`absolute bottom-0.5 right-0.5 w-3.5 h-3.5 rounded-full
+                                border-2 border-[#0a0a14] ${meta.dot}`} />
+            </div>
+
+            {!isOwnProfile && (
+              <button onClick={() => onDM(profile)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-600
+                           hover:bg-indigo-500 text-white text-xs font-semibold transition">
+                <MessageSquare size={13} /> Message
+              </button>
+            )}
+          </div>
+
+          {/* Name */}
+          <h2 className="text-lg font-bold text-white leading-tight">
+            {profile.full_name ?? profile.email}
+          </h2>
+          {profile.position && (
+            <p className="text-xs text-zinc-400 mt-0.5">{profile.position}</p>
+          )}
+
+          {/* Status */}
+          <div className="flex items-center gap-1.5 mt-1">
+            <span className={`w-2 h-2 rounded-full ${meta.dot}`} />
+            <span className={`text-xs ${meta.color}`}>{meta.label}</span>
+          </div>
+
+          {/* Status switcher — own profile only */}
+          {isOwnProfile && (
+            <div className="mt-3 rounded-xl bg-zinc-900 border border-zinc-800 overflow-hidden">
+              <p className="text-[10px] text-zinc-600 uppercase tracking-wider px-3 pt-2.5 pb-1">
+                Set status
+              </p>
+              <StatusSwitcher current={currentStatus} onChange={onStatusChange} />
+            </div>
+          )}
+
+          {/* Divider */}
+          <div className="h-px bg-zinc-800 my-4" />
+
+          {/* Detail rows */}
+          <div className="space-y-3">
+            {details.filter(({ value }) => value).map(({ icon: Icon, label, value }) => (
+              <div key={label} className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-zinc-800 flex items-center
+                                justify-center flex-shrink-0">
+                  <Icon size={14} className="text-zinc-500" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[10px] text-zinc-600 uppercase tracking-wider">{label}</p>
+                  <p className="text-xs text-white font-medium truncate">{value}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Work mode badge */}
+          {profile.work_mode && (
+            <div className="mt-4">
+              <span className={`text-[11px] px-2.5 py-1 rounded-full border font-medium capitalize
+                ${profile.work_mode === "remote"
+                  ? "bg-blue-500/15 text-blue-400 border-blue-500/20"
+                  : profile.work_mode === "hybrid"
+                    ? "bg-purple-500/15 text-purple-400 border-purple-500/20"
+                    : "bg-emerald-500/15 text-emerald-400 border-emerald-500/20"}`}>
+                {profile.work_mode}
+              </span>
+            </div>
+          )}
+
+          {/* Role badge */}
+          {profile.role && (
+            <div className="mt-2">
+              <span className="text-[11px] px-2.5 py-1 rounded-full border
+                               bg-zinc-800 text-zinc-400 border-zinc-700 capitalize">
+                {profile.role}
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────
+// CANDIDATE CARD
+// Rich system message with Proceed/Decline
+// ─────────────────────────────────────────
+function CandidateCard({
+  message, currentUser, tenantId, onActioned,
+}: {
+  message:     Message;
+  currentUser: Profile | null;
+  tenantId:    string;
+  onActioned:  () => void;
+}) {
+  const meta    = message.meta as any;
+  const isCard  = meta?.type === "candidate_card";
+  const content = message.content ?? "";
+
+  const [acting,      setActing]      = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string>("");
+  const [completed,   setCompleted]   = useState<string[]>(
+    Array.isArray(meta?.completed_actions) ? meta.completed_actions
+    : meta?.actioned ? [meta.action] : []
+  );
+  const [showDecline, setShowDecline] = useState(false);
+  // Terminal actions close the whole card; others can stack independently
+  const isTerminal = completed.includes("proceed_onboarding") || completed.includes("decline_candidate");
+  const [reason,      setReason]      = useState("");
+  const [copied,      setCopied]      = useState(false);
+
+  const score     = meta?.score ?? 0;
+  const scoreCls  = score >= 80 ? "text-emerald-400" : score >= 70 ? "text-amber-400" : "text-red-400";
+  const scoreBar  = score >= 80 ? "bg-emerald-500"   : score >= 70 ? "bg-amber-500"   : "bg-red-500";
+
+  const handleAction = async (action: "schedule_interview" | "send_offer" | "proceed_onboarding" | "decline_candidate") => {
+    if (!currentUser || acting) return;
+    if (completed.includes(action)) return; // already done — idempotent guard
+    setActing(action);
+    try {
+      const res = await fetch("/api/recruitment/candidate-action", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action,
+          candidateId:   meta.candidate_id,
+          tenantId,
+          actorId:       currentUser.id,
+          actorName:     currentUser.full_name ?? currentUser.email ?? "Recruiter",
+          messageId:     message.id,
+          declineReason: reason.trim() || undefined,
+          completedActions: completed,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || data?.message || ("Request failed: " + res.status));
+      setCompleted((prev) => prev.includes(action) ? prev : [...prev, action]);
+      setShowDecline(false);
+      onActioned();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("Candidate action failed:", msg);
+      setActionError(msg);
+      setTimeout(() => setActionError(""), 5000);
+    } finally {
+      setActing(null);
+    }
+  };
+
+  const copyLink = async (link: string) => {
+    await navigator.clipboard.writeText(link);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  // Parse markdown bold
+  const renderLine = (line: string, i: number) => {
+    const parts = line.split(/(\*\*[^*]+\*\*)/g);
+    return (
+      <p key={i} className="text-xs text-zinc-300 leading-relaxed">
+        {parts.map((part, j) =>
+          part.startsWith("**") && part.endsWith("**")
+            ? <strong key={j} className="text-white font-semibold">{part.slice(2, -2)}</strong>
+            : <span key={j}>{part}</span>
+        )}
+      </p>
+    );
+  };
+
+  return (
+    <div className="flex gap-3 px-3 py-2.5 group">
+      {/* Xavier AI avatar */}
+      <XavierAvatar size={36} expression="friendly" showStatus={false} />
+
+      <div className="flex-1 min-w-0 max-w-xl">
+        {/* Sender + time */}
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-[11px] font-semibold text-indigo-400">Xavier AI</span>
+          <span className="text-[10px] text-zinc-600">{formatTime(message.created_at)}</span>
+          <ReportAIContent
+            surface="xavier_message"
+            refId={message.id}
+            content={typeof message.content === "string" ? message.content : JSON.stringify(message.content)}
+            className="ml-auto"
+          />
+        </div>
+
+        {/* Card */}
+        <div className={`rounded-2xl border overflow-hidden
+          ${isCard
+            ? "border-indigo-500/25 bg-[#0d0d1f]"
+            : "border-zinc-800 bg-zinc-900/60"}`}>
+
+          {isCard ? (
+            <>
+              {/* Accent bar */}
+              <div className="h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-500" />
+
+              <div className="p-4 space-y-4">
+                {/* Identity + score */}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-bold text-white">{meta.candidate_name}</h3>
+                    <p className="text-xs text-zinc-400 mt-0.5">{meta.candidate_email}</p>
+                    <p className="text-xs text-zinc-500 mt-0.5 italic">{meta.role}</p>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <p className={`text-3xl font-bold leading-none ${scoreCls}`}>{score}</p>
+                    <p className="text-[10px] text-zinc-600 mt-0.5">/ 100</p>
+                  </div>
+                </div>
+
+                {/* Score bar */}
+                <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                  <div className={`h-full rounded-full transition-all ${scoreBar}`}
+                    style={{ width: `${score}%` }} />
+                </div>
+
+                {/* Decision badge */}
+                <div className={`inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1
+                                 rounded-full border font-semibold
+                  ${meta.decision === "auto_interview"
+                    ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/20"
+                    : meta.decision === "manual_review"
+                      ? "bg-amber-500/15 text-amber-400 border-amber-500/20"
+                      : "bg-red-500/15 text-red-400 border-red-500/20"}`}>
+                  <Zap size={10} />
+                  {meta.decision === "auto_interview" ? "Auto-Routed to Interview"
+                    : meta.decision === "manual_review" ? "Pending Recruiter Review"
+                    : "Below Threshold"}
+                </div>
+
+                {/* Message body */}
+                <div className="bg-zinc-900/80 rounded-xl border border-zinc-800 p-3 space-y-1">
+                  {content.split("\n").map((line, i) => {
+                    if (!line.trim()) return <div key={i} className="h-1" />;
+                    return renderLine(line, i);
+                  })}
+                </div>
+
+                {/* Registration link */}
+                {meta.register_link && (
+                  <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-800
+                                  rounded-xl px-3 py-2">
+                    <ExternalLink size={11} className="text-zinc-600 flex-shrink-0" />
+                    <span className="text-[11px] text-zinc-400 truncate flex-1 font-mono">
+                      {meta.register_link}
+                    </span>
+                    <button onClick={() => copyLink(meta.register_link)}
+                      className="flex items-center gap-1 px-2 py-1 rounded-lg bg-zinc-800
+                                 hover:bg-zinc-700 text-[10px] text-zinc-400 transition flex-shrink-0">
+                      {copied
+                        ? <CheckCircle2 size={10} className="text-emerald-400" />
+                        : <Copy size={10} />}
+                      {copied ? "Copied" : "Copy"}
+                    </button>
+                  </div>
+                )}
+
+                {actionError && (
+                  <div className="mb-2 flex items-center gap-2 px-3 py-2 rounded-xl border border-red-500/25 bg-red-500/10 text-red-400 text-[11px] font-medium">
+                    <X size={12} className="flex-shrink-0" />
+                    {actionError}
+                  </div>
+                )}
+
+                {/* Action buttons — each tracks its own state independently */}
+                {isTerminal ? (
+                  <div className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-xs font-semibold
+                    ${completed.includes("proceed_onboarding")
+                      ? "border-emerald-500/25 bg-emerald-500/5 text-emerald-400"
+                      : "border-red-500/25 bg-red-500/5 text-red-400"}`}>
+                    <CheckCircle2 size={13} />
+                    {completed.includes("proceed_onboarding")
+                      ? "Onboarding & compliance triggered — candidate hired"
+                      : "Candidate declined"}
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {/* Status chips for completed non-terminal actions */}
+                    {(completed.includes("schedule_interview") || completed.includes("send_offer")) && (
+                      <div className="flex flex-wrap gap-1.5 mb-1">
+                        {completed.includes("schedule_interview") && (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/25 text-indigo-400 text-[10px] font-semibold">
+                            <CheckCircle2 size={10} /> Interview scheduled
+                          </span>
+                        )}
+                        {completed.includes("send_offer") && (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-500/10 border border-blue-500/25 text-blue-400 text-[10px] font-semibold">
+                            <CheckCircle2 size={10} /> Offer sent — awaiting candidate response
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleAction("proceed_onboarding")}
+                        disabled={acting !== null}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2.5
+                                   rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white
+                                   text-xs font-semibold disabled:opacity-50 transition"
+                      >
+                        {acting === "proceed_onboarding"
+                          ? <Loader2 size={12} className="animate-spin" />
+                          : <CheckCircle2 size={12} />}
+                        Proceed to Onboarding
+                      </button>
+                      <button
+                        onClick={() => setShowDecline((o) => !o)}
+                        disabled={acting !== null}
+                        className={`flex-1 flex items-center justify-center gap-1.5 py-2.5
+                                   rounded-xl border text-xs font-semibold
+                                   disabled:opacity-50 transition
+                          ${showDecline
+                            ? "bg-red-600/20 border-red-500/40 text-red-400"
+                            : "border-zinc-700 text-zinc-400 hover:border-red-500/30 hover:text-red-400"}`}
+                      >
+                        <X size={12} /> Decline
+                      </button>
+                    </div>
+
+                    <div className="flex gap-2 mt-2">
+                      <button
+                        onClick={() => handleAction("schedule_interview")}
+                        disabled={acting !== null || completed.includes("schedule_interview")}
+                        className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border text-xs font-semibold disabled:opacity-50 transition
+                          ${completed.includes("schedule_interview")
+                            ? "border-indigo-500/30 bg-indigo-500/10 text-indigo-400 cursor-default"
+                            : "border-zinc-700 text-zinc-300 hover:border-indigo-500/40 hover:text-indigo-400"}`}
+                      >
+                        {acting === "schedule_interview"
+                          ? <Loader2 size={12} className="animate-spin" />
+                          : <CheckCircle2 size={12} />}
+                        {completed.includes("schedule_interview") ? "Interview Scheduled" : "Schedule Interview"}
+                      </button>
+                      <button
+                        onClick={() => handleAction("send_offer")}
+                        disabled={acting !== null || completed.includes("send_offer")}
+                        className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border text-xs font-semibold disabled:opacity-50 transition
+                          ${completed.includes("send_offer")
+                            ? "border-blue-500/30 bg-blue-500/10 text-blue-400 cursor-default"
+                            : "border-zinc-700 text-zinc-300 hover:border-blue-500/40 hover:text-blue-400"}`}
+                      >
+                        {acting === "send_offer"
+                          ? <Loader2 size={12} className="animate-spin" />
+                          : <CheckCircle2 size={12} />}
+                        {completed.includes("send_offer") ? "Offer Sent" : "Send Offer"}
+                      </button>
+                    </div>
+
+                    {showDecline && (
+                      <div className="space-y-2">
+                        <textarea
+                          value={reason}
+                          onChange={(e) => setReason(e.target.value)}
+                          placeholder="Reason for declining (optional)..."
+                          rows={2}
+                          className="w-full bg-zinc-900 border border-zinc-800 rounded-xl
+                                     px-3 py-2 text-xs text-white placeholder-zinc-600
+                                     outline-none focus:border-zinc-600 transition resize-none"
+                        />
+                        <button
+                          onClick={() => handleAction("decline_candidate")}
+                          disabled={acting !== null}
+                          className="w-full py-2 rounded-xl bg-red-600 hover:bg-red-500
+                                     text-white text-xs font-semibold disabled:opacity-50 transition"
+                        >
+                          {acting === "decline_candidate"
+                            ? <Loader2 size={12} className="animate-spin mx-auto" />
+                            : "Confirm Decline"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            /* Generic system message */
+            <div className="px-4 py-3 space-y-1">
+              {content.split("\n").map((line, i) => {
+                if (!line.trim()) return <div key={i} className="h-1" />;
+                return renderLine(line, i);
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────
+// VOICE RECORDER
+// ─────────────────────────────────────────
+function useVoiceRecorder() {  const [recording, setRecording] = useState(false);
+  const [duration,  setDuration]  = useState(0);
+  const mediaRef  = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const timerRef  = useRef<NodeJS.Timeout | null>(null);
+
+  const start = async () => {
+    const { stream, error: mediaError } = await safeGetUserMedia({ audio: true });
+    if (!stream || mediaError) { console.error("[VoiceRecorder]", mediaError); return; }
+    const mr = new MediaRecorder(stream);
+    chunksRef.current = [];
+    mr.ondataavailable = (e) => chunksRef.current.push(e.data);
+    mr.start(); mediaRef.current = mr; setRecording(true); setDuration(0);
+    timerRef.current = setInterval(() => setDuration((d) => d + 1), 1000);
+  };
+  const stop = (): Promise<{ blob: Blob; duration: number }> =>
+    new Promise((resolve) => {
+      const mr = mediaRef.current; if (!mr) return;
+      const dur = duration;
+      mr.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        mr.stream.getTracks().forEach((t) => t.stop());
+        resolve({ blob, duration: dur });
+      };
+      mr.stop(); setRecording(false); setDuration(0);
+      if (timerRef.current) clearInterval(timerRef.current);
+    });
+  const cancel = () => {
+    const mr = mediaRef.current; if (!mr) return;
+    mr.stream.getTracks().forEach((t) => t.stop()); mr.stop();
+    setRecording(false); setDuration(0);
+    if (timerRef.current) clearInterval(timerRef.current);
+  };
+  return { recording, duration, start, stop, cancel };
+}
+
+// ─────────────────────────────────────────
+// VOICE PLAYER
+// ─────────────────────────────────────────
+function VoicePlayer({ url, secs }: { url: string; secs: number }) {  const [playing,  setPlaying]  = useState(false);
+  const [progress, setProgress] = useState(0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const toggle = () => {
+    if (!audioRef.current) {
+      audioRef.current = new Audio(url);
+      audioRef.current.ontimeupdate = () =>
+        setProgress((audioRef.current!.currentTime / audioRef.current!.duration) * 100);
+      audioRef.current.onended = () => { setPlaying(false); setProgress(0); };
+    }
+    if (playing) { audioRef.current.pause(); setPlaying(false); }
+    else         { audioRef.current.play();  setPlaying(true);  }
+  };
+  return (
+    <div className="flex items-center gap-2 min-w-[180px]">
+      <button onClick={toggle}
+        className="w-8 h-8 rounded-full bg-indigo-500/20 hover:bg-indigo-500/30
+                   flex items-center justify-center flex-shrink-0 transition">
+        {playing
+          ? <Pause size={14} className="text-indigo-400" />
+          : <Play  size={14} className="text-indigo-400" />}
+      </button>
+      <div className="flex-1">
+        <div className="h-1 bg-zinc-700 rounded-full overflow-hidden">
+          <div className="h-full bg-indigo-400 rounded-full transition-all"
+            style={{ width: `${progress}%` }} />
+        </div>
+        <p className="text-[10px] text-zinc-600 mt-0.5">{formatDuration(secs)}</p>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────
+// MESSAGE BUBBLE
+// ─────────────────────────────────────────
+function MessageBubble({
+  message, isMine, profile, allMessages, allProfiles,
+  currentUserId, onQuote, onRetract, onReact, onTogglePin,
+}: {
+  message:       Message; isMine: boolean; profile: Profile | null;
+  allMessages:   Message[]; allProfiles: Record<string, Profile>;
+  currentUserId: string;
+  onQuote:   (m: Message) => void;
+  onRetract: (m: Message) => void;
+  onTogglePin: (m: Message) => void;
+  onReact:   (m: Message, e: string) => void;
+}) {
+  const [showActions, setShowActions] = useState(false);
+  const [showEmoji,   setShowEmoji]   = useState(false);
+  const quoted        = message.quoted_id
+    ? allMessages.find((m) => m.id === message.quoted_id) : null;
+  const quotedProfile = quoted?.user_id
+    ? allProfiles[quoted.user_id] ?? null : null;
+
+  return (
+    <div
+      className={`flex gap-2.5 group mb-0.5 px-3 py-1 rounded-lg transition-colors
+        hover:bg-zinc-800/20 ${isMine ? "flex-row-reverse" : "flex-row"}`}
+      onMouseEnter={() => setShowActions(true)}
+      onMouseLeave={() => { setShowActions(false); setShowEmoji(false); }}
+    >
+      <div className="flex-shrink-0 self-end mb-1">
+        <Avatar profile={profile} size="sm" />
+      </div>
+
+      <div className={`flex flex-col max-w-[72%] ${isMine ? "items-end" : "items-start"}`}>
+        <div className={`flex items-center gap-2 mb-1 ${isMine ? "flex-row-reverse" : ""}`}>
+          <span className="text-[11px] font-semibold text-white/70">
+            {profile?.full_name ?? message.user_name ?? "Unknown"}
+          </span>
+          <span className="text-[10px] text-zinc-600">{formatTime(message.created_at)}</span>
+          {isMine && <CheckCheck size={11} className="text-zinc-700" />}
+        </div>
+
+        {quoted && (
+          <div className={`mb-1.5 px-3 py-1.5 rounded-xl border-l-2 border-indigo-500
+                           bg-indigo-500/5 max-w-full ${isMine ? "border-r-2 border-l-0" : ""}`}>
+            <p className="text-[10px] text-indigo-400 font-semibold mb-0.5">
+              {quotedProfile?.full_name ?? quoted.user_name ?? "Unknown"}
+            </p>
+            <p className="text-xs text-zinc-400 truncate max-w-[200px]">
+              {quoted.retracted ? "Message retracted" : (quoted.content ?? "Attachment")}
+            </p>
+          </div>
+        )}
+
+        <div className={`relative rounded-2xl px-3.5 py-2.5 max-w-full break-words
+          ${isMine
+            ? "bg-indigo-600 text-white rounded-br-sm"
+            : "bg-zinc-800 text-white rounded-bl-sm"}
+          ${message.retracted ? "opacity-50" : ""}`}>
+          {message.retracted ? (
+            <p className="text-xs text-zinc-400 italic">Message retracted</p>
+          ) : (
+            <>
+              {/* Priority banner — set by admins/managers, drives routing too.
+                  Normal carries no banner so flagged messages actually stand out. */}
+              {message.priority === "critical" && (
+                <div className="-mx-3.5 -mt-2.5 mb-2 px-3.5 py-1.5 rounded-t-2xl bg-red-600
+                                flex items-center gap-1.5">
+                  <span className="text-[11px] font-bold tracking-wide text-white">!! ATTENTION — CRITICAL</span>
+                </div>
+              )}
+              {message.priority === "high" && (
+                <div className="-mx-3.5 -mt-2.5 mb-2 px-3.5 py-1.5 rounded-t-2xl bg-amber-500
+                                flex items-center gap-1.5">
+                  <span className="text-[11px] font-bold tracking-wide text-[#2a1a00]">! TOP PRIORITY</span>
+                </div>
+              )}
+              {message.priority === "low" && (
+                <span className="inline-flex items-center gap-1 mb-1 px-1.5 py-0.5 rounded
+                                 bg-white/5 text-[9px] text-zinc-400">
+                  ↓ Low priority
+                </span>
+              )}
+              {message.type === "text" && (
+                <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                  <MentionText content={message.content ?? ""} />
+                </p>
+              )}
+              {(message.meta as any)?.kind === "conference_invite" && (message.meta as any)?.meetingId && (
+                <a
+                  href={`/dashboard/meetings?join=${(message.meta as any).meetingId}`}
+                  className="mt-2.5 inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs
+                             font-semibold text-white transition-all hover:-translate-y-[1px]"
+                  style={{ background: "linear-gradient(135deg,#4F46E5,#4338CA)",
+                           boxShadow: "0 4px 14px rgba(79,70,229,0.3)" }}
+                >
+                  <span className="relative flex w-1.5 h-1.5">
+                    <span className="absolute inset-0 rounded-full bg-white animate-ping opacity-70" />
+                    <span className="relative w-1.5 h-1.5 rounded-full bg-white" />
+                  </span>
+                  Join conference
+                </a>
+              )}
+              {message.type === "meme" && <p className="text-2xl">{message.content}</p>}
+              {message.type === "image" && message.file_url && (
+                <div className="space-y-1.5">
+                  <img src={message.file_url} alt={message.file_name ?? ""}
+                    className="max-w-[280px] rounded-xl object-cover cursor-pointer hover:opacity-90 transition"
+                    onClick={() => window.open(message.file_url!, "_blank")} />
+                  {message.file_name && (
+                    <p className="text-[10px] text-white/50">{message.file_name}</p>
+                  )}
+                </div>
+              )}
+              {message.type === "file" && message.file_url && (
+                <a href={message.file_url} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-black/20
+                             hover:bg-black/30 transition min-w-[180px]">
+                  <Download size={16} className="text-indigo-300 flex-shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-xs text-white font-medium truncate">{message.file_name}</p>
+                    <p className="text-[10px] text-white/40">Download</p>
+                  </div>
+                </a>
+              )}
+              {message.type === "voice" && message.voice_url && (
+                <VoicePlayer url={message.voice_url} secs={message.voice_seconds ?? 0} />
+              )}
+            </>
+          )}
+        </div>
+
+        {Object.keys(message.reactions ?? {}).length > 0 && (
+          <div className={`flex flex-wrap gap-1 mt-1 ${isMine ? "justify-end" : ""}`}>
+            {Object.entries(message.reactions).map(([emoji, users]) => (
+              <button key={emoji} onClick={() => onReact(message, emoji)}
+                className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border transition
+                  ${(users as string[]).includes(currentUserId)
+                    ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-300"
+                    : "bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-600"}`}>
+                {emoji} <span>{(users as string[]).length}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {showActions && !message.retracted && (
+        <div className={`self-center flex items-center gap-1 opacity-0 group-hover:opacity-100
+                         transition-opacity bg-zinc-900 border border-zinc-700
+                         rounded-xl px-1.5 py-1 shadow-lg
+          ${isMine ? "mr-1" : "ml-1"}`}>
+          <button onClick={() => onTogglePin(message)}
+            title={message.pinned ? "Unpin message" : "Pin message"}
+            className="w-7 h-7 rounded-lg hover:bg-zinc-800 flex items-center justify-center transition">
+            {message.pinned
+              ? <PinOff size={13} className="text-amber-400" />
+              : <Pin size={13} className="text-zinc-400" />}
+          </button>
+          <button onClick={() => onQuote(message)}
+            className="w-7 h-7 rounded-lg hover:bg-zinc-800 flex items-center justify-center transition">
+            <Reply size={13} className="text-zinc-400" />
+          </button>
+          <div className="relative">
+            <button onClick={() => setShowEmoji(!showEmoji)}
+              className="w-7 h-7 rounded-lg hover:bg-zinc-800 flex items-center justify-center transition">
+              <Smile size={13} className="text-zinc-400" />
+            </button>
+            {showEmoji && (
+              <div className={`absolute bottom-9 z-50 bg-zinc-900 border border-zinc-700
+                               rounded-2xl p-2 grid grid-cols-8 gap-1 shadow-2xl w-max
+                ${isMine ? "right-0" : "left-0"}`}>
+                {EMOJI_LIST.map((e) => (
+                  <button key={e}
+                    onClick={() => { onReact(message, e); setShowEmoji(false); }}
+                    className="w-8 h-8 rounded-lg hover:bg-zinc-800 flex items-center
+                               justify-center text-lg transition">
+                    {e}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {isMine && (
+            <button onClick={() => onRetract(message)}
+              className="w-7 h-7 rounded-lg hover:bg-red-500/10 flex items-center justify-center transition">
+              <Trash2 size={13} className="text-zinc-500 hover:text-red-400" />
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────
+// QUEUE PANEL
+// ─────────────────────────────────────────
+function QueuePanel({
+  grouped, onResolve, onResolveAll,
+}: {
+  grouped:      Record<QueueCategory, QueueItem[]>;
+  onResolve:    (id: string) => void;
+  onResolveAll: (cat: QueueCategory) => void;
+}) {
+  const [expanded, setExpanded] = useState<QueueCategory | null>("escalations");
+  const total = Object.values(grouped).reduce((s, i) => s + i.length, 0);
+  const priorityColors: Record<string, string> = {
+    critical: "bg-red-500/15 text-red-400 border-red-500/25",
+    high:     "bg-orange-500/15 text-orange-400 border-orange-500/25",
+    normal:   "bg-blue-500/15 text-blue-400 border-blue-500/25",
+    low:      "bg-zinc-800 text-zinc-500 border-zinc-700",
+  };
+  if (total === 0) return (
+    <div className="flex flex-col items-center justify-center h-full py-16 text-zinc-600 gap-3">
+      <CheckCircle2 size={32} className="opacity-30" />
+      <p className="text-sm">Queue is clear</p>
+    </div>
+  );
+  return (
+    <div className="space-y-1 p-3">
+      {QUEUE_SECTIONS.map(({ key, label, icon: Icon, color }) => {
+        const items = grouped[key]; if (items.length === 0) return null;
+        const isOpen = expanded === key;
+        return (
+          <div key={key} className="rounded-xl border border-zinc-800 overflow-hidden">
+            <button onClick={() => setExpanded(isOpen ? null : key)}
+              className="w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-zinc-800/50 transition">
+              <Icon size={13} className={color} />
+              <span className={`text-xs font-semibold flex-1 text-left ${color}`}>{label}</span>
+              <span className="text-[10px] bg-zinc-800 border border-zinc-700 text-zinc-400
+                               px-2 py-0.5 rounded-full font-medium">{items.length}</span>
+              <ChevronDown size={11} className={`text-zinc-600 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+            </button>
+            {isOpen && (
+              <div className="border-t border-zinc-800">
+                {items.map((item) => (
+                  <div key={item.id}
+                    className="flex items-start gap-3 px-3 py-2.5 border-b border-zinc-800/50
+                               last:border-0 hover:bg-zinc-800/30 transition">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-white font-medium leading-tight truncate">
+                        {item.title}
+                      </p>
+                      {item.summary && (
+                        <p className="text-[10px] text-zinc-500 mt-0.5 line-clamp-2 leading-relaxed">
+                          {item.summary}
+                        </p>
+                      )}
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded-full border font-semibold
+                          ${priorityColors[item.priority] ?? priorityColors.low}`}>
+                          {item.priority}
+                        </span>
+                        <span className="text-[9px] text-zinc-700">
+                          {formatRelative(item.created_at)}
+                        </span>
+                      </div>
+                    </div>
+                    <button onClick={() => onResolve(item.id)}
+                      className="w-6 h-6 rounded-lg hover:bg-emerald-500/15 flex items-center
+                                 justify-center transition flex-shrink-0 mt-0.5">
+                      <CheckCircle2 size={13} className="text-zinc-600 hover:text-emerald-400" />
+                    </button>
+                  </div>
+                ))}
+                <button onClick={() => onResolveAll(key)}
+                  className="w-full text-[10px] text-zinc-600 hover:text-zinc-400 py-2
+                             text-center transition border-t border-zinc-800/50">
+                  Clear all {label.toLowerCase()}
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────
+// MAIN PAGE
+// ─────────────────────────────────────────
+export default function ChatPage() {  const { tenantId, loading: tenantLoading } = useTenant();
+
+  const [currentUser,    setCurrentUser]    = useState<Profile | null>(null);
+  // Shared with the sidebar badge via context - same subscription, same
+  // state, so the two can never disagree the way two independent
+  // useUnreadCounts() instances did.
+  const { counts: unreadCounts, markRead } = useUnreadCountsContext();
+  const [channels,       setChannels]       = useState<Channel[]>([]);
+  const [dmChannels,     setDmChannels]     = useState<any[]>([]);
+  const [activeChannel,  setActiveChannel]  = useState<Channel | null>(null);
+  const [messages,       setMessages]       = useState<Message[]>([]);
+  const [allProfiles,    setAllProfiles]    = useState<Record<string, Profile>>({});
+  const [profileList,    setProfileList]    = useState<Profile[]>([]);
+  const [loading,        setLoading]        = useState(true);
+  const [sending,        setSending]        = useState(false);
+  const [searchQuery,    setSearchQuery]    = useState("");
+  const [rightPanel,     setRightPanel]     = useState<"queue" | "members" | "pinned" | null>(null);
+  const [viewingProfile, setViewingProfile] = useState<Profile | null>(null);
+
+  const [myStatus,       setMyStatus]       = useState<UserStatus>("ONLINE");
+  const [presenceMap,    setPresenceMap]    = useState<Record<string, UserStatus>>({});
+
+  const [queueGrouped, setQueueGrouped] = useState<Record<QueueCategory, QueueItem[]>>({
+    escalations: [], mentions: [], approvals: [], conversations: [], alerts: [],
+  });
+  const [queueCount, setQueueCount] = useState(0);
+
+  const [typingUsers, setTypingUsers] = useState<Record<string, string>>({});
+  const typingChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const typingTimerRef   = useRef<Record<string, NodeJS.Timeout>>({});
+  const [quotedMsg,   setQuotedMsg]   = useState<Message | null>(null);
+  const [pinnedMsgs,  setPinnedMsgs]  = useState<Message[]>([]);
+  const [pinnedChans, setPinnedChans] = useState<string[]>([]);
+  const [showChanMenu, setShowChanMenu] = useState(false);
+  const atBottomRef = useRef(true);
+  const isManager = currentUser?.role === "admin" || currentUser?.role === "manager";
+  const [msgPriority, setMsgPriority] = useState<MessagePriority>("normal");
+  const [showPrio, setShowPrio] = useState(false);
+  const [prioNotice, setPrioNotice] = useState<string | null>(null);
+  const [showEmoji,   setShowEmoji]   = useState(false);
+  const [showMeme,    setShowMeme]    = useState(false);
+  const [showNewChan, setShowNewChan] = useState(false);
+  const [newChanName, setNewChanName] = useState("");
+
+  const voice     = useVoiceRecorder();
+  const fileRef   = useRef<HTMLInputElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const unsubRef  = useRef<(() => void) | null>(null);
+
+  const mention = useMentionInput({
+    profiles: profileList,
+    tenantId,
+    userId:   currentUser?.id ?? "",
+    userName: currentUser?.full_name ?? currentUser?.email ?? "Unknown",
+    context:  "chat",
+    refId:    activeChannel?.id ?? null,
+  });
+
+  // ── Load current user ──────────────────
+  useEffect(() => {
+    const load = async () => {
+      const p = await getCurrentProfile();
+      if (p) { setCurrentUser(p); return; }
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) setCurrentUser({
+        id: session.user.id,
+        full_name: session.user.email?.split("@")[0] ?? "User",
+        email: session.user.email ?? null,
+        department: null, position: null, role: null,
+        avatar_url: null, tenant_id: "", timezone: null,
+        location: null, work_mode: null, date_joined: null,
+        phone: null, created_at: null, updated_at: null,
+      });
+    };
+    load();
+  }, []);
+
+  // ── Load profiles ──────────────────────
+  useEffect(() => {
+    if (tenantLoading) return;
+    getAllProfiles(tenantId).then((list) => {
+      const map: Record<string, Profile> = {};
+      list.forEach((p) => { map[p.id] = p; });
+      setAllProfiles(map);
+      setProfileList(list);
+    });
+  }, [tenantId, tenantLoading]);
+
+  // ── Load channels ──────────────────────
+  useEffect(() => {
+    if (tenantLoading || !currentUser) return;
+    supabase
+      .from("channels")
+      .select("*")
+      .eq("tenant_id", tenantId)
+      .then(({ data }) => {
+        const all     = data ?? [];
+        const regular = all.filter((c: any) => !c.type || c.type === "channel");
+        // Only show DMs where current user is a member
+        const dms = all.filter(
+          (c: any) => c.type === "dm" &&
+            (c.member_one === currentUser.id || c.member_two === currentUser.id)
+        );
+        setChannels(regular as Channel[]);
+        setDmChannels(dms);
+        if (regular.length > 0 && !activeChannel) {
+          setActiveChannel(regular[0] as Channel);
+          markRead(regular[0].id);
+        }
+        setLoading(false);
+      });
+  }, [tenantId, tenantLoading, currentUser?.id]);
+
+  // ── Load messages + subscribe ──────────
+  useEffect(() => {
+    if (!activeChannel) return;
+    if (unsubRef.current) unsubRef.current();
+
+    const channelId = activeChannel.id;
+
+    const fetchLatest = () => {
+      getMessages(channelId).then((msgs) => {
+        setMessages((prev) => {
+          if (prev.length !== msgs.length) return msgs;
+          const prevIds = new Set(prev.map((m) => m.id));
+          const hasNew = msgs.some((m) => !prevIds.has(m.id));
+          return hasNew ? msgs : prev;
+        });
+      });
+    };
+
+    fetchLatest();
+    atBottomRef.current = true;
+    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "auto" }), 100);
+
+    unsubRef.current = subscribeToChannel(
+      channelId,
+      (msg) => {
+        setMessages((prev) => prev.find((m) => m.id === msg.id) ? prev : [...prev, msg]);
+        // Only follow the conversation when the reader is already at the bottom —
+        // yanking the view away mid-read is worse than not scrolling at all.
+        if (atBottomRef.current) {
+          setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+        }
+      },
+      (msg) => setMessages((prev) => prev.map((m) => m.id === msg.id ? msg : m))
+    );
+
+    // Polling fallback -- guards against realtime websocket disconnects,
+    // which this environment has hit repeatedly. The comparison above
+    // skips the state update entirely when nothing actually changed.
+    const pollId = setInterval(fetchLatest, 8000);
+
+    return () => {
+      if (unsubRef.current) unsubRef.current();
+      clearInterval(pollId);
+    };
+  }, [activeChannel]);
+
+  // ── Presence ───────────────────────────
+  useEffect(() => {
+    if (!currentUser || tenantLoading) return;
+    setUserPresence(currentUser.id, tenantId, "ONLINE").then(() => setMyStatus("ONLINE"));
+    getTenantPresence(tenantId).then((all) => {
+      const map: Record<string, UserStatus> = {};
+      all.forEach((p: PresenceState) => { map[p.user_id] = p.status; });
+      setPresenceMap(map);
+    });
+    const unsub = subscribeToPresence(tenantId, (p: PresenceState) =>
+      setPresenceMap((prev) => ({ ...prev, [p.user_id]: p.status }))
+    );
+    const handleUnload = () => setOffline(currentUser.id, tenantId);
+    window.addEventListener("beforeunload", handleUnload);
+    return () => { unsub(); window.removeEventListener("beforeunload", handleUnload); };
+  }, [currentUser, tenantId, tenantLoading]);
+
+  // ── Queue ──────────────────────────────
+  const loadQueue = useCallback(async () => {
+    if (!currentUser || tenantLoading) return;
+    const g = await getGroupedQueue(currentUser.id, tenantId);
+    setQueueGrouped(g);
+    setQueueCount(Object.values(g).reduce((s, i) => s + i.length, 0));
+  }, [currentUser, tenantId, tenantLoading]);
+  useEffect(() => { loadQueue(); }, [loadQueue]);
+  useEffect(() => {
+    if (!currentUser || tenantLoading) return;
+    return subscribeToQueue(currentUser.id, tenantId, (item) => {
+      setQueueGrouped((prev) => ({
+        ...prev,
+        [item.category]: [item, ...(prev[item.category] ?? [])],
+      }));
+      setQueueCount((c) => c + 1);
+    });
+  }, [currentUser, tenantId, tenantLoading]);
+
+  // ── Status change ──────────────────────
+  const handleStatusChange = async (status: UserStatus) => {
+    if (!currentUser) return;
+    setMyStatus(status);
+    setPresenceMap((prev) => ({ ...prev, [currentUser.id]: status }));
+    await setUserPresence(currentUser.id, tenantId, status);
+    // If viewing own profile, keep status in sync
+    if (viewingProfile?.id === currentUser.id) {
+      setPresenceMap((prev) => ({ ...prev, [currentUser.id]: status }));
+    }
+  };
+
+  // ── Open / create DM ──────────────────
+  // Open or create a DM channel between currentUser and profile
+  const openDM = async (profile: Profile) => {
+    if (!currentUser || profile.id === currentUser.id) return;
+
+    // Two separate queries to find existing DM in either direction
+    const { data: dirA } = await supabase
+      .from("channels").select("*").eq("type", "dm")
+      .eq("member_one", currentUser.id).eq("member_two", profile.id).limit(1);
+
+    const { data: dirB } = await supabase
+      .from("channels").select("*").eq("type", "dm")
+      .eq("member_one", profile.id).eq("member_two", currentUser.id).limit(1);
+
+    const found = dirA?.[0] ?? dirB?.[0] ?? null;
+
+    if (found) {
+      setActiveChannel(found as Channel);
+      setDmChannels((prev) => prev.find((c) => c.id === found.id) ? prev : [...prev, found]);
+    } else {
+      // Create new — let Supabase generate the UUID
+      const { data: created, error } = await supabase
+        .from("channels")
+        .insert({
+          name:       profile.full_name ?? profile.email ?? "DM",
+          tenant_id:  tenantId,
+          type:       "dm",
+          member_one: currentUser.id,
+          member_two: profile.id,
+          created_at: new Date().toISOString(),
+          created_by: currentUser.id,
+        })
+        .select()
+        .single();
+
+      if (!error && created) {
+        setDmChannels((prev) => [...prev, created]);
+        setActiveChannel(created as Channel);
+      } else {
+        console.error("DM create failed:", error?.message ?? error);
+      }
+    }
+
+    setViewingProfile(null);
+    setRightPanel(null);
+  };
+
+  // ── Send ───────────────────────────────
+  const handleSend = async () => {
+    const content = mention.value.trim();
+    if (!content || !currentUser || !activeChannel || sending) return;
+    setSending(true); mention.reset(); setQuotedMsg(null);
+    try {
+      const sent = await sendTextMessage({
+        channelId: activeChannel.id, content,
+        userId:    currentUser.id,
+        userName:  currentUser.full_name ?? currentUser.email ?? "Unknown",
+        tenantId,  quotedId: quotedMsg?.id ?? null,
+        priority:  isManager ? msgPriority : "normal",
+      });
+      // Reset so an urgent flag can't ride along into the next message — but say
+      // so, otherwise the admin has no idea the flag dropped.
+      if (isManager && msgPriority !== "normal") {
+        const was = msgPriority === "critical" ? "Critical" : msgPriority === "high" ? "Top priority" : "Low priority";
+        setPrioNotice(`Sent as ${was} \u2014 priority reset to normal`);
+        setTimeout(() => setPrioNotice(null), 3500);
+      }
+      setMsgPriority("normal");
+      await mention.processMentions(content);
+
+      // Route the message through each recipient's status (queues it for anyone
+      // in Meeting / OOO / Vacation / DND / Offline). Fire-and-forget: a routing
+      // failure must never break sending.
+      fetch("/api/teams/route-event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messageId:  sent?.id ?? null,
+          channelId:  activeChannel.id,
+          senderId:   currentUser.id,
+          tenantId,
+          content,
+          priority:   isManager ? msgPriority : undefined,
+          senderName: currentUser.full_name ?? currentUser.email ?? "A teammate",
+        }),
+      }).catch(() => {});
+    } catch (err) { console.error("Send failed:", err); mention.setValue(content); }
+    finally { setSending(false); }
+  };
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !currentUser || !activeChannel) return;
+    try {
+      const sentFile = await uploadAndSendFile({
+        channelId: activeChannel.id, userId: currentUser.id,
+        userName:  currentUser.full_name ?? currentUser.email ?? "Unknown",
+        tenantId, file, quotedId: quotedMsg?.id ?? null,
+        priority: isManager ? msgPriority : "normal",
+      });
+      setQuotedMsg(null);
+
+      // Route through recipient status, same as a text message. No text body,
+      // so the queue summary uses the file name.
+      fetch("/api/teams/route-event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messageId:  sentFile?.id ?? null,
+          channelId:  activeChannel.id,
+          senderId:   currentUser.id,
+          tenantId,
+          content:    `Sent a file: ${file.name}`,
+          priority:   isManager ? msgPriority : undefined,
+          senderName: currentUser.full_name ?? currentUser.email ?? "A teammate",
+        }),
+      }).catch(() => {});
+    } catch (err) { console.error("File send failed:", err); }
+    e.target.value = "";
+  };
+
+  const handleVoiceStop = async () => {
+    if (!currentUser || !activeChannel) return;
+    const { blob, duration } = await voice.stop();
+    try {
+      const sentVoice = await uploadAndSendVoice({
+        channelId: activeChannel.id, userId: currentUser.id,
+        userName:  currentUser.full_name ?? currentUser.email ?? "Unknown",
+        tenantId, blob, durationSecs: duration,
+        priority: isManager ? msgPriority : "normal",
+      });
+
+      fetch("/api/teams/route-event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messageId:  sentVoice?.id ?? null,
+          channelId:  activeChannel.id,
+          senderId:   currentUser.id,
+          tenantId,
+          content:    `Sent a voice note (${Math.round(duration)}s)`,
+          priority:   isManager ? msgPriority : undefined,
+          senderName: currentUser.full_name ?? currentUser.email ?? "A teammate",
+        }),
+      }).catch(() => {});
+    } catch (err) { console.error("Voice send failed:", err); }
+  };
+
+  // ── Pins ──
+  const loadPins = useCallback(async () => {
+    if (!activeChannel) { setPinnedMsgs([]); return; }
+    try { setPinnedMsgs(await getPinnedMessages(activeChannel.id)); } catch { setPinnedMsgs([]); }
+  }, [activeChannel]);
+
+  useEffect(() => { loadPins(); }, [loadPins]);
+
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    getChannelPins(currentUser.id).then(setPinnedChans).catch(() => setPinnedChans([]));
+  }, [currentUser?.id]);
+
+  const handleTogglePin = async (m: Message) => {
+    if (!currentUser?.id) return;
+    const { error } = await togglePinMessage(m, currentUser.id);
+    if (error) { console.error("[pin]", error); return; }
+    setMessages((prev) => prev.map((x) => x.id === m.id ? { ...x, pinned: !m.pinned } : x));
+    loadPins();
+  };
+
+  const handleToggleChannelPin = async () => {
+    if (!currentUser?.id || !activeChannel || !tenantId) return;
+    const isPinned = pinnedChans.includes(activeChannel.id);
+    const { error } = await toggleChannelPin(activeChannel.id, currentUser.id, tenantId, isPinned);
+    if (error) { console.error("[channel pin]", error); return; }
+    setPinnedChans((prev) => isPinned
+      ? prev.filter((id) => id !== activeChannel.id)
+      : [...prev, activeChannel.id]);
+    setShowChanMenu(false);
+  };
+
+  const handleDeleteChannel = async () => {
+    if (!activeChannel) return;
+    if (!confirm(`Delete #${activeChannel.name}? This removes the channel and all its messages, permanently.`)) return;
+    const { error } = await deleteChannel(activeChannel.id);
+    if (error) { console.error("[delete channel]", error); return; }
+    setShowChanMenu(false);
+    setActiveChannel(null);
+    if (tenantId) getChannels(tenantId).then((cs) => setChannels(cs as any));
+  };
+
+  const handleRetract = async (msg: Message) => {
+    if (!currentUser) return;
+    try { await retractMessage(msg.id, currentUser.id); } catch {}
+  };
+  const handleReact = async (msg: Message, emoji: string) => {
+    if (!currentUser) return;
+    try { await toggleReaction(msg, emoji, currentUser.id); } catch {}
+  };
+  const handleCreateChannel = async () => {
+    if (!newChanName.trim() || !currentUser) return;
+    try {
+      const ch = await createChannel(newChanName.trim(), tenantId, currentUser.id);
+      setChannels((p) => [...p, ch]); setActiveChannel(ch);
+      setNewChanName(""); setShowNewChan(false);
+    } catch (err) { console.error("Create channel failed:", err); }
+  };
+
+  // ── Derived ─────────────────────────────
+  const grouped = groupByDate(
+    searchQuery
+      ? messages.filter((m) =>
+          (m.content ?? "").toLowerCase().includes(searchQuery.toLowerCase())
+        )
+      : messages
+  );
+
+  const getDMOtherProfile = (ch: any): Profile | null => {
+    if (!currentUser) return null;
+    const otherId = ch.member_one === currentUser.id ? ch.member_two : ch.member_one;
+    return allProfiles[otherId] ?? null;
+  };
+  const getDMDisplayName = (ch: any) => {
+    const p = getDMOtherProfile(ch);
+    return p?.full_name ?? p?.email ?? ch.name ?? "DM";
+  };
+
+  if (loading || !currentUser) {
+    return (
+      <div className="flex items-center justify-center h-full text-zinc-500 text-sm gap-2">
+        <Loader2 size={16} className="animate-spin" /> Loading...
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-[calc(100vh-64px)] bg-[#080810] overflow-hidden">
+
+      {/* Profile view panel */}
+      {viewingProfile && (
+        <ProfileViewPanel
+          profile={viewingProfile}
+          isOwnProfile={viewingProfile.id === currentUser.id}
+          currentStatus={
+            viewingProfile.id === currentUser.id
+              ? myStatus
+              : (presenceMap[viewingProfile.id] ?? "OFFLINE")
+          }
+          onClose={() => setViewingProfile(null)}
+          onDM={openDM}
+          onStatusChange={handleStatusChange}
+        />
+      )}
+
+      {/* ── SIDEBAR ── */}
+      <div className="w-60 flex-shrink-0 border-r border-zinc-800 bg-[#09090f]
+                      flex flex-col overflow-hidden">
+        <div className="px-4 py-3.5 border-b border-zinc-800">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm font-bold text-white">Pivot Teams</p>
+            {currentUser && (
+              <NotificationBell userId={currentUser.id} tenantId={tenantId} />
+            )}
+          </div>
+          <div className="flex items-center gap-2 bg-zinc-800/60 border border-zinc-700/50
+                          rounded-lg px-2.5 py-1.5">
+            <Search size={11} className="text-zinc-600 flex-shrink-0" />
+            <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search..." className="flex-1 bg-transparent text-xs text-white
+              placeholder-zinc-600 outline-none" />
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto py-2">
+          {/* Channels */}
+          <div className="px-3 mb-1 flex items-center justify-between">
+            <p className="text-[10px] text-zinc-600 uppercase tracking-widest font-semibold">
+              Channels
+            </p>
+            <button onClick={() => setShowNewChan(true)}
+              className="w-5 h-5 rounded flex items-center justify-center hover:bg-zinc-700 transition">
+              <Plus size={11} className="text-zinc-500" />
+            </button>
+          </div>
+          {[...channels].sort((a, b) => {
+            const ap = pinnedChans.includes(a.id) ? 0 : 1;
+            const bp = pinnedChans.includes(b.id) ? 0 : 1;
+            return ap - bp;
+          }).map((ch) => (
+            <button key={ch.id} onClick={() => { setActiveChannel(ch as Channel); markRead(ch.id); }}
+              className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg mx-0.5
+                          transition text-left
+                ${activeChannel?.id === ch.id
+                  ? "bg-indigo-500/15 text-white"
+                  : "text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200"}`}>
+              {pinnedChans.includes(ch.id)
+                ? <Pin size={11} className="flex-shrink-0 text-amber-400" />
+                : <Hash size={13} className="flex-shrink-0" />}
+              <span className="text-sm flex-1 truncate">{ch.name}</span>{(unreadCounts[ch.id] ?? 0) > 0 && activeChannel?.id !== ch.id && (<span className="ml-1 min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-500 text-white text-[10px] font-bold flex items-center justify-center">{(unreadCounts[ch.id] ?? 0) > 99 ? "99+" : unreadCounts[ch.id]}</span>)}
+            </button>
+          ))}
+
+          {/* DMs */}
+          {dmChannels.length > 0 && (
+            <>
+              <div className="px-3 mt-4 mb-1">
+                <p className="text-[10px] text-zinc-600 uppercase tracking-widest font-semibold">
+                  Direct Messages
+                </p>
+              </div>
+              {dmChannels.map((ch) => {
+                const dmP   = getDMOtherProfile(ch);
+                const dmSt  = dmP ? (presenceMap[dmP.id] ?? "OFFLINE") : "OFFLINE";
+                return (
+                  <button key={ch.id} onClick={() => { setActiveChannel(ch as Channel); markRead(ch.id); }}
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg mx-0.5
+                                transition text-left
+                      ${activeChannel?.id === ch.id
+                        ? "bg-indigo-500/15 text-white"
+                        : "text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200"}`}>
+                    <Avatar profile={dmP} size="xs" status={dmSt} />
+                    <span className="text-sm flex-1 truncate">{getDMDisplayName(ch)}</span>
+                  </button>
+                );
+              })}
+            </>
+          )}
+
+          {/* Members */}
+          <div className="px-3 mt-4 mb-1">
+            <p className="text-[10px] text-zinc-600 uppercase tracking-widest font-semibold">
+              Members
+            </p>
+          </div>
+          {profileList.filter((p) => p.id !== currentUser.id).slice(0, 15).map((p) => {
+            const pStatus = presenceMap[p.id] ?? "OFFLINE";
+            const pMeta   = STATUS_META[pStatus];
+            return (
+              <div key={p.id}
+                className="flex items-center gap-2.5 px-3 py-1.5 mx-0.5 rounded-lg
+                           hover:bg-zinc-800/30 transition cursor-pointer"
+                onClick={() => setViewingProfile(p)}>
+                <Avatar profile={p} size="xs" status={pStatus} />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs text-zinc-300 truncate">{p.full_name ?? p.email}</p>
+                  <p className={`text-[9px] ${pMeta.color}`}>{pMeta.label}</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Footer — own profile */}
+        <div className="border-t border-zinc-800 p-3 space-y-2">
+          <div
+            className="flex items-center gap-2.5 cursor-pointer hover:opacity-80 transition"
+            onClick={() => setViewingProfile(currentUser)}
+          >
+            <Avatar profile={currentUser} size="sm" status={myStatus} />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-white truncate">
+                {currentUser.full_name ?? currentUser.email}
+              </p>
+            </div>
+          </div>
+          <StatusSwitcher current={myStatus} onChange={handleStatusChange} />
+        </div>
+      </div>
+
+      {/* ── MAIN CHAT ── */}
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+        {!activeChannel ? (
+          <div className="flex-1 flex items-center justify-center text-zinc-600 text-sm">
+            Select a channel to start chatting
+          </div>
+        ) : (
+          <>
+            {/* Channel header */}
+            <div className="flex items-center gap-3 px-5 py-3 border-b border-zinc-800
+                            bg-[#0a0a12] flex-shrink-0">
+              {(activeChannel as any).type === "dm" ? (
+                (() => {
+                  const dmP  = getDMOtherProfile(activeChannel as any);
+                  const dmSt = dmP ? (presenceMap[dmP.id] ?? "OFFLINE") : "OFFLINE";
+                  return (
+                    <div className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer
+                                    hover:opacity-80 transition"
+                      onClick={() => dmP && setViewingProfile(dmP)}>
+                      <Avatar profile={dmP} size="sm" status={dmSt} />
+                      <div className="min-w-0">
+                        <h2 className="text-sm font-semibold text-white">
+                          {getDMDisplayName(activeChannel as any)}
+                        </h2>
+                        <p className="text-[10px] text-zinc-600">
+                          {STATUS_META[dmSt]?.label ?? ""}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })()
+              ) : (
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <Hash size={15} className="text-zinc-500 flex-shrink-0" />
+                  <div className="min-w-0">
+                    <h2 className="text-sm font-semibold text-white">{activeChannel.name}</h2>
+                    <p className="text-[10px] text-zinc-600">
+                      {messages.filter((m) => !m.retracted && m.type !== "system").length} messages
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <IconTooltip label="Queue">
+                  <button
+                    onClick={() => setRightPanel(rightPanel === "queue" ? null : "queue")}
+                    className={`relative w-9 h-9 rounded-lg flex items-center justify-center transition
+                      ${rightPanel === "queue"
+                        ? "bg-[#00BFA6]/20"
+                        : "hover:bg-zinc-800"}`}>
+                    {/* Queue: teal tray with a white envelope dropping in */}
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      {/* tray / inbox (teal) */}
+                      <path d="M3 13l2.5 0a2 2 0 0 1 1.9 1.4l.2 .6a2 2 0 0 0 1.9 1.4h4.8a2 2 0 0 0 1.9-1.4l.2-.6a2 2 0 0 1 1.9-1.4H21"
+                        stroke="#00BFA6" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M4.5 13.5 5.8 19a2 2 0 0 0 1.95 1.5h8.5A2 2 0 0 0 18.2 19l1.3-5.5"
+                        stroke="#00BFA6" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                      {/* envelope (white) */}
+                      <rect x="8" y="3.2" width="8" height="6" rx="1" fill="#ffffff" />
+                      <path d="M8.3 4 12 6.6 15.7 4" stroke="#04211E" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                      {/* small down-arrow, envelope into tray */}
+                      <path d="M12 9.4v2.2M12 11.6l-1.1-1.1M12 11.6l1.1-1.1"
+                        stroke="#ffffff" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    {queueCount > 0 && (
+                      <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500
+                                       flex items-center justify-center text-[9px] font-bold text-white">
+                        {queueCount > 9 ? "9+" : queueCount}
+                      </span>
+                    )}
+                  </button>
+                </IconTooltip>
+                <IconTooltip label="Members">
+                  <button
+                    onClick={() => setRightPanel(rightPanel === "members" ? null : "members")}
+                    className={`w-9 h-9 rounded-lg flex items-center justify-center transition
+                      ${rightPanel === "members"
+                        ? "bg-indigo-500/20 text-indigo-400"
+                        : "hover:bg-zinc-800 text-zinc-500"}`}>
+                    <Users size={19} />
+                  </button>
+                </IconTooltip>
+                <IconTooltip label="Pinned messages">
+                  <button
+                    onClick={() => setRightPanel(rightPanel === "pinned" ? null : "pinned")}
+                    className={`relative w-9 h-9 rounded-lg flex items-center justify-center transition
+                      ${rightPanel === "pinned"
+                        ? "bg-amber-500/20 text-amber-400"
+                        : "hover:bg-zinc-800 text-zinc-500"}`}>
+                    <Pin size={18} />
+                    {pinnedMsgs.length > 0 && (
+                      <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-500
+                                       flex items-center justify-center text-[9px] font-bold text-black">
+                        {pinnedMsgs.length > 9 ? "9+" : pinnedMsgs.length}
+                      </span>
+                    )}
+                  </button>
+                </IconTooltip>
+
+                <div className="relative">
+                  <IconTooltip label="More options">
+                    <button
+                      onClick={() => setShowChanMenu((v) => !v)}
+                      className="w-9 h-9 rounded-lg hover:bg-zinc-800 flex items-center justify-center transition">
+                      <MoreHorizontal size={17} className="text-zinc-500" />
+                    </button>
+                  </IconTooltip>
+                  {showChanMenu && (
+                    <>
+                      <div className="fixed inset-0 z-30" onClick={() => setShowChanMenu(false)} />
+                      <div className="absolute right-0 top-9 z-40 w-52 rounded-xl border border-zinc-800
+                                      bg-[#0f0f1a] p-1.5 shadow-2xl">
+                        <button
+                          onClick={handleToggleChannelPin}
+                          className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg
+                                     hover:bg-zinc-800 transition text-left">
+                          {activeChannel && pinnedChans.includes(activeChannel.id)
+                            ? <><PinOff size={13} className="text-amber-400" /><span className="text-xs text-zinc-300">Unpin channel</span></>
+                            : <><Pin size={13} className="text-zinc-400" /><span className="text-xs text-zinc-300">Pin to top</span></>}
+                        </button>
+                        <button
+                          onClick={() => { if (activeChannel) markRead(activeChannel.id); setShowChanMenu(false); }}
+                          className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg
+                                     hover:bg-zinc-800 transition text-left">
+                          <Check size={13} className="text-zinc-400" />
+                          <span className="text-xs text-zinc-300">Mark all as read</span>
+                        </button>
+                        {isManager && (
+                          <>
+                            <div className="h-px bg-zinc-800 my-1" />
+                            <button
+                              onClick={handleDeleteChannel}
+                              className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg
+                                         hover:bg-red-500/10 transition text-left">
+                              <Trash2 size={13} className="text-red-400" />
+                              <span className="text-xs text-red-400">Delete channel</span>
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-1 overflow-hidden">
+              {/* Messages */}
+              <div className="flex-1 flex flex-col overflow-hidden">
+                <div
+              className="flex-1 overflow-y-auto py-4"
+              onScroll={(e) => {
+                const el = e.currentTarget;
+                atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+              }}
+            >
+                  {messages.length === 0 && (
+                    <div className="flex flex-col items-center justify-center h-full text-zinc-700 gap-2">
+                      <Hash size={32} className="opacity-20" />
+                      <p className="text-sm">No messages yet. Say hello 👋</p>
+                    </div>
+                  )}
+                  {grouped.map(({ date, messages: dayMsgs }) => (
+                    <div key={date}>
+                      <div className="flex items-center gap-3 my-4 px-4">
+                        <div className="flex-1 h-px bg-zinc-800" />
+                        <span className="text-[11px] text-zinc-600 flex-shrink-0 px-3
+                                         bg-zinc-900 rounded-full border border-zinc-800">
+                          {date}
+                        </span>
+                        <div className="flex-1 h-px bg-zinc-800" />
+                      </div>
+                      {dayMsgs.map((msg) =>
+                        msg.type === "system" ? (
+                          <CandidateCard
+                            key={msg.id}
+                            message={msg}
+                            currentUser={currentUser}
+                            tenantId={tenantId}
+                            onActioned={() =>
+                              getMessages(activeChannel!.id).then(setMessages)
+                            }
+                          />
+                        ) : (
+                          <MessageBubble
+                            key={msg.id}
+                            message={msg}
+                            isMine={msg.user_id === currentUser?.id}
+                            profile={msg.user_id ? allProfiles[msg.user_id] ?? null : null}
+                            allMessages={messages}
+                            allProfiles={allProfiles}
+                            currentUserId={currentUser?.id ?? ""}
+                            onQuote={(m) => setQuotedMsg(m)}
+                onTogglePin={handleTogglePin}
+                            onRetract={handleRetract}
+                            onReact={handleReact}
+                          />
+                        )
+                      )}
+                    </div>
+                  ))}
+                  <div ref={bottomRef} />
+                </div>
+
+                {/* Typing indicator */}
+                {Object.keys(typingUsers).length > 0 && (
+                  <div className="px-5 py-1 flex items-center gap-2">
+                    <div className="flex gap-0.5">
+                      {[0,1,2].map((i) => (
+                        <span key={i} className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce"
+                          style={{ animationDelay: `${i * 0.15}s` }} />
+                      ))}
+                    </div>
+                    <span className="text-[11px] text-zinc-500">
+                      {Object.values(typingUsers).join(", ")} {Object.keys(typingUsers).length === 1 ? "is" : "are"} typing...
+                    </span>
+                  </div>
+                )}
+
+                {/* Typing indicator */}
+                {Object.keys(typingUsers).length > 0 && (
+                  <div className="px-5 py-1 flex items-center gap-2">
+                    <div className="flex gap-0.5">
+                      {[0,1,2].map((i) => (
+                        <span key={i} className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce"
+                          style={{ animationDelay: `${i * 0.15}s` }} />
+                      ))}
+                    </div>
+                    <span className="text-[11px] text-zinc-500">
+                      {Object.values(typingUsers).join(", ")} {Object.keys(typingUsers).length === 1 ? "is" : "are"} typing...
+                    </span>
+                  </div>
+                )}
+
+                {/* Compose */}
+                <div className="flex-shrink-0 border-t border-zinc-800 bg-[#0a0a12] px-4 py-3">
+                  {quotedMsg && (
+                    <div className="flex items-center justify-between gap-2 mb-2 px-3 py-2
+                                    rounded-xl bg-indigo-500/10 border border-indigo-500/20">
+                      <div className="min-w-0">
+                        <p className="text-[10px] text-indigo-400 font-semibold">
+                          Replying to {allProfiles[quotedMsg.user_id ?? ""]?.full_name
+                            ?? quotedMsg.user_name ?? "Unknown"}
+                        </p>
+                        <p className="text-xs text-white/40 truncate">
+                          {quotedMsg.content ?? "Attachment"}
+                        </p>
+                      </div>
+                      <button onClick={() => setQuotedMsg(null)}
+                        className="flex-shrink-0 text-zinc-500 hover:text-white transition">
+                        <X size={14} />
+                      </button>
+                    </div>
+                  )}
+
+                  {voice.recording ? (
+                    <div className="flex items-center gap-3 px-3 py-2 rounded-xl
+                                    bg-red-500/10 border border-red-500/20">
+                      <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                      <span className="text-sm text-red-400 font-mono flex-1">
+                        {formatDuration(voice.duration)}
+                      </span>
+                      <button onClick={voice.cancel}
+                        className="text-xs text-zinc-500 hover:text-white transition">
+                        Cancel
+                      </button>
+                      <button onClick={handleVoiceStop}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500
+                                   hover:bg-red-400 text-white text-xs font-semibold transition">
+                        <StopCircle size={13} /> Send
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-end gap-2">
+                      <div className="flex-1 bg-zinc-800/60 border border-zinc-700/60 rounded-2xl
+                                      px-4 py-2.5 min-h-[44px] flex items-end gap-2
+                                      focus-within:border-zinc-600 transition">
+                        <MentionInput
+                          value={mention.value}
+                          onChange={(v) => {
+                            mention.setValue(v);
+                            if (typingChannelRef.current && currentUser && activeChannel) {
+                              typingChannelRef.current.send({
+                                type: "broadcast", event: "typing",
+                                payload: { userId: currentUser.id, userName: currentUser.full_name ?? currentUser.email ?? "Someone" },
+                              });
+                            }
+                          }}
+                          onSubmit={handleSend}
+                          suggestions={mention.suggestions}
+                          showSuggest={mention.showSuggest}
+                          onSelectSuggestion={mention.selectSuggestion}
+                          placeholder={
+                            (activeChannel as any).type === "dm"
+                              ? `Message ${getDMDisplayName(activeChannel as any)}…`
+                              : `Message #${activeChannel.name}… use @ to mention`
+                          }
+                          className="flex-1"
+                        />
+                      </div>
+                      <div className="flex items-center gap-1.5 pb-0.5">
+                        {isManager && (
+                          <div className="relative">
+                            <button onClick={() => setShowPrio((v) => !v)}
+                              title="Message priority"
+                              className={`w-9 h-9 rounded-full flex items-center justify-center
+                                          border transition-all duration-150 text-[11px] font-bold
+                                ${msgPriority === "critical" ? "bg-red-600 border-red-500 text-white"
+                                  : msgPriority === "high"   ? "bg-amber-500 border-amber-400 text-[#2a1a00]"
+                                  : msgPriority === "low"    ? "bg-white/[0.04] border-transparent text-zinc-500"
+                                  : "bg-white/[0.04] border-transparent hover:border-white/50 text-zinc-500"}`}>
+                              {msgPriority === "critical" ? "!!" : msgPriority === "high" ? "!" : msgPriority === "low" ? "\u2193" : "\u2014"}
+                            </button>
+                            {showPrio && (
+                              <>
+                                <div className="fixed inset-0 z-30" onClick={() => setShowPrio(false)} />
+                                <div className="absolute bottom-12 left-0 z-40 w-52 rounded-xl border
+                                                border-white/[0.06] bg-[#12121c]/95 backdrop-blur-xl p-1.5 shadow-2xl">
+                                  <p className="text-[9px] uppercase tracking-[0.18em] text-zinc-600 px-2 py-1.5">
+                                    Priority
+                                  </p>
+                                  {([
+                                    ["critical", "!! Attention \u2014 Critical", "text-red-400"],
+                                    ["high",     "! Top priority",              "text-amber-400"],
+                                    ["normal",   "Normal",                       "text-zinc-300"],
+                                    ["low",      "\u2193 Low priority",          "text-zinc-500"],
+                                  ] as const).map(([val, label, cls]) => (
+                                    <button key={val}
+                                      onClick={() => { setMsgPriority(val); setShowPrio(false); }}
+                                      className={`w-full text-left px-2.5 py-2 rounded-lg text-xs transition
+                                        ${msgPriority === val ? "bg-white/[0.08]" : "hover:bg-white/[0.05]"} ${cls}`}>
+                                      {label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        )}
+                        <div className="relative">
+                          <button onClick={() => setShowEmoji(!showEmoji)}
+                            className="group w-9 h-9 rounded-full bg-white/[0.04] hover:bg-white/[0.09]
+                                       border border-transparent hover:border-white/50
+                                       flex items-center justify-center transition-all duration-150
+                                       hover:scale-105 active:scale-95">
+                            <Smile size={17} strokeWidth={1.9}
+                              className="text-zinc-500 group-hover:text-white transition-colors" />
+                          </button>
+                          {showEmoji && (
+                            <div className="absolute bottom-12 right-0 z-50 w-max rounded-2xl
+                                            border border-white/[0.06] bg-[#12121c]/95 backdrop-blur-xl
+                                            p-3 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.9)]">
+                              <p className="text-[9px] uppercase tracking-[0.18em] text-zinc-600 px-1 pb-2.5">
+                                Emoji
+                              </p>
+                              <div className="grid grid-cols-8 gap-1">
+                                {EMOJI_LIST.map((e) => (
+                                  <button key={e}
+                                    onClick={() => {
+                                      mention.setValue(mention.value + e);
+                                      setShowEmoji(false);
+                                    }}
+                                    className="group relative w-9 h-9 rounded-xl flex items-center
+                                               justify-center text-[24px] leading-none
+                                               transition-transform duration-150
+                                               hover:scale-[1.35] active:scale-110">
+                                    <span className="absolute inset-0 rounded-xl bg-white/0
+                                                     group-hover:bg-white/[0.07] transition-colors" />
+                                    <span className="relative">{e}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        <div className="relative">
+                          <button onClick={() => setShowMeme(!showMeme)}
+                            className="group w-9 h-9 rounded-full bg-white/[0.04] hover:bg-white/[0.09]
+                                       border border-transparent hover:border-white/50
+                                       flex items-center justify-center transition-all duration-150
+                                       hover:scale-105 active:scale-95
+                                       text-[10px] font-bold tracking-[0.06em]
+                                       text-zinc-500 group-hover:text-white">
+                            GIF
+                          </button>
+                          {showMeme && (
+                            <div className="absolute bottom-11 right-0 bg-zinc-900 border
+                                            border-zinc-700 rounded-2xl p-2 space-y-1
+                                            shadow-2xl z-50 w-44">
+                              {MEMES.map((m) => (
+                                <button key={m.label}
+                                  onClick={async () => {
+                                    setShowMeme(false);
+                                    if (currentUser && activeChannel) {
+                                      await sendTextMessage({
+                                        channelId: activeChannel.id, content: m.content,
+                                        userId:    currentUser.id,
+                                        userName:  currentUser.full_name ?? currentUser.email ?? "Unknown",
+                                        tenantId,  quotedId: null,
+                                      });
+                                    }
+                                  }}
+                                  className="w-full text-left px-3 py-2 rounded-xl text-sm
+                                             text-zinc-300 hover:bg-zinc-800 transition">
+                                  {m.label}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <button onClick={() => fileRef.current?.click()}
+                          title="Attach a file"
+                          className="group w-9 h-9 rounded-full bg-white/[0.04] hover:bg-white/[0.09]
+                                     border border-transparent hover:border-white/50
+                                     flex items-center justify-center transition-all duration-150
+                                     hover:scale-105 active:scale-95">
+                          <Paperclip size={17} strokeWidth={1.9}
+                            className="text-zinc-500 group-hover:text-white transition-colors" />
+                        </button>
+                        <button onClick={voice.start}
+                          title="Record a voice note"
+                          className="group w-9 h-9 rounded-full bg-white/[0.04] hover:bg-white/[0.09]
+                                     border border-transparent hover:border-white/50
+                                     flex items-center justify-center transition-all duration-150
+                                     hover:scale-105 active:scale-95">
+                          <Mic size={17} strokeWidth={1.9}
+                            className="text-zinc-500 group-hover:text-white transition-colors" />
+                        </button>
+
+                        {/* Send — concentric ring + rising chevron */}
+                        <button onClick={handleSend} disabled={sending || !mention.value.trim()}
+                          title="Send"
+                          className="group relative ml-0.5 w-10 h-10 rounded-full
+                                     flex items-center justify-center
+                                     border transition-all duration-200
+                                     border-[#00BFA6]/45 hover:border-[#00BFA6]
+                                     disabled:border-zinc-800 disabled:cursor-not-allowed">
+                          <span className="absolute inset-[3px] rounded-full bg-[#00BFA6]
+                                           transition-transform duration-200
+                                           group-hover:scale-105 group-active:scale-95
+                                           group-disabled:bg-zinc-800/80" />
+                          {sending
+                            ? <Loader2 size={15} className="relative text-[#04211E] animate-spin" />
+                            : <ChevronUp size={18} strokeWidth={3}
+                                className="relative text-[#04211E] transition-transform duration-200
+                                           group-hover:-translate-y-[1px]
+                                           group-disabled:text-zinc-600" />}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {prioNotice && (
+                    <p className="text-[10px] text-amber-400/90 mt-1.5 px-1">{prioNotice}</p>
+                  )}
+                  <p className="text-[10px] text-zinc-700 mt-1.5 px-1">
+                    <span className="text-zinc-500">@name</span> · person{"  "}
+                    <span className="text-zinc-500">@dept</span> · team{"  "}
+                    <span className="text-amber-600">@all</span> · everyone
+                  </p>
+                </div>
+              </div>
+
+              {/* Right panel */}
+              {rightPanel && (
+                <div className="w-72 flex-shrink-0 border-l border-zinc-800 bg-[#09090f]
+                                flex flex-col overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
+                    <p className="text-sm font-semibold text-white">
+                      {rightPanel === "queue" ? "Attention Queue" : rightPanel === "pinned" ? "Pinned Messages" : "Members"}
+                    </p>
+                    <button onClick={() => setRightPanel(null)}
+                      className="w-7 h-7 rounded-lg hover:bg-zinc-800 flex items-center
+                                 justify-center transition">
+                      <X size={13} className="text-zinc-500" />
+                    </button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto">
+                    {rightPanel === "queue" && (
+                      <QueuePanel
+                        grouped={queueGrouped}
+                        onResolve={async (id) => { await resolveQueueItem(id); loadQueue(); }}
+                        onResolveAll={async (cat) => {
+                          if (currentUser) {
+                            await resolveCategory(currentUser.id, tenantId, cat);
+                            loadQueue();
+                          }
+                        }}
+                      />
+                    )}
+                    {rightPanel === "pinned" && (
+                      <div className="p-3 space-y-2">
+                        {pinnedMsgs.length === 0 && (
+                          <div className="text-center py-10">
+                            <Pin size={20} className="text-zinc-700 mx-auto mb-2" />
+                            <p className="text-xs text-zinc-600">No pinned messages yet.</p>
+                            <p className="text-[10px] text-zinc-700 mt-1">
+                              Hover any message and hit the pin icon.
+                            </p>
+                          </div>
+                        )}
+                        {pinnedMsgs.map((pm) => {
+                          const author = pm.user_id ? allProfiles[pm.user_id] : null;
+                          return (
+                            <div key={pm.id}
+                              className="rounded-xl border border-amber-500/15 bg-amber-500/[0.03] p-3 space-y-1.5">
+                              <div className="flex items-center gap-2">
+                                <Pin size={10} className="text-amber-400 flex-shrink-0" />
+                                <span className="text-[11px] font-medium text-white truncate">
+                                  {author?.full_name ?? pm.user_name ?? "Unknown"}
+                                </span>
+                                <span className="text-[10px] text-zinc-600 ml-auto flex-shrink-0">
+                                  {formatTime(pm.created_at)}
+                                </span>
+                              </div>
+                              <p className="text-xs text-zinc-400 leading-relaxed line-clamp-4">
+                                {pm.content ?? (pm.file_name ? `📎 ${pm.file_name}` : "Attachment")}
+                              </p>
+                              <button
+                                onClick={() => handleTogglePin(pm)}
+                                className="text-[10px] text-zinc-600 hover:text-amber-400 transition
+                                           flex items-center gap-1">
+                                <PinOff size={9} /> Unpin
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {rightPanel === "members" && (
+                      <div className="p-3 space-y-1">
+                        {profileList.map((p) => {
+                          const pStatus = presenceMap[p.id] ?? "OFFLINE";
+                          const pMeta   = STATUS_META[pStatus];
+                          return (
+                            <div key={p.id}
+                              className="flex items-center gap-3 px-3 py-2.5 rounded-xl
+                                         hover:bg-zinc-800/40 transition cursor-pointer"
+                              onClick={() => setViewingProfile(p)}>
+                              <Avatar profile={p} size="md" status={pStatus} />
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm text-white font-medium truncate">
+                                  {p.full_name ?? p.email}
+                                </p>
+                                <p className={`text-xs ${pMeta.color}`}>
+                                  {pMeta.emoji} {pMeta.label}
+                                </p>
+                                {p.department && (
+                                  <p className="text-[10px] text-zinc-600">{p.department}</p>
+                                )}
+                              </div>
+                              {p.id !== currentUser.id && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); openDM(p); }}
+                                  className="w-7 h-7 rounded-lg bg-zinc-800 hover:bg-indigo-500/20
+                                             flex items-center justify-center transition flex-shrink-0">
+                                  <MessageSquare size={13} className="text-zinc-500 hover:text-indigo-400" />
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Hidden file input */}
+      <input ref={fileRef} type="file" className="hidden" onChange={handleFile}
+        accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" />
+
+      {/* Create channel modal */}
+      {showNewChan && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4
+                        bg-black/60 backdrop-blur-sm">
+          <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800
+                          rounded-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-semibold text-white">Create Channel</h3>
+              <button onClick={() => setShowNewChan(false)}
+                className="w-8 h-8 rounded-lg hover:bg-zinc-800 flex items-center
+                           justify-center transition">
+                <X size={14} className="text-zinc-400" />
+              </button>
+            </div>
+            <div>
+              <label className="text-xs text-zinc-500 mb-1 block">Channel name</label>
+              <div className="flex items-center gap-2 bg-zinc-800 border border-zinc-700
+                              rounded-xl px-3 py-2.5 focus-within:border-indigo-500 transition">
+                <Hash size={14} className="text-zinc-500 flex-shrink-0" />
+                <input value={newChanName}
+                  onChange={(e) => setNewChanName(e.target.value.toLowerCase().replace(/\s+/g, "-"))}
+                  onKeyDown={(e) => e.key === "Enter" && handleCreateChannel()}
+                  placeholder="e.g. general" autoFocus
+                  className="flex-1 bg-transparent text-sm text-white placeholder-zinc-600 outline-none" />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setShowNewChan(false)}
+                className="flex-1 py-2.5 rounded-xl border border-zinc-700 text-sm
+                           text-zinc-400 hover:text-white transition">Cancel</button>
+              <button onClick={handleCreateChannel} disabled={!newChanName.trim()}
+                className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white
+                           text-sm font-semibold transition disabled:opacity-50">Create</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+
+

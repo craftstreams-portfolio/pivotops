@@ -1,0 +1,281 @@
+"use client";
+
+import { useState, useEffect, useRef, useCallback } from "react";
+import { supabase } from "@/lib/supabase";
+import { Loader2, Send, X as XIcon } from "lucide-react";
+
+// Public support widget. The visitor is unauthenticated, so realtime delivery
+// uses Broadcast on a topic named by their secret token rather than
+// postgres_changes - an anon browser cannot prove token ownership at the RLS
+// layer, and opening messages to anon would expose every tenant's chat.
+//
+// The token lives in sessionStorage so a refresh restores the conversation but
+// a shared machine does not leak it into the next person's session.
+
+const TOKEN_KEY = "pivotops_support_token";
+const CALENDLY = "https://calendly.com/craftstreams/new-meeting";
+
+interface Msg {
+  id: string;
+  content: string;
+  author: string;
+  sender_type: string;
+  created_at: string;
+}
+
+export default function SupportChat({ onClose }: { onClose: () => void }) {
+  const [token, setToken] = useState<string | null>(null);
+  const [identity, setIdentity] = useState("Chat Support");
+  const [msgs, setMsgs] = useState<Msg[]>([]);
+  const [draft, setDraft] = useState("");
+  const [booting, setBooting] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [err, setErr] = useState("");
+  const [agentTyping, setAgentTyping] = useState(false);
+  const [closed, setClosed] = useState(false);
+
+  // Intake form
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [company, setCompany] = useState("");
+  const [message, setMessage] = useState("");
+
+  const endRef = useRef<HTMLDivElement>(null);
+  const typingTimer = useRef<any>(null);
+
+  const scrollDown = useCallback(() => {
+    requestAnimationFrame(() => endRef.current?.scrollIntoView({ behavior: "smooth" }));
+  }, []);
+
+  // Restore an existing session if there is one.
+  useEffect(() => {
+    const saved = typeof window !== "undefined" ? sessionStorage.getItem(TOKEN_KEY) : null;
+    if (!saved) { setBooting(false); return; }
+    (async () => {
+      try {
+        const res = await fetch("/api/support/chat", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "history", token: saved }),
+        });
+        const data = await res.json();
+        if (!res.ok) { sessionStorage.removeItem(TOKEN_KEY); setBooting(false); return; }
+        setToken(saved);
+        setMsgs(data.messages ?? []);
+        setIdentity(data.identity ?? "Chat Support");
+        setClosed(data.status === "CLOSED");
+        scrollDown();
+      } catch {
+        sessionStorage.removeItem(TOKEN_KEY);
+      } finally { setBooting(false); }
+    })();
+  }, [scrollDown]);
+
+  // Realtime: one topic per conversation, named by the secret token.
+  useEffect(() => {
+    if (!token) return;
+    const ch = supabase.channel("support:" + token, { config: { broadcast: { self: false }, private: true } });
+
+    ch.on("broadcast", { event: "message" }, (payload: any) => {
+      const m = payload?.payload;
+      if (!m?.id) return;
+      setAgentTyping(false);
+      // Guard against the echo of the visitor's own send.
+      setMsgs((prev) => prev.some((x) => x.id === m.id) ? prev : [...prev, m]);
+      scrollDown();
+    });
+
+    ch.on("broadcast", { event: "status" }, (payload: any) => {
+      const s = payload?.payload?.status;
+      if (!s) return;
+      setClosed(s === "CLOSED");
+      if (s === "CLOSED" || s === "RESOLVED") {
+        setAgentTyping(false);
+        setMsgs((prev) => prev.concat([{
+          id: "closed-" + Date.now(),
+          content: s === "RESOLVED"
+            ? "This conversation has been marked resolved. Thanks for reaching out - reply any time to reopen it."
+            : "This conversation has been closed. Thanks for reaching out to PivotOps.",
+          author: "system", sender_type: "system",
+          created_at: new Date().toISOString(),
+        }]));
+        scrollDown();
+        // Give the visitor time to read it before the window goes.
+        if (s === "CLOSED") {
+          setTimeout(() => { sessionStorage.removeItem(TOKEN_KEY); onClose(); }, 6000);
+        }
+      }
+    });
+
+    ch.on("broadcast", { event: "typing" }, (payload: any) => {
+      if (payload?.payload?.who !== "agent") return;
+      setAgentTyping(true);
+      clearTimeout(typingTimer.current);
+      typingTimer.current = setTimeout(() => setAgentTyping(false), 4000);
+    });
+
+    ch.subscribe();
+    return () => { clearTimeout(typingTimer.current); supabase.removeChannel(ch); };
+  }, [token, scrollDown]);
+
+  async function start() {
+    if (!name.trim() || !email.trim() || !message.trim()) {
+      setErr("Name, work email and a short message, please."); return;
+    }
+    setSending(true); setErr("");
+    try {
+      const res = await fetch("/api/support/chat", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "start", name, email, company,
+          message: message.trim(),
+          landingPage: typeof window !== "undefined" ? window.location.pathname : null,
+          referrer: typeof document !== "undefined" ? document.referrer : null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not start the chat.");
+      sessionStorage.setItem(TOKEN_KEY, data.token);
+      setToken(data.token);
+      setIdentity(data.identity ?? "Chat Support");
+      setMsgs([{
+        id: "local-first", content: message.trim(),
+        author: name.trim(), sender_type: "guest",
+        created_at: new Date().toISOString(),
+      }]);
+      setMessage("");
+      scrollDown();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Something went wrong.");
+    } finally { setSending(false); }
+  }
+
+  async function send() {
+    const text = draft.trim();
+    if (!text || !token || sending) return;
+    setSending(true); setErr("");
+    const optimistic: Msg = {
+      id: "tmp-" + Date.now(), content: text,
+      author: name || "You", sender_type: "guest",
+      created_at: new Date().toISOString(),
+    };
+    setMsgs((p) => [...p, optimistic]);
+    setDraft(""); scrollDown();
+    try {
+      const res = await fetch("/api/support/chat", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "send", token, message: text }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Your message could not be sent.");
+      setMsgs((p) => p.map((m) => m.id === optimistic.id ? { ...m, id: data.id } : m));
+    } catch (e) {
+      setMsgs((p) => p.filter((m) => m.id !== optimistic.id));
+      setDraft(text);
+      setErr(e instanceof Error ? e.message : "Your message could not be sent.");
+    } finally { setSending(false); }
+  }
+
+  function onDraftChange(v: string) {
+    setDraft(v);
+    if (!token) return;
+    // Transient, throttled, never persisted.
+    supabase.channel("support:" + token).send({
+      type: "broadcast", event: "typing", payload: { who: "guest" },
+    }).catch(() => {});
+  }
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-end sm:items-center sm:justify-end p-0 sm:p-6">
+      <div className="absolute inset-0 bg-black/70 sm:bg-black/40" onClick={onClose} />
+      <div role="dialog" aria-modal="true" aria-label="Chat Support chat"
+        className="relative w-full sm:w-[400px] h-full sm:h-[640px] sm:max-h-[85vh] bg-zinc-950 border border-zinc-800 sm:rounded-2xl flex flex-col overflow-hidden">
+
+        <div className="flex items-center justify-between px-4 py-3.5 border-b border-zinc-800 flex-shrink-0">
+          <div>
+            <h3 className="text-sm font-semibold text-white">{identity}</h3>
+            <p className="text-[11px] text-zinc-500 flex items-center gap-1.5 mt-0.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" aria-hidden="true" />
+              {closed ? "Conversation closed" : "Available"}
+            </p>
+          </div>
+          <button onClick={onClose} aria-label="Close chat"
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-500 hover:text-white hover:bg-zinc-800 transition">
+            <XIcon size={16} />
+          </button>
+        </div>
+
+        {booting ? (
+          <div className="flex-1 flex items-center justify-center text-zinc-500 text-sm gap-2">
+            <Loader2 size={15} className="animate-spin" /> Loading...
+          </div>
+        ) : !token ? (
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Hi 👋 Tell us what is costing your team time and we will come back with a
+              straight answer, not a sales sequence.
+            </p>
+            {err && <p role="alert" className="text-[11px] text-red-400">{err}</p>}
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" aria-label="Full name" maxLength={80}
+              className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2.5 text-xs text-white placeholder-zinc-600 outline-none focus:border-emerald-500 transition" />
+            <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="Work email" aria-label="Work email" maxLength={120}
+              className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2.5 text-xs text-white placeholder-zinc-600 outline-none focus:border-emerald-500 transition" />
+            <input value={company} onChange={(e) => setCompany(e.target.value)} placeholder="Company (optional)" aria-label="Company" maxLength={80}
+              className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2.5 text-xs text-white placeholder-zinc-600 outline-none focus:border-emerald-500 transition" />
+            <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={3} maxLength={2000}
+              placeholder="What is slowing your team down?" aria-label="Message"
+              className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2.5 text-xs text-white placeholder-zinc-600 outline-none focus:border-emerald-500 resize-none transition" />
+            <button onClick={start} disabled={sending}
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-white text-sm font-semibold disabled:opacity-40 transition hover:opacity-90"
+              style={{ background: "linear-gradient(135deg, #1E56E0, #00BFA6)" }}>
+              {sending && <Loader2 size={14} className="animate-spin" />}
+              {sending ? "Starting..." : "Start chat"}
+            </button>
+            <p className="text-[10px] text-zinc-600 text-center">
+              Rather talk live? <a href={CALENDLY} target="_blank" rel="noopener noreferrer"
+                className="text-emerald-400 hover:text-emerald-300 underline underline-offset-2">Book a demo</a>
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className="flex-1 overflow-y-auto p-4 space-y-2.5" aria-live="polite">
+              {msgs.map((m) => (
+                <div key={m.id} className={"flex " + (m.sender_type === "guest" ? "justify-end" : "justify-start")}>
+                  <div className={"max-w-[80%] rounded-2xl px-3.5 py-2.5 " +
+                    (m.sender_type === "guest"
+                      ? "bg-emerald-600 text-white rounded-br-sm"
+                      : m.sender_type === "system"
+                        ? "bg-zinc-900 border border-zinc-800 text-zinc-400 text-[11px]"
+                        : "bg-zinc-800 text-zinc-100 rounded-bl-sm")}>
+                    {m.sender_type === "agent" && (
+                      <p className="text-[10px] text-zinc-400 mb-0.5">{m.author}</p>
+                    )}
+                    <p className="text-xs whitespace-pre-wrap leading-relaxed">{m.content}</p>
+                  </div>
+                </div>
+              ))}
+              {agentTyping && (
+                <p className="text-[11px] text-zinc-500 px-1">{identity} is typing…</p>
+              )}
+              <div ref={endRef} />
+            </div>
+
+            {err && <p role="alert" className="text-[11px] text-red-400 px-4 pb-1">{err}</p>}
+
+            <div className="p-3 border-t border-zinc-800 flex gap-2 flex-shrink-0">
+              <input value={draft} onChange={(e) => onDraftChange(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+                placeholder={closed ? "This conversation is closed" : "Type a message..."}
+                aria-label="Message" disabled={closed} maxLength={2000}
+                className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2.5 text-xs text-white placeholder-zinc-600 outline-none focus:border-emerald-500 disabled:opacity-50 transition" />
+              <button onClick={send} disabled={sending || !draft.trim() || closed} aria-label="Send"
+                className="w-10 h-10 rounded-xl flex items-center justify-center text-white disabled:opacity-40 transition hover:opacity-90 flex-shrink-0"
+                style={{ background: "linear-gradient(135deg, #1E56E0, #00BFA6)" }}>
+                {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
