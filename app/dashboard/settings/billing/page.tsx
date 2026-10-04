@@ -65,6 +65,18 @@ export default function BillingPage() {
         setLoading(null);
         return;
       }
+      // Shopify-installed merchants must be charged through Shopify, not
+      // Dodo - a hard App Store requirement. Ask the server which applies
+      // rather than trusting anything client-side.
+      const destRes = await fetch("/api/billing/destination", {
+        headers: { "Authorization": `Bearer ${token}` },
+      });
+      const dest = await destRes.json();
+      if (dest.provider === "shopify" && dest.url) {
+        window.location.href = dest.url;
+        return;
+      }
+
       const res = await fetch("/api/dodo/checkout", {
         method:  "POST",
         headers: {
