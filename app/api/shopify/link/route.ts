@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { verifyLinkGrant } from "@/lib/shopify/linkGrant";
 
 /**
  * app/api/shopify/link/route.ts
@@ -22,27 +23,42 @@ function getAdmin() {
 }
 
 export async function POST(req: NextRequest) {
-  const authHeader = req.headers.get("authorization") ?? "";
-  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
-  if (!token) {
-    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
-  }
-
-  const authClient = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { auth: { persistSession: false } }
-  );
-  const { data: { user }, error: authErr } = await authClient.auth.getUser(token);
-  if (authErr || !user) {
-    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
-  }
-
   const body = await req.json();
-  const { shop } = body as { shop?: string };
+  const { shop, grant } = body as { shop?: string; grant?: string };
   if (!shop) {
     return NextResponse.json({ error: "Missing shop parameter." }, { status: 400 });
   }
+
+  // Two accepted proofs of identity:
+  //   1. A bearer token - the normal path, when the browser has a session.
+  //   2. A signed grant issued by the OAuth callback after IT verified the
+  //      session server-side. Needed because a cross-site redirect in
+  //      incognito leaves the client unable to read its own session, even
+  //      though one exists. The grant is HMAC-signed, scoped to this shop,
+  //      and expires in 15 minutes, so it cannot be forged or replayed.
+  let userId: string | null = null;
+
+  const authHeader = req.headers.get("authorization") ?? "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  if (token) {
+    const authClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      { auth: { persistSession: false } }
+    );
+    const { data: { user } } = await authClient.auth.getUser(token);
+    if (user) userId = user.id;
+  }
+
+  if (!userId && grant) {
+    const payload = verifyLinkGrant(grant, shop);
+    if (payload) userId = payload.userId;
+  }
+
+  if (!userId) {
+    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+  }
+  const user = { id: userId };
 
   const admin = getAdmin();
 

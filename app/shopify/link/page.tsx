@@ -29,24 +29,41 @@ function LinkConfirm() {
   const [done, setDone] = useState(false);
 
   useEffect(() => {
+    // The callback already verified this session server-side and passed the
+    // email through as ?as=. Trust that first - a client-side getUser() can
+    // fail here even when the session is valid, because Supabase reads from
+    // storage that is blocked on a cross-site redirect in incognito.
+    const asParam = params.get("as");
+    if (asParam) {
+      setEmail(asParam);
+      setChecking(false);
+      return;
+    }
     supabase.auth.getUser().then(({ data: { user } }) => {
       setEmail(user?.email ?? null);
       setChecking(false);
     });
-  }, []);
+  }, [params]);
 
   async function handleLink() {
     setError("");
     setLinking(true);
     try {
+      // Send whichever proof we have. The bearer token is preferred; the
+      // grant from the callback covers the case where the client cannot read
+      // its own session (incognito, blocked third-party storage).
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
-      if (!token) throw new Error("Your session expired. Please sign in again.");
+      const grant = params.get("grant");
+      if (!token && !grant) throw new Error("Your session expired. Please sign in again.");
 
       const res = await fetch("/api/shopify/link", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ shop }),
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ shop, grant }),
       });
       const result = await res.json();
       if (!res.ok) throw new Error(result.error || "Failed to link your store.");
@@ -74,9 +91,28 @@ function LinkConfirm() {
         {checking ? (
           <div style={{ ...boxStyle, textAlign: "center", color: "#8A8F9A", fontSize: 14 }}>Checking your session…</div>
         ) : !email ? (
+          /* No readable session - normal in incognito or with third-party
+             cookies blocked, which is how app reviewers test. Previously this
+             told the merchant to reinstall, which returns to this same state
+             forever. Now it offers a real route: sign in, carrying the shop
+             through so they land back here and can finish linking. */
           <div style={boxStyle}>
-            <p style={{ color: "#fff", fontSize: 14, marginBottom: 8 }}>Your session could not be verified.</p>
-            <p style={{ color: "#8A8F9A", fontSize: 13 }}>Please sign in, then reinstall from Shopify to link your store.</p>
+            <p style={{ color: "#fff", fontSize: 14, marginBottom: 8 }}>Sign in to connect your store</p>
+            <p style={{ color: "#8A8F9A", fontSize: 13, marginBottom: 18 }}>
+              Sign in to PivotOps to link <strong style={{ color: "#00BFA6" }}>{shop || "your store"}</strong> to a workspace.
+            </p>
+            <a
+              href={`/login?redirect=${encodeURIComponent(`/shopify/link?shop=${shop}`)}`}
+              style={{ display: "block", background: "#00BFA6", color: "#04211E", fontWeight: 600, borderRadius: 10, padding: "12px 0", width: "100%", fontSize: 14, textAlign: "center", textDecoration: "none" }}
+            >
+              Sign in
+            </a>
+            <a
+              href={`/shopify/claim?shop=${encodeURIComponent(shop)}`}
+              style={{ display: "block", color: "#8A8F9A", fontSize: 13, textAlign: "center", marginTop: 14, textDecoration: "none" }}
+            >
+              New to PivotOps? Create a workspace
+            </a>
           </div>
         ) : alreadyLinked ? (
           <div style={boxStyle}>

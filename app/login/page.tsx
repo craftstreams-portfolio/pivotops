@@ -183,12 +183,19 @@ function LoginPage() {
     const redirectTo = searchParams.get("redirect");
 
     if (result.destination === "dashboard") {
-      // Only honor redirect param if it's a safe internal dashboard path
-      if (redirectTo && redirectTo.startsWith("/dashboard")) {
-        router.replace(redirectTo);
-      } else {
-        router.replace("/dashboard");
-      }
+      // Only honor internal paths, and only the ones we actually route to -
+      // an unrestricted redirect param is an open-redirect hole. /shopify/*
+      // is included so a merchant signing in mid-install returns to finish
+      // connecting their store instead of losing it on the dashboard.
+      const safeRedirect =
+        redirectTo &&
+        redirectTo.startsWith("/") &&
+        !redirectTo.startsWith("//") &&
+        (redirectTo.startsWith("/dashboard") ||
+         redirectTo.startsWith("/shopify/link") ||
+         redirectTo.startsWith("/shopify/claim"));
+
+      router.replace(safeRedirect ? redirectTo : "/dashboard");
     } else if (result.destination === "onboarding") {
       router.replace(claim ? `/onboarding?shopline_claim=${encodeURIComponent(claim)}` : "/onboarding");
     } else if (result.reason.startsWith("access_")) {

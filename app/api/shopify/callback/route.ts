@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
+import { createLinkGrant } from "@/lib/shopify/linkGrant";
 
 /**
  * app/api/shopify/callback/route.ts
@@ -149,7 +150,16 @@ async function routeByAuthState(req: NextRequest, shop: string): Promise<URL> {
       if (accessToken) {
         const { data: { user } } = await authClient.auth.getUser(accessToken);
         if (user) {
-          return new URL(`/shopify/link?shop=${encodeURIComponent(shop)}`, req.url);
+          // Pass the verified identity forward. The link page used to re-check
+          // the session client-side, which fails when third-party storage is
+          // blocked (incognito, and how app reviewers test) - the server saw a
+          // valid session, the client could not, and the page dead-ended.
+          const url = new URL(`/shopify/link?shop=${encodeURIComponent(shop)}`, req.url);
+          if (user.email) {
+            url.searchParams.set("as", user.email);
+            url.searchParams.set("grant", createLinkGrant(user.id, user.email, shop));
+          }
+          return url;
         }
       }
     } catch {
