@@ -1,6 +1,7 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
+import { logAudit, auditIp } from "@/lib/audit";
 
 const ROLES = ["admin", "manager", "recruiter", "operator"] as const;
 
@@ -91,6 +92,23 @@ export async function PATCH(req: NextRequest) {
 
     const { error } = await admin.from("profiles").update(patch).eq("id", memberId);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+    // Role changes are the event an audit actually turns on - who granted
+    // whom access to what, and when. Records the previous role so a change
+    // can be reconstructed, not just observed.
+    if (role && role !== target.role) {
+      await logAudit({
+        tenantId:   actor.tenant_id,
+        action:     "access.role_changed",
+        userId:     user.id,
+        userName:   user.email ?? null,
+        entityType: "profile",
+        entityId:   memberId,
+        metadata:   { from: target.role, to: role },
+        severity:   role === "admin" || target.role === "admin" ? "critical" : "warning",
+        ipAddress:  auditIp(req),
+      });
+    }
 
     return NextResponse.json({ ok: true });
   } catch (e: any) {

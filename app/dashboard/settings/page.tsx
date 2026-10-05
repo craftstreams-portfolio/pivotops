@@ -199,6 +199,18 @@ export default function SettingsPage(){
         </a>
       </Section>
 
+      <Section icon={Plug} title="Security">
+        <a href="/dashboard/settings/audit"
+           className="flex items-center justify-between px-4 py-3 rounded-xl border border-zinc-800
+                      hover:border-zinc-700 transition group">
+          <div>
+            <p className="text-sm text-white font-medium">Audit log</p>
+            <p className="text-xs text-zinc-500 mt-0.5">Access changes, billing events, and significant actions</p>
+          </div>
+          <span className="text-xs text-indigo-400 group-hover:text-indigo-300">View &rarr;</span>
+        </a>
+      </Section>
+
       <Section icon={Plug} title="Billing">
         <a href="/dashboard/settings/billing"
            className="flex items-center justify-between px-4 py-3 rounded-xl border border-zinc-800
