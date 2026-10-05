@@ -32,6 +32,7 @@ export interface Message {
   voice_seconds:  number | null;
   reactions:      Record<string, string[]>; // emoji → user_ids[]
   read_by:        string[] | null;          // user_ids who have seen it
+  edited_at:      string | null;            // set when the author edits it
   created_at:     string;
   meta:           Record<string, any> | null;
   pinned:         boolean | null;
@@ -117,6 +118,7 @@ function normalizeMessage(m: any): Message {
     retracted_at:  m.retracted_at ?? null,
     quoted_id:     m.quoted_id ?? null,
     read_by:       Array.isArray(m.read_by) ? m.read_by : null,
+    edited_at:     m.edited_at ?? null,
     file_url:      m.file_url  ?? null,
     file_name:     m.file_name ?? null,
     file_type:     m.file_type ?? null,
@@ -303,6 +305,39 @@ export async function markMessagesRead(
     })
   );
   return updated;
+}
+
+/**
+ * Edits a text message. Only the author may edit, and only text - a file or
+ * voice message has no body to change. Sets edited_at so the UI can mark it,
+ * since silently changing what someone said is worse than showing that it
+ * changed.
+ */
+export async function editMessage(
+  messageId: string,
+  userId: string,
+  content: string
+): Promise<{ error: string | null }> {
+  const trimmed = content.trim();
+  if (!trimmed) return { error: "Message cannot be empty." };
+
+  const { data: existing, error: readErr } = await supabase
+    .from("messages")
+    .select("user_id, type, retracted")
+    .eq("id", messageId)
+    .maybeSingle();
+
+  if (readErr || !existing) return { error: "Message not found." };
+  if (existing.user_id !== userId) return { error: "You can only edit your own messages." };
+  if (existing.retracted) return { error: "This message was deleted." };
+  if (existing.type !== "text") return { error: "Only text messages can be edited." };
+
+  const { error } = await supabase
+    .from("messages")
+    .update({ content: trimmed, edited_at: new Date().toISOString() })
+    .eq("id", messageId);
+
+  return { error: error ? extractMessage(error) : null };
 }
 
 export async function retractMessage(

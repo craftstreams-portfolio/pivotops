@@ -14,7 +14,7 @@ import {
   sendTextMessage, uploadAndSendFile,
   uploadAndSendVoice, retractMessage,
   toggleReaction, subscribeToChannel,
-  togglePinMessage, getPinnedMessages, markMessagesRead,
+  togglePinMessage, getPinnedMessages, markMessagesRead, editMessage,
   getChannelPins, toggleChannelPin, deleteChannel,
   type Message, type Channel, type MessagePriority,
 } from "@/lib/chat/chat.service";
@@ -36,7 +36,7 @@ import {
   STATUS_META, type UserStatus, type QueueCategory,
 } from "@/lib/teams/status.engine";
 import {
-  Send, Paperclip, Mic, Smile, Reply, Trash2, PinOff, Check,
+  Send, Paperclip, Mic, Smile, Reply, Trash2, PinOff, Check, Pencil,
   Plus, Hash, X, Play, Pause, Download,
   StopCircle, Search, Pin, MoreHorizontal,
   CheckCheck, Loader2, ChevronDown, ChevronUp,
@@ -723,7 +723,7 @@ function VoicePlayer({ url, secs }: { url: string; secs: number }) {  const [pla
 // ─────────────────────────────────────────
 function MessageBubble({
   message, isMine, profile, allMessages, allProfiles,
-  currentUserId, onQuote, onRetract, onReact, onTogglePin,
+  currentUserId, onQuote, onRetract, onReact, onTogglePin, onEdit,
 }: {
   message:       Message; isMine: boolean; profile: Profile | null;
   allMessages:   Message[]; allProfiles: Record<string, Profile>;
@@ -732,9 +732,25 @@ function MessageBubble({
   onRetract: (m: Message) => void;
   onTogglePin: (m: Message) => void;
   onReact:   (m: Message, e: string) => void;
+  onEdit:    (m: Message, content: string) => Promise<string | null>;
 }) {
   const [showActions, setShowActions] = useState(false);
   const [showEmoji,   setShowEmoji]   = useState(false);
+  const [editing,     setEditing]     = useState(false);
+  const [draft,       setDraft]       = useState("");
+  const [editError,   setEditError]   = useState("");
+  const [saving,      setSaving]      = useState(false);
+
+  async function saveEdit() {
+    const next = draft.trim();
+    if (!next || next === (message.content ?? "")) { setEditing(false); return; }
+    setSaving(true);
+    const err = await onEdit(message, next);
+    setSaving(false);
+    if (err) { setEditError(err); return; }
+    setEditing(false);
+    setEditError("");
+  }
   const quoted        = message.quoted_id
     ? allMessages.find((m) => m.id === message.quoted_id) : null;
   const quotedProfile = quoted?.user_id
@@ -812,10 +828,43 @@ function MessageBubble({
                   ↓ Low priority
                 </span>
               )}
-              {message.type === "text" && (
+              {message.type === "text" && !editing && (
                 <p className="text-sm leading-relaxed whitespace-pre-wrap">
                   <MentionText content={message.content ?? ""} />
+                  {message.edited_at && (
+                    <span className="ml-1.5 text-[10px] text-zinc-500" title={`Edited ${new Date(message.edited_at).toLocaleString()}`}>
+                      (edited)
+                    </span>
+                  )}
                 </p>
+              )}
+              {message.type === "text" && editing && (
+                <div className="w-full">
+                  <textarea
+                    autoFocus
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void saveEdit(); }
+                      if (e.key === "Escape") { setEditing(false); setEditError(""); }
+                    }}
+                    rows={2}
+                    className="w-full min-w-[220px] bg-zinc-950 border border-zinc-700 rounded-lg
+                               px-2.5 py-2 text-sm text-white outline-none resize-none focus:border-zinc-600"
+                  />
+                  {editError && <p className="text-[11px] text-red-400 mt-1">{editError}</p>}
+                  <div className="flex gap-1.5 mt-1.5">
+                    <button onClick={() => void saveEdit()} disabled={saving}
+                      className="px-2.5 py-1 rounded-md bg-[#00BFA6] text-[#04211E] text-[11px] font-semibold disabled:opacity-50">
+                      {saving ? "Saving…" : "Save"}
+                    </button>
+                    <button onClick={() => { setEditing(false); setEditError(""); }}
+                      className="px-2.5 py-1 rounded-md border border-zinc-700 text-[11px] text-zinc-400">
+                      Cancel
+                    </button>
+                    <span className="text-[10px] text-zinc-600 self-center ml-1">Enter to save · Esc to cancel</span>
+                  </div>
+                </div>
               )}
               {(message.meta as any)?.kind === "conference_invite" && (message.meta as any)?.meetingId && (
                 <a
@@ -912,6 +961,13 @@ function MessageBubble({
               </div>
             )}
           </div>
+          {isMine && message.type === "text" && !message.retracted && (
+            <button onClick={() => { setDraft(message.content ?? ""); setEditing(true); setShowActions(false); }}
+              title="Edit message"
+              className="w-7 h-7 rounded-lg hover:bg-zinc-800 flex items-center justify-center transition">
+              <Pencil size={13} className="text-zinc-400" />
+            </button>
+          )}
           {isMine && (
             <button onClick={() => onRetract(message)}
               className="w-7 h-7 rounded-lg hover:bg-red-500/10 flex items-center justify-center transition">
@@ -1436,6 +1492,16 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
     if (tenantId) getChannels(tenantId).then((cs) => setChannels(cs as any));
   };
 
+  const handleEdit = async (msg: Message, content: string): Promise<string | null> => {
+    if (!currentUser) return "You are not signed in.";
+    const { error } = await editMessage(msg.id, currentUser.id, content);
+    if (error) return error;
+    setMessages((prev) =>
+      prev.map((m) => (m.id === msg.id ? { ...m, content, edited_at: new Date().toISOString() } : m))
+    );
+    return null;
+  };
+
   const handleRetract = async (msg: Message) => {
     if (!currentUser) return;
     try { await retractMessage(msg.id, currentUser.id); } catch {}
@@ -1807,6 +1873,7 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
                             onQuote={(m) => setQuotedMsg(m)}
                 onTogglePin={handleTogglePin}
                             onRetract={handleRetract}
+            onEdit={handleEdit}
                             onReact={handleReact}
                           />
                         )
