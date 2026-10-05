@@ -5,7 +5,7 @@ import { UnreadCountsProvider, useUnreadCountsContext } from "@/lib/chat/UnreadC
 import { HuddleCallProvider } from "@/lib/huddles/HuddleCallContext";
 import { MiniCallBar } from "@/app/dashboard/components/voice/MiniCallBar";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import {
   LayoutDashboard, ShieldAlert, RefreshCcw, Workflow,
@@ -142,8 +142,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // Rendered inside the Huddles split-screen iframe. The sidebar and header
   // are already on screen in the parent, so showing them again inside the
   // pane wastes most of its width.
-  const embedParams = useSearchParams();
-  const isEmbedded = embedParams.get("embed") === "1";
+  //
+  // Read from window rather than useSearchParams: the latter forces every
+  // page under this layout to have a Suspense boundary at prerender time,
+  // which broke the build on /dashboard/ai-reports.
+  const [isEmbedded, setIsEmbedded] = useState(false);
+  useEffect(() => {
+    setIsEmbedded(new URLSearchParams(window.location.search).get("embed") === "1");
+  }, []);
   const router   = useRouter();
 
   const [appReady,    setAppReady]    = useState(false);
