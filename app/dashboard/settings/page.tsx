@@ -199,6 +199,18 @@ export default function SettingsPage(){
         </a>
       </Section>
 
+      <Section icon={Plug} title="Billing">
+        <a href="/dashboard/settings/billing"
+           className="flex items-center justify-between px-4 py-3 rounded-xl border border-zinc-800
+                      hover:border-zinc-700 transition group">
+          <div>
+            <p className="text-sm text-white font-medium">Plan and billing</p>
+            <p className="text-xs text-zinc-500 mt-0.5">View your plan, change it, or cancel</p>
+          </div>
+          <span className="text-xs text-indigo-400 group-hover:text-indigo-300">Manage &rarr;</span>
+        </a>
+      </Section>
+
       <Section icon={Workflow} title="Automation">
         <ToggleRow label="Onboarding Automation" sub="Trigger onboarding workflows on candidate acceptance" value={settings.onboarding_automation} onChange={v=>set("onboarding_automation",v)}/>
       </Section>
