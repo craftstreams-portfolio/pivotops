@@ -5,7 +5,7 @@ import { UnreadCountsProvider, useUnreadCountsContext } from "@/lib/chat/UnreadC
 import { HuddleCallProvider } from "@/lib/huddles/HuddleCallContext";
 import { MiniCallBar } from "@/app/dashboard/components/voice/MiniCallBar";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import {
   LayoutDashboard, ShieldAlert, RefreshCcw, Workflow,
@@ -138,6 +138,12 @@ function TeamsUnreadBadge() {
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+
+  // Rendered inside the Huddles split-screen iframe. The sidebar and header
+  // are already on screen in the parent, so showing them again inside the
+  // pane wastes most of its width.
+  const embedParams = useSearchParams();
+  const isEmbedded = embedParams.get("embed") === "1";
   const router   = useRouter();
 
   const [appReady,    setAppReady]    = useState(false);
@@ -303,8 +309,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {mobileOpen && (
         <div className="fixed inset-0 z-40 bg-black/60 md:hidden" onClick={() => setMobileOpen(false)} />
       )}
-
-      <aside className={`fixed md:relative z-50 h-screen w-72 border-r border-zinc-800 bg-zinc-900 transition-transform duration-300 flex flex-col ${mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}`}>
+      {!isEmbedded && <aside className={`fixed md:relative z-50 h-screen w-72 border-r border-zinc-800 bg-zinc-900 transition-transform duration-300 flex flex-col ${mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}`}>
 
         {/* Fixed-height brand row. Every line below is height-bounded and the
             logo sits in a fixed box, so no combination of org name, job title or
@@ -439,10 +444,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </button>
           </div>
         </div>
-      </aside>
+      </aside>}
 
       <main className="flex flex-1 flex-col overflow-hidden">
-        <header className="h-16 flex items-center justify-between px-6 border-b border-white/10 bg-[#080810]/80 backdrop-blur-xl flex-shrink-0">
+        {!isEmbedded && <header className="h-16 flex items-center justify-between px-6 border-b border-white/10 bg-[#080810]/80 backdrop-blur-xl flex-shrink-0">
           <div className="flex items-center gap-4">
             <button className="md:hidden text-zinc-400 hover:text-white" onClick={() => setMobileOpen(true)}><Menu size={20} /></button>
             <div className="hidden md:flex w-72 items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2">
@@ -459,7 +464,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </button>
             <div className="w-9 h-9 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400 text-sm font-semibold">{userInitial}</div>
           </div>
-        </header>
+        </header>}
         <div className="flex-1 overflow-y-auto p-4 md:p-6">{children}</div>
       </main>
 
