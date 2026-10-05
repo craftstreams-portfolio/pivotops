@@ -1633,19 +1633,14 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
                       ${rightPanel === "queue"
                         ? "bg-[#00BFA6]/20"
                         : "hover:bg-zinc-800"}`}>
-                    {/* Queue: teal tray with a white envelope dropping in */}
+                    {/* Queue: message bubble with three stacked lines,
+                        longest at the top. */}
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      {/* tray / inbox (teal) */}
-                      <path d="M3 13l2.5 0a2 2 0 0 1 1.9 1.4l.2 .6a2 2 0 0 0 1.9 1.4h4.8a2 2 0 0 0 1.9-1.4l.2-.6a2 2 0 0 1 1.9-1.4H21"
-                        stroke="#00BFA6" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                      <path d="M4.5 13.5 5.8 19a2 2 0 0 0 1.95 1.5h8.5A2 2 0 0 0 18.2 19l1.3-5.5"
-                        stroke="#00BFA6" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                      {/* envelope (white) */}
-                      <rect x="8" y="3.2" width="8" height="6" rx="1" fill="#ffffff" />
-                      <path d="M8.3 4 12 6.6 15.7 4" stroke="#04211E" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-                      {/* small down-arrow, envelope into tray */}
-                      <path d="M12 9.4v2.2M12 11.6l-1.1-1.1M12 11.6l1.1-1.1"
-                        stroke="#ffffff" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M4 5.5h16a1.5 1.5 0 0 1 1.5 1.5v8.5a1.5 1.5 0 0 1-1.5 1.5H9.2L5 20.2V17H4a1.5 1.5 0 0 1-1.5-1.5V7A1.5 1.5 0 0 1 4 5.5Z"
+                        stroke="#00BFA6" strokeWidth="1.7" strokeLinejoin="round" />
+                      <path d="M6.6 9.1h10.8" stroke="#ffffff" strokeWidth="1.6" strokeLinecap="round" />
+                      <path d="M6.6 11.8h7.6" stroke="#ffffff" strokeWidth="1.6" strokeLinecap="round" />
+                      <path d="M6.6 14.5h4.6" stroke="#ffffff" strokeWidth="1.6" strokeLinecap="round" />
                     </svg>
                     {queueCount > 0 && (
                       <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500
