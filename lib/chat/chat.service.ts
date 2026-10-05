@@ -31,6 +31,7 @@ export interface Message {
   voice_url:      string | null;
   voice_seconds:  number | null;
   reactions:      Record<string, string[]>; // emoji → user_ids[]
+  read_by:        string[] | null;          // user_ids who have seen it
   created_at:     string;
   meta:           Record<string, any> | null;
   pinned:         boolean | null;
@@ -115,6 +116,7 @@ function normalizeMessage(m: any): Message {
     retracted_by:  m.retracted_by ?? null,
     retracted_at:  m.retracted_at ?? null,
     quoted_id:     m.quoted_id ?? null,
+    read_by:       Array.isArray(m.read_by) ? m.read_by : null,
     file_url:      m.file_url  ?? null,
     file_name:     m.file_name ?? null,
     file_type:     m.file_type ?? null,
@@ -274,6 +276,35 @@ export async function uploadAndSendVoice(payload: {
 // ─────────────────────────────────────────
 // RETRACT MESSAGE
 // ─────────────────────────────────────────
+/**
+ * Marks messages as read by a user. Appends to read_by rather than
+ * overwriting, so one reader never erases another's receipt. Skips messages
+ * the user sent and ones they have already read, so an open channel does not
+ * rewrite the same rows on every render.
+ */
+export async function markMessagesRead(
+  messages: Message[],
+  userId: string
+): Promise<string[]> {
+  const unread = messages.filter(
+    (m) => m.user_id !== userId && !(m.read_by ?? []).includes(userId)
+  );
+  if (unread.length === 0) return [];
+
+  const updated: string[] = [];
+  await Promise.all(
+    unread.map(async (m) => {
+      const next = [...(m.read_by ?? []), userId];
+      const { error } = await supabase
+        .from("messages")
+        .update({ read_by: next })
+        .eq("id", m.id);
+      if (!error) updated.push(m.id);
+    })
+  );
+  return updated;
+}
+
 export async function retractMessage(
   messageId: string,
   retractedBy: string

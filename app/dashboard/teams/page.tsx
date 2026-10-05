@@ -14,7 +14,7 @@ import {
   sendTextMessage, uploadAndSendFile,
   uploadAndSendVoice, retractMessage,
   toggleReaction, subscribeToChannel,
-  togglePinMessage, getPinnedMessages,
+  togglePinMessage, getPinnedMessages, markMessagesRead,
   getChannelPins, toggleChannelPin, deleteChannel,
   type Message, type Channel, type MessagePriority,
 } from "@/lib/chat/chat.service";
@@ -757,7 +757,18 @@ function MessageBubble({
             {profile?.full_name ?? message.user_name ?? "Unknown"}
           </span>
           <span className="text-[10px] text-zinc-600">{formatTime(message.created_at)}</span>
-          {isMine && <CheckCheck size={11} className="text-zinc-700" />}
+          {isMine && (() => {
+            // Teal once anyone else has seen it; grey until then. The flat
+            // grey tick this replaces was decorative - it rendered the same
+            // whether or not anyone had read the message.
+            const readers = (message.read_by ?? []).filter((id) => id !== message.user_id);
+            const seen = readers.length > 0;
+            return (
+              <span title={seen ? `Read by ${readers.length}` : "Sent"}>
+                <CheckCheck size={11} className={seen ? "text-[#00BFA6]" : "text-zinc-700"} />
+              </span>
+            );
+          })()}
         </div>
 
         {quoted && (
@@ -1008,11 +1019,32 @@ export default function ChatPage() {  const { tenantId, loading: tenantLoading }
   // state, so the two can never disagree the way two independent
   // useUnreadCounts() instances did.
   const { counts: unreadCounts, markRead } = useUnreadCountsContext();
+
   const [channels,       setChannels]       = useState<Channel[]>([]);
   const [dmChannels,     setDmChannels]     = useState<any[]>([]);
   const [activeChannel,  setActiveChannel]  = useState<Channel | null>(null);
   const supportTypingRef = useRef(0);
   const [messages,       setMessages]       = useState<Message[]>([]);
+
+  // Record who has seen each message. Only runs for messages this user did
+  // not send and has not already read, so an open channel does not rewrite
+  // the same rows repeatedly.
+  useEffect(() => {
+    if (!currentUser || !activeChannel || messages.length === 0) return;
+    const t = setTimeout(() => {
+      markMessagesRead(messages, currentUser.id).then((updatedIds) => {
+        if (updatedIds.length === 0) return;
+        setMessages((prev) =>
+          prev.map((m) =>
+            updatedIds.includes(m.id)
+              ? { ...m, read_by: [...(m.read_by ?? []), currentUser.id] }
+              : m
+          )
+        );
+      });
+    }, 600);
+    return () => clearTimeout(t);
+  }, [messages, currentUser, activeChannel]);
   const [allProfiles,    setAllProfiles]    = useState<Record<string, Profile>>({});
   const [profileList,    setProfileList]    = useState<Profile[]>([]);
   const [loading,        setLoading]        = useState(true);
