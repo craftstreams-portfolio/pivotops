@@ -1,0 +1,598 @@
+﻿
+
+########## FILE: app\api\team\invites\route.ts  (134 lines) ##########
+
+import { getApiAuth, unauthorized } from "@/lib/auth/apiAuth";
+import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+import { createServerClient } from "@supabase/ssr";
+import { TeamInviteSchema } from "@/lib/security/schemas";
+import { seatCapForPlan, planLabel, isSeatExempt } from "@/lib/billing/config";
+import { sendEmail } from "@/lib/email";
+import { logAudit } from "@/lib/audit";
+
+function getAdmin() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) throw new Error("Missing Supabase env vars");
+  return createClient(url, key, { auth: { persistSession: false } });
+}
+
+/**
+ * The tenant's paid tier. `subscriptions` is authoritative â€” it is what every
+ * feature gate in the app reads â€” with tenants.plan as a fallback for rows
+ * predating the subscriptions table.
+ */
+async function resolvePlan(admin: ReturnType<typeof getAdmin>, tenantId: string): Promise<string> {
+  const { data: sub } = await admin
+    .from("subscriptions")
+    .select("plan, status")
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+
+  if (sub?.plan) {
+    // A cancelled or past-due subscription falls back to free-tier seats.
+    const live = sub.status === "active" || sub.status === "trialing";
+    return live ? sub.plan : "free";
+  }
+
+  const { data: tenantRow } = await admin
+    .from("tenants").select("plan").eq("id", tenantId).maybeSingle();
+  return tenantRow?.plan ?? "free";
+}
+
+async function getAuthedUser(req: NextRequest) {
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { cookies: { getAll() { return req.cookies.getAll(); }, setAll() {} } }
+  );
+  const { data: { user } } = await supabase.auth.getUser();
+  return user;
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const user = await getAuthedUser(req);
+    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+
+    const body = await req.json();
+    const parsed = TeamInviteSchema.safeParse(body);
+    if (!parsed.success) return NextResponse.json({ error: "Invalid invite request." }, { status: 400 });
+    const { email, role, position } = parsed.data;
+
+    const admin = getAdmin();
+
+    const { data: actorProfile } = await admin.from("profiles").select("tenant_id, role").eq("id", user.id).maybeSingle();
+    if (!actorProfile?.tenant_id) return NextResponse.json({ error: "No workspace found for your account." }, { status: 404 });
+    if (!["admin", "manager"].includes(actorProfile.role ?? "")) {
+      return NextResponse.json({ error: "Only admins and managers can invite teammates." }, { status: 403 });
+    }
+
+    const tenantId = actorProfile.tenant_id;
+
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const { count: recentCount } = await admin.from("team_invites").select("id", { count: "exact", head: true }).eq("invited_by", user.id).gte("created_at", oneHourAgo);
+    if ((recentCount ?? 0) >= 30) {
+      return NextResponse.json({ error: "Too many invites sent recently. Please try again in a while." }, { status: 429 });
+    }
+
+    const plan = await resolvePlan(admin, tenantId);
+    const cap  = isSeatExempt(tenantId) ? 999999 : seatCapForPlan(plan);
+    const emailNorm = email.trim().toLowerCase();
+
+    const { data: reserveResult, error: reserveErr } = await admin.rpc("reserve_team_invite_seat", {
+      p_tenant_id: tenantId,
+      p_email: emailNorm,
+      p_role: role,
+      p_invited_by: user.id,
+      p_cap: cap,
+    });
+
+    if (reserveErr) {
+      return NextResponse.json({ error: reserveErr.message }, { status: 500 });
+    }
+    if (!reserveResult?.ok) {
+      return NextResponse.json({
+        error: `Seat limit reached. ${planLabel(plan)} includes ${cap} seat${cap === 1 ? "" : "s"}, all currently used or pending. Upgrade your plan in Settings to invite more teammates.`,
+        code: "SEAT_LIMIT",
+        plan, cap, used: reserveResult?.used ?? cap,
+      }, { status: 403 });
+    }
+
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+
+    const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
+      type: "invite",
+      email: emailNorm,
+      options: {
+        data: { tenant_id: tenantId, role, position: position ?? null, invited: true },
+        redirectTo: baseUrl + "/login",
+      },
+    });
+
+    if (linkErr || !linkData) {
+      await admin.from("team_invites").delete().eq("tenant_id", tenantId).eq("email_normalized", emailNorm).eq("status", "pending");
+      return NextResponse.json({ error: linkErr?.message ?? "Failed to generate invite link." }, { status: 500 });
+    }
+
+    const inviteLink = linkData.properties?.action_link ?? "";
+
+    await admin.from("team_invites").update({ invite_link: inviteLink }).eq("tenant_id", tenantId).eq("email_normalized", emailNorm);
+
+    const html = '<div style="background:#f4f4f5;padding:40px 0;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;"><div style="max-width:480px;margin:0 auto;background:#ffffff;border:1px solid #e4e4e7;border-radius:16px;overflow:hidden;"><div style="padding:32px 32px 20px;text-align:center;"><div style="font-size:20px;font-weight:700;color:#10b981;">PivotOps</div><div style="font-size:10px;letter-spacing:1.5px;color:#a1a1aa;text-transform:uppercase;margin-top:4px;">Autonomous Workforce OS</div></div><div style="border-top:1px solid #e4e4e7;"></div><div style="padding:32px;color:#3f3f46;font-size:14px;line-height:1.6;"><h2 style="color:#18181b;font-size:20px;margin:0 0 12px;">You have been invited</h2><p style="margin:0 0 24px;">You have been invited to join a team on PivotOps as <strong>' + role + '</strong>. Accept the invitation to set up your account.</p><div style="text-align:center;margin:0 0 8px;"><a href="' + inviteLink + '" style="background:#10b981;color:#ffffff;padding:12px 28px;border-radius:10px;font-weight:600;font-size:14px;text-decoration:none;display:inline-block;">Accept Invitation</a></div></div><div style="border-top:1px solid #e4e4e7;padding:20px 32px;text-align:center;"><p style="margin:0;font-size:11px;color:#a1a1aa;">If you were not expecting this invitation, you can safely ignore this email.</p></div></div></div>';
+
+    const emailResult = await sendEmail({ to: emailNorm, subject: "You've been invited to join PivotOps", html });
+
+    await logAudit({ action: "TEAM_INVITE_SENT", actorId: user.id, actorName: user.email ?? user.id, entityType: "team_invite", entityId: emailNorm, metadata: { tenantId, role, emailSent: emailResult.ok } });
+
+    return NextResponse.json({ success: true, inviteLink, emailSent: emailResult.ok });
+  } catch (err) {
+    console.error("Team invite error:", err);
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Failed to send invite." }, { status: 500 });
+  }
+}
+
+export async function GET() {
+  return NextResponse.json({ route: "/api/team/invites", status: "ok" });
+}
+
+
+########## FILE: app\api\team\members\route.ts  (90 lines) ##########
+
+import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+import { createServerClient } from "@supabase/ssr";
+
+const ROLES = ["admin", "manager", "recruiter", "operator"] as const;
+
+function getAdmin() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { persistSession: false } }
+  );
+}
+
+async function getAuthedUser(req: NextRequest) {
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { cookies: { getAll() { return req.cookies.getAll(); }, setAll() {} } }
+  );
+  const { data: { user } } = await supabase.auth.getUser();
+  return user;
+}
+
+/**
+ * Update a teammate's role or job title.
+ *
+ * RLS on profiles only permits a user to update their OWN row, so an admin
+ * editing a teammate has to come through here. Authority is checked server-side:
+ * the caller must be an admin/manager in the SAME tenant as the target.
+ */
+export async function PATCH(req: NextRequest) {
+  try {
+    const user = await getAuthedUser(req);
+    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+
+    const { memberId, role, position } = await req.json();
+    if (!memberId) return NextResponse.json({ error: "Missing member." }, { status: 400 });
+    if (role && !ROLES.includes(role)) {
+      return NextResponse.json({ error: "Unknown role." }, { status: 400 });
+    }
+
+    const admin = getAdmin();
+
+    const { data: actor } = await admin
+      .from("profiles").select("tenant_id, role").eq("id", user.id).maybeSingle();
+    if (!actor?.tenant_id) return NextResponse.json({ error: "No workspace found." }, { status: 404 });
+    if (!["admin", "manager"].includes(actor.role ?? "")) {
+      return NextResponse.json({ error: "Only admins and managers can edit teammates." }, { status: 403 });
+    }
+
+    const { data: target } = await admin
+      .from("profiles").select("id, tenant_id, role").eq("id", memberId).maybeSingle();
+    if (!target) return NextResponse.json({ error: "Teammate not found." }, { status: 404 });
+    if (target.tenant_id !== actor.tenant_id) {
+      return NextResponse.json({ error: "That teammate is not in your workspace." }, { status: 403 });
+    }
+
+    // Only an admin may grant or revoke admin — a manager can't promote someone
+    // (or themselves) past their own level.
+    if (role && (role === "admin" || target.role === "admin") && actor.role !== "admin") {
+      return NextResponse.json({ error: "Only an admin can change admin access." }, { status: 403 });
+    }
+
+    // Don't let the last admin in a tenant be demoted out of existence.
+    if (target.role === "admin" && role && role !== "admin") {
+      const { count } = await admin
+        .from("profiles").select("id", { count: "exact", head: true })
+        .eq("tenant_id", actor.tenant_id).eq("role", "admin");
+      if ((count ?? 0) <= 1) {
+        return NextResponse.json({ error: "This is the only admin — promote someone else first." }, { status: 400 });
+      }
+    }
+
+    const patch: Record<string, any> = {};
+    if (role) patch.role = role;
+    if (position !== undefined) patch.position = String(position ?? "").trim().slice(0, 60) || null;
+    if (Object.keys(patch).length === 0) {
+      return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
+    }
+
+    const { error } = await admin.from("profiles").update(patch).eq("id", memberId);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+    return NextResponse.json({ ok: true });
+  } catch (e: any) {
+    console.error("[team/members]", e);
+    return NextResponse.json({ error: e?.message ?? "Internal error" }, { status: 500 });
+  }
+}
+
+
+########## FILE: app\dashboard\components\team\TeamInvitePanel.tsx  (362 lines) ##########
+
+"use client";
+
+import { useState, useEffect } from "react";
+import { isValidEmail } from "@/lib/validation";
+import { supabase } from "@/lib/supabase";
+import { X, Mail, Send, Copy, Check, Loader2, AlertCircle, Users } from "lucide-react";
+import { seatCapForPlan, planLabel, isSeatExempt } from "@/lib/billing/config";
+
+const ROLES = [
+  { value: "admin",     label: "Admin",     desc: "Full access - manage settings, billing, and all team members." },
+  { value: "manager",   label: "Manager",   desc: "Oversee recruitment, onboarding, and team operations." },
+  { value: "recruiter", label: "Recruiter", desc: "Manage candidates, interviews, and offers." },
+  { value: "operator",  label: "Operator",  desc: "Day-to-day operations - clocking, tasks, and team chat." },
+];
+
+
+interface Member {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+  role: string | null;
+  position: string | null;
+}
+
+interface PendingInvite {
+  id: string;
+  email: string;
+  role: string;
+  status: string;
+  created_at: string;
+}
+
+export default function TeamInvitePanel({
+  open, onClose, tenantId, orgSize,
+}: {
+  open: boolean;
+  onClose: () => void;
+  tenantId: string;
+  orgSize: string;
+}) {
+  const [email,    setEmail]    = useState("");
+  const [role,     setRole]     = useState("operator");
+  const [position, setPosition] = useState("");
+  const [members,  setMembers]  = useState<Member[]>([]);
+  const [myRole,   setMyRole]   = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editRole,  setEditRole]  = useState("operator");
+  const [editTitle, setEditTitle] = useState("");
+  const [savingMember, setSavingMember] = useState(false);
+  const [memberErr, setMemberErr] = useState("");
+  const [sending,  setSending]  = useState(false);
+  const [error,    setError]    = useState("");
+  const [lastLink, setLastLink] = useState("");
+  const [copied,   setCopied]   = useState(false);
+  const [invites,  setInvites]  = useState<PendingInvite[]>([]);
+  const [memberCount, setMemberCount] = useState(0);
+
+  // Seats come from the paid tier, read from the same table every feature gate
+  // uses - so this counter and the server-side cap cannot drift apart.
+  const [plan, setPlan] = useState<string>("free");
+  useEffect(() => {
+    if (!tenantId) return;
+    supabase.from("subscriptions").select("plan, status").eq("tenant_id", tenantId).maybeSingle()
+      .then(({ data }) => {
+        if (data?.plan) {
+          const live = data.status === "active" || data.status === "trialing";
+          setPlan(live ? data.plan : "free");
+          return;
+        }
+        supabase.from("tenants").select("plan").eq("id", tenantId).maybeSingle()
+          .then(({ data: tn }) => setPlan(tn?.plan ?? "free"));
+      });
+  }, [tenantId]);
+
+  const cap = isSeatExempt(tenantId) ? Infinity : seatCapForPlan(plan);
+
+  useEffect(() => {
+    if (!open || !tenantId) return;
+    refreshCounts();
+  }, [open, tenantId]);
+
+  async function refreshCounts() {
+    const { count } = await supabase.from("profiles").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId);
+    setMemberCount(count ?? 0);
+    const { data } = await supabase.from("team_invites").select("id, email, role, status, created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(20);
+    setInvites((data ?? []) as PendingInvite[]);
+
+    const { data: mem } = await supabase
+      .from("profiles").select("id, full_name, email, role, position")
+      .eq("tenant_id", tenantId).order("full_name", { ascending: true });
+    setMembers((mem ?? []) as Member[]);
+
+    const { data: auth } = await supabase.auth.getUser();
+    if (auth?.user) {
+      const me = (mem ?? []).find((m: any) => m.id === auth.user!.id);
+      setMyRole(me?.role ?? "");
+    }
+  }
+
+  function startEdit(m: Member) {
+    setEditingId(m.id);
+    setEditRole(m.role ?? "operator");
+    setEditTitle(m.position ?? "");
+    setMemberErr("");
+  }
+
+  async function saveMember(memberId: string) {
+    setSavingMember(true); setMemberErr("");
+    try {
+      const res = await fetch("/api/team/members", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ memberId, role: editRole, position: editTitle }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not update teammate.");
+      setEditingId(null);
+      refreshCounts();
+    } catch (err) {
+      setMemberErr(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setSavingMember(false);
+    }
+  }
+
+  const pendingCount = invites.filter((i) => i.status === "pending").length;
+  const seatsUsed = memberCount + pendingCount;
+  const seatsLeft = cap === Infinity ? Infinity : Math.max(0, cap - seatsUsed);
+
+  async function handleInvite() {
+    if (!email.trim()) return;
+    if (!isValidEmail(email)) { setError("Please enter a valid email address."); return; }
+    setSending(true);
+    setError("");
+    setLastLink("");
+    try {
+      const res = await fetch("/api/team/invites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), role, position: position.trim() || undefined }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to send invite.");
+      setLastLink(data.inviteLink || "");
+      setEmail("");
+      setPosition("");
+      refreshCounts();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function copyLink() {
+    if (!lastLink) return;
+    try {
+      await navigator.clipboard.writeText(lastLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {}
+  }
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[150]">
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <div className="absolute right-0 top-0 h-full w-full max-w-md bg-zinc-950 border-l border-zinc-800 flex flex-col">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-zinc-800">
+          <div>
+            <h2 className="text-base font-semibold text-white">Invite teammates</h2>
+            <p className="text-xs text-zinc-500 mt-0.5">
+              {cap === Infinity ? memberCount + " members" : seatsUsed + " of " + cap + " seats used · " + planLabel(plan)}
+            </p>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-500 hover:text-white hover:bg-zinc-800 transition">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          {seatsLeft === 0 ? (
+            <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
+              <AlertCircle size={15} className="text-amber-400 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-300 leading-relaxed">
+                {planLabel(plan)} includes {cap} seat{cap === 1 ? "" : "s"}, all currently used or pending. Upgrade your plan in Settings to invite more teammates.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div>
+                <label className="flex items-center gap-2 text-xs text-zinc-500 mb-1.5"><Mail size={11} /> Email address</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="teammate@company.com"
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white placeholder-zinc-600 outline-none focus:border-emerald-500 transition"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-zinc-500 mb-1.5 block">
+                  Job title <span className="text-zinc-600">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={position}
+                  onChange={(e) => setPosition(e.target.value)}
+                  maxLength={60}
+                  placeholder="e.g. Senior Recruiter, Regional Ops Lead"
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white placeholder-zinc-600 outline-none focus:border-emerald-500 transition"
+                />
+                <p className="text-[11px] text-zinc-600 mt-1.5">
+                  Shown on their profile. Access is set by the role below.
+                </p>
+              </div>
+
+              <div>
+                <label className="text-xs text-zinc-500 mb-1.5 block">Role and access</label>
+                <div className="space-y-2">
+                  {ROLES.map((r) => (
+                    <button
+                      key={r.value}
+                      onClick={() => setRole(r.value)}
+                      className={"w-full text-left px-4 py-3 rounded-xl border transition " + (role === r.value ? "border-emerald-500 bg-emerald-500/10" : "border-zinc-800 bg-zinc-900/50 hover:border-zinc-700")}
+                    >
+                      <p className={"text-sm font-medium " + (role === r.value ? "text-emerald-400" : "text-white")}>{r.label}</p>
+                      <p className="text-[11px] text-zinc-500 mt-0.5">{r.desc}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {error && (
+                <div className="px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-sm text-red-400">
+                  {error}
+                </div>
+              )}
+
+              <button
+                onClick={handleInvite}
+                disabled={sending || !email.trim()}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold disabled:opacity-40 transition"
+              >
+                {sending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+                {sending ? "Sending..." : "Send invite"}
+              </button>
+
+              {lastLink && (
+                <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4 space-y-2">
+                  <p className="text-xs text-zinc-500">Invite sent. You can also share this link directly:</p>
+                  <div className="flex items-center gap-2 bg-zinc-800/80 border border-zinc-700 rounded-lg px-3 py-2">
+                    <span className="text-xs text-zinc-300 truncate flex-1">{lastLink}</span>
+                    <button onClick={copyLink} className="flex-shrink-0 text-zinc-400 hover:text-white transition">
+                      {copied ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {members.length > 0 && (
+            <div className="mb-6">
+              <div className="flex items-center gap-2 mb-3">
+                <Users size={13} className="text-zinc-500" />
+                <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Team members</h3>
+              </div>
+
+              {memberErr && (
+                <div className="mb-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-[11px] text-red-400">
+                  {memberErr}
+                </div>
+              )}
+
+              <div className="space-y-2">
+                {members.map((m) => {
+                  const canEdit = myRole === "admin" || (myRole === "manager" && m.role !== "admin");
+                  const isEditing = editingId === m.id;
+                  return (
+                    <div key={m.id} className="px-3 py-2.5 rounded-lg bg-zinc-900/50 border border-zinc-800">
+                      {!isEditing ? (
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-xs text-white truncate">{m.full_name || m.email}</p>
+                            <p className="text-[10px] text-zinc-500">
+                              <span className="capitalize">{m.role ?? "operator"}</span>
+                              {m.position ? ` \u00B7 ${m.position}` : ""}
+                            </p>
+                          </div>
+                          {canEdit && (
+                            <button onClick={() => startEdit(m)}
+                              className="flex-shrink-0 text-[10px] px-2 py-1 rounded-md border border-zinc-700
+                                         text-zinc-400 hover:text-white hover:border-zinc-600 transition">
+                              Edit
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <p className="text-xs text-white truncate">{m.full_name || m.email}</p>
+                          <select value={editRole} onChange={(e) => setEditRole(e.target.value)}
+                            className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-2
+                                       text-xs text-white outline-none focus:border-emerald-500">
+                            {ROLES.map((r) => (
+                              <option key={r.value} value={r.value}>{r.label}</option>
+                            ))}
+                          </select>
+                          <input value={editTitle} onChange={(e) => setEditTitle(e.target.value)}
+                            maxLength={60} placeholder="Job title (optional)"
+                            className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-2
+                                       text-xs text-white placeholder-zinc-600 outline-none focus:border-emerald-500" />
+                          <div className="flex gap-2">
+                            <button onClick={() => saveMember(m.id)} disabled={savingMember}
+                              className="flex-1 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500
+                                         text-white text-[11px] font-semibold disabled:opacity-40 transition">
+                              {savingMember ? "Saving..." : "Save"}
+                            </button>
+                            <button onClick={() => { setEditingId(null); setMemberErr(""); }}
+                              className="px-3 py-1.5 rounded-lg border border-zinc-700 text-zinc-400 text-[11px] transition">
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <Users size={13} className="text-zinc-500" />
+              <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Pending invites</h3>
+            </div>
+            {invites.length === 0 ? (
+              <p className="text-xs text-zinc-600">No invites sent yet.</p>
+            ) : (
+              <div className="space-y-2">
+                {invites.map((inv) => (
+                  <div key={inv.id} className="flex items-center justify-between px-3 py-2.5 rounded-lg bg-zinc-900/50 border border-zinc-800">
+                    <div className="min-w-0">
+                      <p className="text-xs text-white truncate">{inv.email}</p>
+                      <p className="text-[10px] text-zinc-500 capitalize">{inv.role}</p>
+                    </div>
+                    <span className={"text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 " + (inv.status === "accepted" ? "bg-emerald-500/15 text-emerald-400" : "bg-zinc-700/50 text-zinc-400")}>
+                      {inv.status}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
